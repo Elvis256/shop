@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg: #ffffff;
+  --text: #111111;
+  --text-muted: #5a5a5a;
+  --border: #eaeaea;
+  --accent: #2a2a2a;
+  --accent-hover: #000000;
+  --font-head: "Sora", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-48: 48px;
+  --space-64: 64px;
+  --radius-4: 4px;
+  --radius-8: 8px;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+  --container: 1200px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-head);
+}
+
+@layer components {
+  .container {
+    @apply max-w-container mx-auto px-6;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center px-6 py-3 font-medium rounded-8 transition-colors;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent-hover;
+  }
+
+  .btn-secondary {
+    @apply btn bg-white text-accent border border-border hover:border-accent;
+  }
+
+  .btn-icon {
+    @apply p-2 rounded-8 hover:bg-gray-100 transition-colors;
+  }
+
+  .card {
+    @apply bg-white border border-border rounded-8 p-6 shadow-sm;
+  }
+
+  .input {
+    @apply w-full px-4 py-3 border border-border rounded-8 focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent;
+  }
+
+  .input-select {
+    @apply input appearance-none bg-white cursor-pointer;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-3 py-1 text-sm rounded-full bg-gray-100;
+  }
+
+  .link {
+    @apply text-accent hover:underline;
+  }
+}
+
+/* Typography */
+h1 { @apply text-4xl leading-tight font-bold; }
+h2 { @apply text-2xl leading-snug font-semibold; }
+h3 { @apply text-xl leading-normal font-semibold; }
+.text-small { @apply text-sm leading-relaxed; }
+
+/* Grid utilities */
+.grid-products {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6;
+}
+
+.grid-categories {
+  @apply grid grid-cols-2 md:grid-cols-4 gap-6;
+}
+
+/* Rating stars */
+.stars {
+  @apply flex items-center gap-0.5;
+}
+
+.star {
+  @apply w-4 h-4 text-yellow-400;
+}
+
+.star-empty {
+  @apply w-4 h-4 text-gray-300;
+}
+
+/* Toast animation */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* Safe area for mobile */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
