@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 
@@ -7,6 +8,119 @@ const router = Router();
 
 // All wishlist routes require authentication
 router.use(authenticate);
+
+// GET /api/wishlist/pin-status - Check if user has a PIN set
+router.get("/pin-status", async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { wishlistPin: true },
+    });
+    return res.json({ hasPin: !!user?.wishlistPin });
+  } catch (error) {
+    console.error("Get PIN status error:", error);
+    return res.status(500).json({ error: "Failed to check PIN status" });
+  }
+});
+
+// POST /api/wishlist/set-pin - Set or update wishlist PIN
+router.post("/set-pin", async (req: AuthRequest, res: Response) => {
+  try {
+    const { pin, currentPin } = z.object({
+      pin: z.string().min(4).max(6).regex(/^\d+$/, "PIN must be digits only"),
+      currentPin: z.string().optional(),
+    }).parse(req.body);
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { wishlistPin: true },
+    });
+
+    // If user already has a PIN, verify current PIN first
+    if (user?.wishlistPin) {
+      if (!currentPin) {
+        return res.status(400).json({ error: "Current PIN required" });
+      }
+      const isValid = await bcrypt.compare(currentPin, user.wishlistPin);
+      if (!isValid) {
+        return res.status(401).json({ error: "Invalid current PIN" });
+      }
+    }
+
+    // Hash and save new PIN
+    const hashedPin = await bcrypt.hash(pin, 10);
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { wishlistPin: hashedPin },
+    });
+
+    return res.json({ message: "Wishlist PIN set successfully" });
+  } catch (error) {
+    console.error("Set PIN error:", error);
+    return res.status(500).json({ error: "Failed to set PIN" });
+  }
+});
+
+// POST /api/wishlist/verify-pin - Verify wishlist PIN
+router.post("/verify-pin", async (req: AuthRequest, res: Response) => {
+  try {
+    const { pin } = z.object({
+      pin: z.string().min(4).max(6),
+    }).parse(req.body);
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { wishlistPin: true },
+    });
+
+    if (!user?.wishlistPin) {
+      return res.json({ valid: true, message: "No PIN set" });
+    }
+
+    const isValid = await bcrypt.compare(pin, user.wishlistPin);
+    if (!isValid) {
+      return res.status(401).json({ valid: false, error: "Invalid PIN" });
+    }
+
+    return res.json({ valid: true, message: "PIN verified" });
+  } catch (error) {
+    console.error("Verify PIN error:", error);
+    return res.status(500).json({ error: "Failed to verify PIN" });
+  }
+});
+
+// DELETE /api/wishlist/remove-pin - Remove wishlist PIN
+router.delete("/remove-pin", async (req: AuthRequest, res: Response) => {
+  try {
+    const { pin } = z.object({
+      pin: z.string().min(4).max(6),
+    }).parse(req.body);
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { wishlistPin: true },
+    });
+
+    if (!user?.wishlistPin) {
+      return res.status(400).json({ error: "No PIN set" });
+    }
+
+    const isValid = await bcrypt.compare(pin, user.wishlistPin);
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid PIN" });
+    }
+
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { wishlistPin: null },
+    });
+
+    return res.json({ message: "PIN removed successfully" });
+  } catch (error) {
+    console.error("Remove PIN error:", error);
+    return res.status(500).json({ error: "Failed to remove PIN" });
+  }
+});
 
 // GET /api/wishlist
 router.get("/", async (req: AuthRequest, res: Response) => {

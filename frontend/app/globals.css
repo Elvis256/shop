@@ -1,29 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap');
-
 :root {
-  --bg: #ffffff;
-  --text: #111111;
-  --text-muted: #5a5a5a;
-  --border: #eaeaea;
-  --accent: #2a2a2a;
+  --bg: #fafafa;
+  --text: #1d1d1f;
+  --text-muted: #86868b;
+  --border: #d2d2d7;
+  --accent: #1d1d1f;
   --accent-hover: #000000;
-  --font-head: "Sora", sans-serif;
-  --font-body: "Inter", sans-serif;
-  --space-4: 4px;
-  --space-8: 8px;
-  --space-12: 12px;
-  --space-16: 16px;
-  --space-24: 24px;
-  --space-32: 32px;
-  --space-48: 48px;
-  --space-64: 64px;
-  --radius-4: 4px;
-  --radius-8: 8px;
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+  --primary: #0071e3;
+  --primary-hover: #0077ed;
+  --primary-light: #e8f4fd;
+  --primary-50: #f0f7ff;
+  --surface: #ffffff;
+  --surface-secondary: #f5f5f7;
+  --font-head: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --radius-lg: 12px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.12);
+  --shadow-soft: 0 2px 8px rgba(0,0,0,0.04), 0 4px 24px rgba(0,0,0,0.06);
   --container: 1200px;
 }
 
@@ -35,68 +37,129 @@ body {
   font-family: var(--font-body);
   color: var(--text);
   background: var(--bg);
-  line-height: 1.5;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-head);
+  line-height: 1.2;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+@layer base {
+  ::selection {
+    background: var(--primary);
+    color: white;
+  }
 }
 
 @layer components {
   .container {
-    @apply max-w-container mx-auto px-6;
+    @apply max-w-container mx-auto px-6 sm:px-8 lg:px-12;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center px-6 py-3 font-medium rounded-8 transition-colors;
+    @apply inline-flex items-center justify-center gap-2 px-7 py-3.5 font-medium rounded-full transition-all duration-300 cursor-pointer text-sm tracking-tight;
   }
 
   .btn-primary {
-    @apply btn bg-accent text-white hover:bg-accent-hover;
+    @apply btn bg-primary text-white hover:bg-primary-hover shadow-soft hover:shadow-md active:scale-[0.98];
   }
 
   .btn-secondary {
-    @apply btn bg-white text-accent border border-border hover:border-accent;
+    @apply btn bg-surface-secondary text-text hover:bg-gray-200 active:scale-[0.98];
+  }
+
+  .btn-outline {
+    @apply btn bg-transparent text-text border border-border hover:bg-surface-secondary active:scale-[0.98];
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-text-muted hover:text-text;
   }
 
   .btn-icon {
-    @apply p-2 rounded-8 hover:bg-gray-100 transition-colors;
+    @apply p-2.5 rounded-full hover:bg-surface-secondary transition-all duration-200 text-text-muted hover:text-text;
   }
 
   .card {
-    @apply bg-white border border-border rounded-8 p-6 shadow-sm;
+    @apply bg-surface rounded-18 p-6 shadow-soft transition-all duration-300 hover:shadow-lg;
+  }
+
+  .card-flat {
+    @apply bg-surface-secondary rounded-18 p-6 transition-all duration-300 hover:bg-gray-100;
   }
 
   .input {
-    @apply w-full px-4 py-3 border border-border rounded-8 focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent;
+    @apply w-full px-5 py-3.5 border border-border rounded-12 bg-surface text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200;
   }
 
   .input-select {
-    @apply input appearance-none bg-white cursor-pointer;
+    @apply input appearance-none cursor-pointer pr-12;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2386868b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 1rem center;
+    background-repeat: no-repeat;
+    background-size: 1.25em 1.25em;
   }
 
   .badge {
-    @apply inline-flex items-center px-3 py-1 text-sm rounded-full bg-gray-100;
+    @apply inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-full;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-light text-primary;
+  }
+
+  .badge-gray {
+    @apply badge bg-surface-secondary text-text-muted;
+  }
+
+  .badge-success {
+    @apply badge bg-emerald-50 text-emerald-600;
+  }
+
+  .badge-warning {
+    @apply badge bg-amber-50 text-amber-600;
+  }
+
+  .badge-danger {
+    @apply badge bg-red-50 text-red-600;
   }
 
   .link {
-    @apply text-accent hover:underline;
+    @apply text-primary hover:text-primary-hover transition-colors font-medium;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-text mb-2;
+  }
+
+  .section-title {
+    @apply text-3xl sm:text-4xl lg:text-5xl font-semibold text-text tracking-tighter;
+  }
+
+  .section-subtitle {
+    @apply text-text-muted text-lg mt-3;
   }
 }
 
 /* Typography */
-h1 { @apply text-4xl leading-tight font-bold; }
-h2 { @apply text-2xl leading-snug font-semibold; }
-h3 { @apply text-xl leading-normal font-semibold; }
-.text-small { @apply text-sm leading-relaxed; }
+h1 { @apply text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tighter; }
+h2 { @apply text-2xl sm:text-3xl font-semibold tracking-tight; }
+h3 { @apply text-xl font-semibold tracking-tight; }
+.text-small { @apply text-sm; }
 
 /* Grid utilities */
 .grid-products {
-  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6;
+  @apply grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 sm:gap-8;
 }
 
 .grid-categories {
-  @apply grid grid-cols-2 md:grid-cols-4 gap-6;
+  @apply grid grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-8;
 }
 
 /* Rating stars */
@@ -109,7 +172,7 @@ h3 { @apply text-xl leading-normal font-semibold; }
 }
 
 .star-empty {
-  @apply w-4 h-4 text-gray-300;
+  @apply w-4 h-4 text-gray-200;
 }
 
 /* Toast animation */
@@ -128,7 +191,64 @@ h3 { @apply text-xl leading-normal font-semibold; }
   animation: slide-in 0.3s ease-out;
 }
 
+/* Fade in animation */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out;
+}
+
 /* Safe area for mobile */
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
+.safe-area-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
+}
+
+/* Focus visible for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Line clamp utilities */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

@@ -1,0 +1,17 @@
+# Robots.txt for PleasureZone
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /auth/
+Disallow: /checkout/
+Disallow: /account/
+Disallow: /cart
+Disallow: /wishlist
+Disallow: /compare
+
+# Sitemaps
+Sitemap: https://pleasurezone.ug/sitemap.xml
+
+# Crawl-delay
+Crawl-delay: 1

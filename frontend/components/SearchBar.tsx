@@ -81,17 +81,17 @@ export default function SearchBar() {
   };
 
   return (
-    <div ref={wrapperRef} className="relative w-full max-w-md">
+    <div ref={wrapperRef} className="relative w-full">
       <form onSubmit={handleSubmit}>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => results.length > 0 && setShowDropdown(true)}
-            placeholder="Search products..."
-            className="input pl-10 pr-10 w-full"
+            placeholder="Search..."
+            className="w-full h-10 pl-10 pr-10 text-sm bg-surface-secondary border-0 rounded-full placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
           />
           {query && (
             <button
@@ -101,9 +101,9 @@ export default function SearchBar() {
                 setResults([]);
                 setShowDropdown(false);
               }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <X className="w-5 h-5" />}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
             </button>
           )}
         </div>
@@ -111,7 +111,7 @@ export default function SearchBar() {
 
       {/* Dropdown Results */}
       {showDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border z-50 max-h-96 overflow-auto">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-surface rounded-18 shadow-lg border border-border z-50 max-h-96 overflow-auto">
           {results.length > 0 ? (
             <>
               {results.map((product) => (
@@ -122,9 +122,9 @@ export default function SearchBar() {
                     setShowDropdown(false);
                     setQuery("");
                   }}
-                  className="flex items-center gap-3 p-3 hover:bg-gray-50 transition"
+                  className="flex items-center gap-3 p-3 hover:bg-surface-secondary transition-colors first:rounded-t-18"
                 >
-                  <div className="w-12 h-12 bg-gray-100 rounded overflow-hidden flex-shrink-0">
+                  <div className="w-12 h-12 bg-surface-secondary rounded-12 overflow-hidden flex-shrink-0">
                     {product.imageUrl ? (
                       <img
                         src={product.imageUrl}
@@ -132,32 +132,32 @@ export default function SearchBar() {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                      <div className="w-full h-full flex items-center justify-center text-text-muted">
                         <Search className="w-4 h-4" />
                       </div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{product.name}</p>
-                    <p className="text-sm text-accent">KES {Number(product.price).toLocaleString()}</p>
+                    <p className="font-medium text-sm truncate text-text">{product.name}</p>
+                    <p className="text-sm text-text-muted">KES {Number(product.price).toLocaleString()}</p>
                   </div>
                 </Link>
               ))}
               <Link
                 href={`/search?q=${encodeURIComponent(query)}`}
                 onClick={() => setShowDropdown(false)}
-                className="block p-3 text-center text-sm text-accent hover:bg-gray-50 border-t"
+                className="block p-3 text-center text-sm text-primary hover:bg-surface-secondary border-t border-border rounded-b-18"
               >
                 View all results →
               </Link>
             </>
           ) : loading ? (
-            <div className="p-4 text-center text-gray-500">
+            <div className="p-6 text-center text-text-muted">
               <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
               Searching...
             </div>
           ) : (
-            <div className="p-4 text-center text-gray-500">
+            <div className="p-6 text-center text-text-muted">
               No products found
             </div>
           )}

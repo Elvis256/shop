@@ -26,6 +26,7 @@ export default function AddToCartButton({ product, showQuantity = false, classNa
   const handleAdd = () => {
     setIsAdding(true);
     addItem({
+      id: product.id,
       productId: product.id,
       name: product.name,
       slug: product.slug,

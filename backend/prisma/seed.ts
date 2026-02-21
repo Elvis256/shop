@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, BlogStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -348,14 +348,14 @@ async function main() {
 
   // Create settings
   const settings = [
-    { key: "store_name", value: "Adult Store" },
-    { key: "store_email", value: "support@adultstore.com" },
-    { key: "store_phone", value: "+254 700 000 000" },
-    { key: "store_currency", value: "KES" },
-    { key: "free_shipping_threshold", value: "5000" },
-    { key: "standard_shipping_cost", value: "300" },
-    { key: "express_shipping_cost", value: "500" },
-    { key: "same_day_shipping_cost", value: "800" },
+    { key: "store_name", value: "Pleasure Zone Uganda" },
+    { key: "store_email", value: "support@pleasurezone.ug" },
+    { key: "store_phone", value: "+256 700 000 000" },
+    { key: "store_currency", value: "UGX" },
+    { key: "free_shipping_threshold", value: "150000" },
+    { key: "standard_shipping_cost", value: "10000" },
+    { key: "express_shipping_cost", value: "20000" },
+    { key: "same_day_shipping_cost", value: "35000" },
     { key: "low_stock_threshold", value: "5" },
   ];
 
@@ -367,6 +367,204 @@ async function main() {
     });
   }
   console.log("✅ Settings created:", settings.length);
+
+  // Create blog posts
+  const blogPosts = [
+    {
+      title: "The Complete Guide to Choosing Your First Toy",
+      slug: "choosing-your-first-toy",
+      excerpt: "Explore our beginner-friendly guide to finding the perfect intimate toy. We cover materials, features, and what to look for.",
+      content: `<p>Choosing your first intimate toy can feel overwhelming with so many options available. This guide will help you navigate the selection process with confidence.</p>
+      <h2>1. Consider the Material</h2>
+      <p>Body-safe silicone is the gold standard for intimate toys. It's non-porous, easy to clean, and hypoallergenic. Avoid toys with questionable materials or strong chemical smells.</p>
+      <h2>2. Start Simple</h2>
+      <p>For beginners, we recommend starting with something simple and non-intimidating. A small, quiet vibrator with multiple speeds is often a great choice.</p>
+      <h2>3. Think About Your Preferences</h2>
+      <p>Consider what type of stimulation you enjoy. External, internal, or both? This will help narrow down your options significantly.</p>
+      <h2>4. Read Reviews</h2>
+      <p>Customer reviews can provide valuable insights about a product's actual performance and quality.</p>`,
+      category: "Guides",
+      tags: ["beginners", "toys", "guide"],
+      author: "Wellness Team",
+      featured: true,
+      status: BlogStatus.PUBLISHED,
+      publishedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    },
+    {
+      title: "5 Ways to Enhance Intimacy in Your Relationship",
+      slug: "enhance-intimacy-relationship",
+      excerpt: "Discover simple but powerful techniques to deepen connection and enhance intimacy with your partner.",
+      content: `<p>Intimacy is the foundation of a healthy relationship. Here are five ways to strengthen your bond.</p>
+      <h2>1. Prioritize Quality Time</h2>
+      <p>Set aside dedicated time for each other without distractions. Put away phones and focus on being present.</p>
+      <h2>2. Communicate Openly</h2>
+      <p>Share your desires, boundaries, and fantasies with your partner. Open communication builds trust and understanding.</p>
+      <h2>3. Try New Experiences Together</h2>
+      <p>Novelty can reignite passion. Consider exploring new products, positions, or date ideas together.</p>
+      <h2>4. Physical Touch Beyond the Bedroom</h2>
+      <p>Hold hands, cuddle, and maintain physical connection throughout the day.</p>
+      <h2>5. Show Appreciation</h2>
+      <p>Express gratitude for your partner regularly. Small gestures of appreciation go a long way.</p>`,
+      category: "Relationships",
+      tags: ["couples", "intimacy", "tips"],
+      author: "Wellness Team",
+      featured: false,
+      status: BlogStatus.PUBLISHED,
+      publishedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    },
+    {
+      title: "Self-Care Sunday: A Guide to Solo Wellness",
+      slug: "self-care-sunday-solo-wellness",
+      excerpt: "Taking time for yourself is essential. Learn how to create the perfect self-care routine for enhanced wellbeing.",
+      content: `<p>Self-care isn't selfish—it's necessary. Here's how to create a meaningful solo wellness routine.</p>
+      <h2>Create Your Space</h2>
+      <p>Set the mood with candles, comfortable bedding, and relaxing music. Your environment matters.</p>
+      <h2>Explore at Your Own Pace</h2>
+      <p>There's no rush. Take time to discover what feels good and what you enjoy.</p>
+      <h2>Invest in Quality Products</h2>
+      <p>Quality lubricants, massage oils, and premium toys can significantly enhance your experience.</p>`,
+      category: "Self-Care",
+      tags: ["self-care", "wellness", "solo"],
+      author: "Wellness Team",
+      featured: false,
+      status: BlogStatus.PUBLISHED,
+      publishedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+    },
+  ];
+
+  for (const post of blogPosts) {
+    await prisma.blogPost.upsert({
+      where: { slug: post.slug },
+      update: {},
+      create: post,
+    });
+  }
+  console.log("✅ Blog posts created:", blogPosts.length);
+
+  // Create banners
+  const banners = [
+    {
+      title: "Explore Your Desires",
+      subtitle: "Premium intimate products with 100% discreet packaging",
+      imageUrl: "/images/banners/hero-1.jpg",
+      linkUrl: "/products",
+      buttonText: "Shop Now",
+      position: "home-hero",
+      sortOrder: 1,
+      isActive: true,
+    },
+    {
+      title: "Valentine's Special",
+      subtitle: "Up to 30% off on couples products",
+      imageUrl: "/images/banners/hero-2.jpg",
+      linkUrl: "/category?cat=couples",
+      buttonText: "Shop Couples",
+      position: "home-hero",
+      sortOrder: 2,
+      isActive: true,
+    },
+  ];
+
+  for (const banner of banners) {
+    await prisma.banner.upsert({
+      where: { id: banner.title.toLowerCase().replace(/\s+/g, "-") },
+      update: {},
+      create: banner,
+    });
+  }
+  console.log("✅ Banners created:", banners.length);
+
+  // Create currencies
+  const currencies = [
+    {
+      code: "UGX",
+      name: "Ugandan Shilling",
+      symbol: "USh",
+      exchangeRate: 1,
+      isBase: true,
+      isActive: true,
+      decimalPlaces: 0,
+    },
+    {
+      code: "USD",
+      name: "US Dollar",
+      symbol: "$",
+      exchangeRate: 0.00027, // 1 UGX = 0.00027 USD (approx 3700 UGX = 1 USD)
+      isBase: false,
+      isActive: true,
+      decimalPlaces: 2,
+    },
+    {
+      code: "KES",
+      name: "Kenyan Shilling",
+      symbol: "KSh",
+      exchangeRate: 0.035, // 1 UGX = 0.035 KES
+      isBase: false,
+      isActive: true,
+      decimalPlaces: 0,
+    },
+    {
+      code: "TZS",
+      name: "Tanzanian Shilling",
+      symbol: "TSh",
+      exchangeRate: 0.68, // 1 UGX = 0.68 TZS
+      isBase: false,
+      isActive: true,
+      decimalPlaces: 0,
+    },
+  ];
+
+  for (const currency of currencies) {
+    await prisma.currency.upsert({
+      where: { code: currency.code },
+      update: { exchangeRate: currency.exchangeRate },
+      create: currency,
+    });
+  }
+  console.log("✅ Currencies created:", currencies.length);
+
+  // Create payment providers
+  const paymentProviders = [
+    {
+      name: "MTN Mobile Money Uganda",
+      code: "mtn_ug",
+      type: "MOBILE_MONEY" as const,
+      currencies: ["UGX"],
+      feeType: "PERCENTAGE" as const,
+      feeValue: 1.0, // 1% fee
+      isActive: true,
+      isTest: true,
+    },
+    {
+      name: "Airtel Money Uganda",
+      code: "airtel_ug",
+      type: "MOBILE_MONEY" as const,
+      currencies: ["UGX"],
+      feeType: "PERCENTAGE" as const,
+      feeValue: 1.0,
+      isActive: true,
+      isTest: true,
+    },
+    {
+      name: "Flutterwave",
+      code: "flutterwave",
+      type: "CARD" as const,
+      currencies: ["UGX", "USD", "KES", "TZS"],
+      feeType: "PERCENTAGE" as const,
+      feeValue: 2.9,
+      isActive: true,
+      isTest: true,
+    },
+  ];
+
+  for (const provider of paymentProviders) {
+    await prisma.paymentProvider.upsert({
+      where: { code: provider.code },
+      update: {},
+      create: provider,
+    });
+  }
+  console.log("✅ Payment providers created:", paymentProviders.length);
 
   console.log("🎉 Seeding complete!");
 }

@@ -2,40 +2,50 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Star, Heart, X, ShoppingCart } from "lucide-react";
+import { Star, Heart, Plus, Check } from "lucide-react";
 import { useState } from "react";
 import { useCart } from "@/lib/hooks/useCart";
 import { useToast } from "@/lib/hooks/useToast";
+import { useWishlist } from "@/lib/hooks/useWishlist";
+import { useCurrency } from "@/contexts/CurrencyContext";
 
 type ProductCardProps = {
   id: string;
   name: string;
   price: number;
+  comparePrice?: number;
   rating: number;
   slug: string;
   imageUrl?: string | null;
-  currency?: string;
+  category?: string;
   inStock?: boolean;
-  showWishlistRemove?: boolean;
-  onRemoveFromWishlist?: () => void;
+  stock?: number;
+  isNew?: boolean;
+  isBestseller?: boolean;
+  badgeText?: string;
 };
 
 export default function ProductCard({
   id,
   name,
   price,
+  comparePrice,
   rating,
   slug,
   imageUrl,
-  currency = "KES",
+  category,
   inStock = true,
-  showWishlistRemove,
-  onRemoveFromWishlist,
+  isNew,
+  isBestseller,
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false);
-  const [isWishlisted, setIsWishlisted] = useState(false);
   const { addItem } = useCart();
   const { showToast } = useToast();
+  const { formatPrice } = useCurrency();
+  const { isInWishlist, toggleItem } = useWishlist();
+  
+  const isWishlisted = isInWishlist(id);
+  const discount = comparePrice ? Math.round((1 - Number(price) / Number(comparePrice)) * 100) : 0;
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -44,116 +54,162 @@ export default function ProductCard({
 
     setIsAdding(true);
     addItem({
+      id,
       productId: id,
       name,
       slug,
       price: Number(price),
       imageUrl: imageUrl || null,
     });
-    showToast(`${name} added to cart`, "success");
-    setTimeout(() => setIsAdding(false), 1000);
+    showToast(`Added to cart`, "success");
+    setTimeout(() => setIsAdding(false), 800);
   };
 
   const handleWishlist = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (showWishlistRemove && onRemoveFromWishlist) {
-      onRemoveFromWishlist();
-    } else {
-      setIsWishlisted(!isWishlisted);
-      showToast(isWishlisted ? "Removed from wishlist" : "Added to wishlist", "info");
-    }
+    const added = toggleItem({
+      productId: id,
+      name,
+      slug,
+      price: Number(price),
+      imageUrl: imageUrl || null,
+    });
+    showToast(added ? "Added to wishlist" : "Removed from wishlist", added ? "success" : "info");
   };
 
   return (
-    <div className="card group relative">
-      {/* Wishlist Remove Button */}
-      {showWishlistRemove && (
-        <button
-          onClick={handleWishlist}
-          className="absolute top-4 right-4 z-10 p-1 bg-white rounded-full shadow hover:bg-red-50"
-        >
-          <X className="w-4 h-4 text-red-500" />
-        </button>
-      )}
-
-      {/* Out of Stock Badge */}
-      {!inStock && (
-        <div className="absolute top-4 left-4 z-10 bg-red-500 text-white text-xs px-2 py-1 rounded">
-          Out of Stock
-        </div>
-      )}
-
-      {/* Image */}
-      <Link href={`/product/${slug}`}>
-        <div className="aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden relative">
+    <div className="group">
+      {/* Image Container */}
+      <Link href={`/product/${slug}`} className="block relative">
+        <div className="aspect-[4/5] bg-surface-secondary rounded-24 overflow-hidden relative transition-all duration-500 group-hover:shadow-lg">
           {imageUrl ? (
             <Image
               src={imageUrl}
               alt={name}
               fill
-              className="object-cover group-hover:scale-105 transition-transform"
+              className="object-cover transition-transform duration-700 group-hover:scale-105"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-400">
-              <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-surface-secondary to-gray-100">
+              <div className="text-center">
+                <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-surface flex items-center justify-center">
+                  <svg className="w-10 h-10 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                {category && (
+                  <span className="text-xs text-text-muted">{category}</span>
+                )}
+              </div>
             </div>
           )}
 
-          {/* Quick Add Button */}
-          <button
-            onClick={handleAddToCart}
-            disabled={!inStock}
-            className={`absolute bottom-2 right-2 p-2 rounded-full shadow-lg transition-all transform translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 ${
-              isAdding
-                ? "bg-green-500 text-white"
-                : inStock
-                ? "bg-white hover:bg-accent hover:text-white"
-                : "bg-gray-300 cursor-not-allowed"
-            }`}
-          >
-            {isAdding ? (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <ShoppingCart className="w-5 h-5" />
+          {/* Badges */}
+          <div className="absolute top-3 left-3 flex flex-col gap-2">
+            {!inStock && (
+              <span className="text-xs font-medium bg-text text-white px-3 py-1.5 rounded-full">
+                Sold Out
+              </span>
             )}
-          </button>
+            {inStock && discount > 0 && (
+              <span className="text-xs font-medium bg-red-500 text-white px-3 py-1.5 rounded-full">
+                Save {discount}%
+              </span>
+            )}
+            {isNew && (
+              <span className="text-xs font-medium bg-primary text-white px-3 py-1.5 rounded-full">
+                New
+              </span>
+            )}
+            {isBestseller && (
+              <span className="text-xs font-medium bg-amber-500 text-white px-3 py-1.5 rounded-full">
+                Popular
+              </span>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+            <button
+              onClick={handleWishlist}
+              className={`p-2.5 rounded-full shadow-soft backdrop-blur-sm transition-all duration-200 ${
+                isWishlisted 
+                  ? "bg-red-500 text-white" 
+                  : "bg-white/90 text-text-muted hover:text-red-500 hover:bg-white"
+              }`}
+              aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
+            >
+              <Heart className={`w-4 h-4 ${isWishlisted ? "fill-current" : ""}`} />
+            </button>
+          </div>
+
+          {/* Quick Add Button */}
+          {inStock && (
+            <div className="absolute bottom-3 left-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
+              <button
+                onClick={handleAddToCart}
+                disabled={isAdding}
+                className={`w-full py-3 px-4 rounded-full font-medium text-sm flex items-center justify-center gap-2 transition-all duration-200 backdrop-blur-sm ${
+                  isAdding 
+                    ? "bg-emerald-500 text-white" 
+                    : "bg-white/95 text-text hover:bg-white shadow-soft"
+                }`}
+              >
+                {isAdding ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Added
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4" />
+                    Add to Cart
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </Link>
 
-      {/* Info */}
-      <Link href={`/product/${slug}`}>
-        <h3 className="font-medium mb-2 line-clamp-2 hover:text-accent">{name}</h3>
-      </Link>
-
-      {/* Rating */}
-      <div className="flex items-center gap-1 mb-2">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <Star
-            key={i}
-            className={`w-3 h-3 ${
-              i <= Math.round(Number(rating)) ? "text-yellow-400 fill-yellow-400" : "text-gray-300"
-            }`}
-          />
-        ))}
-        <span className="text-xs text-text-muted ml-1">({Number(rating).toFixed(1)})</span>
-      </div>
-
-      {/* Price & Wishlist */}
-      <div className="flex items-center justify-between">
-        <span className="font-bold">{currency} {Number(price).toLocaleString()}</span>
-        {!showWishlistRemove && (
-          <button
-            onClick={handleWishlist}
-            className={`btn-icon ${isWishlisted ? "text-red-500" : ""}`}
-          >
-            <Heart className={`w-4 h-4 ${isWishlisted ? "fill-current" : ""}`} />
-          </button>
+      {/* Product Info */}
+      <div className="mt-4 px-1">
+        {category && (
+          <p className="text-xs text-text-muted mb-1">{category}</p>
         )}
+        <Link href={`/product/${slug}`}>
+          <h3 className="text-sm font-medium text-text line-clamp-2 hover:text-primary transition-colors duration-200">
+            {name}
+          </h3>
+        </Link>
+
+        {/* Rating */}
+        <div className="flex items-center gap-1 mt-2">
+          <div className="flex items-center">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Star
+                key={i}
+                className={`w-3 h-3 ${
+                  i <= Math.round(Number(rating)) 
+                    ? "text-amber-400 fill-amber-400" 
+                    : "text-gray-200 fill-gray-200"
+                }`}
+              />
+            ))}
+          </div>
+          <span className="text-xs text-text-muted">({Number(rating).toFixed(1)})</span>
+        </div>
+
+        {/* Price */}
+        <div className="mt-2 flex items-baseline gap-2">
+          <span className="text-base font-semibold text-text">{formatPrice(Number(price))}</span>
+          {comparePrice && Number(comparePrice) > Number(price) && (
+            <span className="text-sm text-text-muted line-through">
+              {formatPrice(Number(comparePrice))}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -106,9 +106,12 @@ npm run dev
 - Admin Panel: http://localhost:3000/admin
 - Health Check: http://localhost:4000/health
 
-### Default Admin Login
-- Email: admin@adultstore.com
-- Password: admin123
+### Admin Login
+Admin credentials are set via environment variables:
+- `ADMIN_EMAIL` - Admin email address
+- `ADMIN_PASSWORD` - Admin password (must be strong: 8+ chars, uppercase, lowercase, number, special char)
+
+⚠️ **Security Note:** Never use default credentials in production. Always set strong, unique passwords.
 
 ## Environment Variables
 

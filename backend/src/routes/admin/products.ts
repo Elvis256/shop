@@ -2,7 +2,7 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
-import { uploadMultiple } from "../../middleware/upload";
+import { uploadMultiple, validateUploadedFiles } from "../../middleware/upload";
 
 const router = Router();
 
@@ -233,7 +233,7 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/admin/products/:id/images
-router.post("/:id/images", uploadMultiple, async (req: AuthRequest, res: Response) => {
+router.post("/:id/images", uploadMultiple, validateUploadedFiles, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const files = req.files as Express.Multer.File[];

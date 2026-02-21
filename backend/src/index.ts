@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import path from "path";
 
@@ -19,6 +20,18 @@ import reviewsRoutes from "./routes/reviews";
 import searchRoutes from "./routes/search";
 import couponsRoutes from "./routes/coupons";
 import addressesRoutes from "./routes/addresses";
+import newsletterRoutes from "./routes/newsletter";
+import blogRoutes from "./routes/blog";
+import giftcardsRoutes from "./routes/giftcards";
+import bannersRoutes from "./routes/banners";
+import currenciesRoutes from "./routes/currencies";
+import mobileMoneyRoutes from "./routes/mobilemoney";
+import returnsRoutes from "./routes/returns";
+import ticketsRoutes from "./routes/tickets";
+import loyaltyRoutes from "./routes/loyalty";
+import referralsRoutes from "./routes/referrals";
+import twoFactorRoutes from "./routes/twoFactor";
+import invoicesRoutes from "./routes/invoices";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -28,6 +41,8 @@ import adminCustomers from "./routes/admin/customers";
 import adminCoupons from "./routes/admin/coupons";
 import adminCategories from "./routes/admin/categories";
 import adminSettings from "./routes/admin/settings";
+import adminStaff from "./routes/adminStaff";
+import adminActivity from "./routes/adminActivity";
 
 // Middleware
 import { setupSecurity } from "./middleware/security";
@@ -38,15 +53,38 @@ const PORT = process.env.PORT || 4000;
 // Security middleware
 setupSecurity(app);
 
-// CORS
+// CORS - Allow multiple origins for development
+const allowedOrigins = [
+  process.env.BASE_URL || "http://localhost:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3001",
+];
+
 app.use(cors({
-  origin: process.env.BASE_URL || "http://localhost:3000",
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
   credentials: true,
 }));
 
 // Body parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Cookie parsing
+app.use(cookieParser());
+
+// CSRF protection
+import { setCsrfToken, validateCsrf, csrfTokenHandler } from "./middleware/csrf";
+app.use(setCsrfToken);
+app.get("/api/csrf-token", csrfTokenHandler);
+app.use("/api", validateCsrf);
 
 // Static files (uploads)
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
@@ -64,6 +102,18 @@ app.use("/api/reviews", reviewsRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/coupons", couponsRoutes);
 app.use("/api/addresses", addressesRoutes);
+app.use("/api/newsletter", newsletterRoutes);
+app.use("/api/blog", blogRoutes);
+app.use("/api/gift-cards", giftcardsRoutes);
+app.use("/api/banners", bannersRoutes);
+app.use("/api/currencies", currenciesRoutes);
+app.use("/api/mobile-money", mobileMoneyRoutes);
+app.use("/api/returns", returnsRoutes);
+app.use("/api/tickets", ticketsRoutes);
+app.use("/api/loyalty", loyaltyRoutes);
+app.use("/api/referrals", referralsRoutes);
+app.use("/api/2fa", twoFactorRoutes);
+app.use("/api/invoices", invoicesRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);
@@ -73,6 +123,8 @@ app.use("/api/admin/customers", adminCustomers);
 app.use("/api/admin/coupons", adminCoupons);
 app.use("/api/admin/categories", adminCategories);
 app.use("/api/admin/settings", adminSettings);
+app.use("/api/admin/staff", adminStaff);
+app.use("/api/admin/activity", adminActivity);
 
 // Health check
 app.get("/health", (_req, res) => {
@@ -93,4 +145,14 @@ app.use((_req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Admin panel: ${process.env.BASE_URL || "http://localhost:3000"}/admin`);
+  
+  // Start stock reservation cleanup job
+  import("./utils/stockReservation").then(({ startReservationCleanup }) => {
+    startReservationCleanup();
+  });
+  
+  // Start abandoned cart email job
+  import("./services/abandonedCart").then(({ startAbandonedCartJob }) => {
+    startAbandonedCartJob();
+  });
 });

@@ -1,27 +1,55 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Shield, Package, Lock } from "lucide-react";
 
 export default function Hero() {
   return (
-    <section className="bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="container py-16 md:py-24">
-        <div className="max-w-2xl">
-          <h1 className="text-4xl md:text-5xl font-bold leading-tight mb-6">
-            Premium Products.<br />
-            <span className="text-text-muted">Total Discretion.</span>
+    <section className="bg-surface-secondary overflow-hidden">
+      <div className="container py-20 md:py-32 lg:py-40">
+        <div className="max-w-3xl mx-auto text-center animate-fade-up">
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-surface shadow-soft mb-8">
+            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+            <span className="text-sm text-text-muted">Free discreet shipping on orders over KES 5,000</span>
+          </div>
+
+          {/* Headline */}
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tighter leading-[1.1] mb-6">
+            Premium wellness.
+            <br />
+            <span className="text-text-muted">Complete privacy.</span>
           </h1>
-          <p className="text-lg text-text-muted mb-8">
-            Shop with confidence. Plain packaging, anonymous billing,
-            and secure checkout guaranteed.
+
+          {/* Subtitle */}
+          <p className="text-lg sm:text-xl text-text-muted max-w-xl mx-auto mb-10">
+            Discover our curated collection with discreet packaging, 
+            anonymous billing, and secure checkout.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <Link href="/category" className="btn-primary gap-2">
-              Shop Now
+
+          {/* CTAs */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
+            <Link href="/category" className="btn-primary text-base px-8 py-4">
+              Shop Collection
               <ArrowRight className="w-5 h-5" />
             </Link>
-            <Link href="/about" className="btn-secondary">
-              Learn More
+            <Link href="/category?cat=bestsellers" className="btn-secondary text-base px-8 py-4">
+              View Bestsellers
             </Link>
+          </div>
+
+          {/* Trust indicators */}
+          <div className="flex flex-wrap items-center justify-center gap-8 text-text-muted">
+            <div className="flex items-center gap-2">
+              <Package className="w-5 h-5" />
+              <span className="text-sm">Plain Packaging</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              <span className="text-sm">Anonymous Billing</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Lock className="w-5 h-5" />
+              <span className="text-sm">Secure Checkout</span>
+            </div>
           </div>
         </div>
       </div>

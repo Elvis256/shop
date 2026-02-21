@@ -3,15 +3,30 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../lib/prisma";
-import { generateToken, authenticate, AuthRequest } from "../middleware/auth";
+import { 
+  generateToken, 
+  authenticate, 
+  AuthRequest, 
+  COOKIE_OPTIONS, 
+  REFRESH_COOKIE_OPTIONS,
+  createRefreshToken,
+  rotateRefreshToken,
+  invalidateAllRefreshTokens
+} from "../middleware/auth";
 import { sendWelcomeEmail, sendPasswordResetEmail } from "../lib/email";
+import { sendVerificationEmail, sendWelcomeEmail as sendVerifiedWelcome } from "../services/email";
 
 const router = Router();
+
+// Strong password validation regex
+const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{}|;:,.<>])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{}|;:,.<>]{8,}$/;
 
 // Validation schemas
 const RegisterSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(strongPasswordRegex, "Password must contain uppercase, lowercase, number, and special character"),
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
 });
@@ -65,16 +80,35 @@ router.post("/register", async (req, res: Response) => {
       select: { id: true, email: true, name: true, role: true },
     });
 
-    // Generate token
-    const token = generateToken({ id: user.id, email: user.email, role: user.role });
+    // Generate tokens
+    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role });
+    const refreshToken = await createRefreshToken(user.id);
 
-    // Send welcome email (async, don't wait)
+    // Set httpOnly cookies
+    res.cookie("auth_token", accessToken, COOKIE_OPTIONS);
+    res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
+
+    // Create email verification token
+    const verificationToken = uuidv4();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await prisma.emailVerification.create({
+      data: {
+        userId: user.id,
+        token: verificationToken,
+        expiresAt,
+      },
+    });
+
+    // Send verification email (async, don't wait)
+    sendVerificationEmail(user.email, verificationToken, user.name || undefined).catch(console.error);
+
+    // Also send legacy welcome email
     sendWelcomeEmail({ email: user.email, name: user.name || undefined });
 
     return res.status(201).json({
-      message: "Registration successful",
+      message: "Registration successful. Please check your email to verify your account.",
       user,
-      token,
     });
   } catch (error) {
     console.error("Register error:", error);
@@ -85,10 +119,54 @@ router.post("/register", async (req, res: Response) => {
   }
 });
 
+// In-memory login attempt tracking (use Redis in production for distributed systems)
+const loginAttempts = new Map<string, { count: number; lockedUntil: number | null }>();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+
+function checkAccountLockout(email: string): { locked: boolean; remainingTime?: number } {
+  const attempts = loginAttempts.get(email);
+  if (!attempts) return { locked: false };
+  
+  if (attempts.lockedUntil && Date.now() < attempts.lockedUntil) {
+    return { locked: true, remainingTime: Math.ceil((attempts.lockedUntil - Date.now()) / 1000 / 60) };
+  }
+  
+  // Reset if lockout expired
+  if (attempts.lockedUntil && Date.now() >= attempts.lockedUntil) {
+    loginAttempts.delete(email);
+  }
+  
+  return { locked: false };
+}
+
+function recordFailedLogin(email: string): void {
+  const attempts = loginAttempts.get(email) || { count: 0, lockedUntil: null };
+  attempts.count += 1;
+  
+  if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
+    attempts.lockedUntil = Date.now() + LOCKOUT_DURATION;
+  }
+  
+  loginAttempts.set(email, attempts);
+}
+
+function clearLoginAttempts(email: string): void {
+  loginAttempts.delete(email);
+}
+
 // POST /api/auth/login
 router.post("/login", async (req, res: Response) => {
   try {
     const body = LoginSchema.parse(req.body);
+
+    // Check for account lockout
+    const lockoutStatus = checkAccountLockout(body.email);
+    if (lockoutStatus.locked) {
+      return res.status(429).json({ 
+        error: `Account temporarily locked. Try again in ${lockoutStatus.remainingTime} minutes.` 
+      });
+    }
 
     // Find user
     const user = await prisma.user.findUnique({
@@ -97,22 +175,31 @@ router.post("/login", async (req, res: Response) => {
     });
 
     if (!user) {
+      recordFailedLogin(body.email);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
     // Verify password
     const validPassword = await bcrypt.compare(body.password, user.password);
     if (!validPassword) {
+      recordFailedLogin(body.email);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    // Generate token
-    const token = generateToken({ id: user.id, email: user.email, role: user.role });
+    // Clear failed attempts on successful login
+    clearLoginAttempts(body.email);
+
+    // Generate tokens
+    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role });
+    const refreshToken = await createRefreshToken(user.id);
+
+    // Set httpOnly cookies
+    res.cookie("auth_token", accessToken, COOKIE_OPTIONS);
+    res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
 
     return res.json({
       message: "Login successful",
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
-      token,
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -265,6 +352,149 @@ router.post("/change-password", authenticate, async (req: AuthRequest, res: Resp
     console.error("Change password error:", error);
     return res.status(500).json({ error: "Password change failed" });
   }
+});
+
+// POST /api/auth/verify-email
+router.post("/verify-email", async (req, res: Response) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ error: "Verification token is required" });
+    }
+
+    // Find verification record
+    const verification = await prisma.emailVerification.findUnique({
+      where: { token },
+      include: { user: true },
+    });
+
+    if (!verification) {
+      return res.status(400).json({ error: "Invalid verification token" });
+    }
+
+    if (verification.expiresAt < new Date()) {
+      await prisma.emailVerification.delete({ where: { id: verification.id } });
+      return res.status(400).json({ error: "Verification token has expired. Please request a new one." });
+    }
+
+    // Update user and delete token
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: verification.userId },
+        data: { emailVerified: true },
+      }),
+      prisma.emailVerification.delete({ where: { id: verification.id } }),
+    ]);
+
+    // Send welcome email
+    sendVerifiedWelcome(verification.user.email, verification.user.name || undefined).catch(console.error);
+
+    return res.json({ message: "Email verified successfully! Welcome to Adult Store Kenya." });
+  } catch (error) {
+    console.error("Verify email error:", error);
+    return res.status(500).json({ error: "Verification failed" });
+  }
+});
+
+// POST /api/auth/resend-verification
+router.post("/resend-verification", authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.emailVerified) {
+      return res.json({ message: "Email is already verified" });
+    }
+
+    // Delete existing token if any
+    await prisma.emailVerification.deleteMany({ where: { userId: user.id } });
+
+    // Create new verification token
+    const verificationToken = uuidv4();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await prisma.emailVerification.create({
+      data: {
+        userId: user.id,
+        token: verificationToken,
+        expiresAt,
+      },
+    });
+
+    // Send verification email
+    await sendVerificationEmail(user.email, verificationToken, user.name || undefined);
+
+    return res.json({ message: "Verification email sent. Please check your inbox." });
+  } catch (error) {
+    console.error("Resend verification error:", error);
+    return res.status(500).json({ error: "Failed to resend verification email" });
+  }
+});
+
+// POST /api/auth/logout
+router.post("/logout", async (req, res: Response) => {
+  // Invalidate refresh token if present
+  const refreshToken = req.cookies?.refresh_token;
+  if (refreshToken) {
+    await prisma.refreshToken.deleteMany({ where: { token: refreshToken } }).catch(() => {});
+  }
+  
+  res.clearCookie("auth_token", { path: "/" });
+  res.clearCookie("refresh_token", { path: "/api/auth" });
+  return res.json({ message: "Logged out successfully" });
+});
+
+// POST /api/auth/logout-all - Logout from all devices
+router.post("/logout-all", authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    await invalidateAllRefreshTokens(req.user!.id);
+    res.clearCookie("auth_token", { path: "/" });
+    res.clearCookie("refresh_token", { path: "/api/auth" });
+    return res.json({ message: "Logged out from all devices" });
+  } catch (error) {
+    console.error("Logout all error:", error);
+    return res.status(500).json({ error: "Logout failed" });
+  }
+});
+
+// POST /api/auth/refresh - Refresh access token
+router.post("/refresh", async (req, res: Response) => {
+  try {
+    const refreshToken = req.cookies?.refresh_token;
+    
+    if (!refreshToken) {
+      return res.status(401).json({ error: "No refresh token" });
+    }
+    
+    const result = await rotateRefreshToken(refreshToken);
+    
+    if (!result) {
+      res.clearCookie("auth_token", { path: "/" });
+      res.clearCookie("refresh_token", { path: "/api/auth" });
+      return res.status(401).json({ error: "Invalid or expired refresh token" });
+    }
+    
+    // Set new cookies
+    res.cookie("auth_token", result.accessToken, COOKIE_OPTIONS);
+    res.cookie("refresh_token", result.refreshToken, REFRESH_COOKIE_OPTIONS);
+    
+    return res.json({ 
+      message: "Token refreshed",
+      user: result.user,
+    });
+  } catch (error) {
+    console.error("Refresh token error:", error);
+    return res.status(500).json({ error: "Token refresh failed" });
+  }
+});
+
+// GET /api/auth/check - Check if user is authenticated (for frontend)
+router.get("/check", authenticate, async (req: AuthRequest, res: Response) => {
+  return res.json({ authenticated: true, user: req.user });
 });
 
 export default router;

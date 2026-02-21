@@ -11,57 +11,62 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   isAdmin: boolean;
+  isAuthenticated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
+// Helper to get CSRF token from cookie
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("token");
-    if (storedToken) {
-      setToken(storedToken);
-      fetchUser(storedToken);
-    } else {
-      setIsLoading(false);
-    }
+    checkAuth();
   }, []);
 
-  const fetchUser = async (authToken: string) => {
+  const checkAuth = async () => {
     try {
       const res = await fetch(`${API_URL}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        credentials: "include",
       });
       if (res.ok) {
         const data = await res.json();
         setUser(data);
       } else {
-        localStorage.removeItem("token");
-        setToken(null);
+        setUser(null);
       }
     } catch (error) {
-      console.error("Failed to fetch user:", error);
+      console.error("Failed to check auth:", error);
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
   };
 
   const login = async (email: string, password: string) => {
+    const csrfToken = getCsrfToken();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (csrfToken) headers["x-csrf-token"] = csrfToken;
+    
     const res = await fetch(`${API_URL}/api/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ email, password }),
+      credentials: "include",
     });
 
     const data = await res.json();
@@ -69,16 +74,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(data.error || "Login failed");
     }
 
-    localStorage.setItem("token", data.token);
-    setToken(data.token);
     setUser(data.user);
   };
 
   const register = async (email: string, password: string, name?: string) => {
+    const csrfToken = getCsrfToken();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (csrfToken) headers["x-csrf-token"] = csrfToken;
+    
     const res = await fetch(`${API_URL}/api/auth/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ email, password, name }),
+      credentials: "include",
     });
 
     const data = await res.json();
@@ -86,21 +94,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(data.error || "Registration failed");
     }
 
-    localStorage.setItem("token", data.token);
-    setToken(data.token);
     setUser(data.user);
   };
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    setToken(null);
+  const logout = async () => {
+    try {
+      const csrfToken = getCsrfToken();
+      const headers: Record<string, string> = {};
+      if (csrfToken) headers["x-csrf-token"] = csrfToken;
+      
+      await fetch(`${API_URL}/api/auth/logout`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+      });
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
     setUser(null);
   };
 
   const isAdmin = user?.role === "ADMIN" || user?.role === "MANAGER";
+  const isAuthenticated = !!user;
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout, isAdmin, isAuthenticated }}>
       {children}
     </AuthContext.Provider>
   );

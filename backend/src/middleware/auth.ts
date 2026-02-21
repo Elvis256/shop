@@ -1,8 +1,32 @@
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { Request, Response, NextFunction } from "express";
 import prisma from "../lib/prisma";
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+// SECURITY: Require JWT_SECRET in production - no fallback allowed
+const envSecret = process.env.JWT_SECRET;
+if (!envSecret) {
+  throw new Error("FATAL: JWT_SECRET environment variable is required");
+}
+const JWT_SECRET: string = envSecret;
+
+// Cookie configuration
+const isProduction = process.env.NODE_ENV === "production";
+export const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "strict" as const : "lax" as const,
+  maxAge: 15 * 60 * 1000, // 15 minutes for access token
+  path: "/",
+};
+
+export const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "strict" as const : "lax" as const,
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days for refresh token
+  path: "/api/auth", // Only sent to auth endpoints
+};
 
 export interface AuthRequest extends Request {
   user?: {
@@ -12,9 +36,14 @@ export interface AuthRequest extends Request {
   };
 }
 
+// Generate short-lived access token (15 min)
 export function generateToken(payload: { id: string; email: string; role: string }): string {
-  const expiresIn = process.env.JWT_EXPIRES_IN || "7d";
-  return jwt.sign(payload, JWT_SECRET, { expiresIn } as jwt.SignOptions);
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "15m" } as jwt.SignOptions);
+}
+
+// Generate long-lived refresh token
+export function generateRefreshToken(): string {
+  return crypto.randomBytes(64).toString("hex");
 }
 
 export function verifyToken(token: string): { id: string; email: string; role: string } | null {
@@ -25,14 +54,75 @@ export function verifyToken(token: string): { id: string; email: string; role: s
   }
 }
 
+// Store refresh token in database
+export async function createRefreshToken(userId: string): Promise<string> {
+  const token = generateRefreshToken();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  
+  await prisma.refreshToken.create({
+    data: {
+      userId,
+      token,
+      expiresAt,
+    },
+  });
+  
+  return token;
+}
+
+// Validate and rotate refresh token
+export async function rotateRefreshToken(oldToken: string): Promise<{ accessToken: string; refreshToken: string; user: { id: string; email: string; role: string } } | null> {
+  const tokenRecord = await prisma.refreshToken.findUnique({
+    where: { token: oldToken },
+    include: { user: { select: { id: true, email: true, role: true } } },
+  });
+  
+  if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
+    // Delete expired/invalid token
+    if (tokenRecord) {
+      await prisma.refreshToken.delete({ where: { id: tokenRecord.id } });
+    }
+    return null;
+  }
+  
+  // Rotate: delete old token, create new one
+  await prisma.refreshToken.delete({ where: { id: tokenRecord.id } });
+  
+  const newRefreshToken = await createRefreshToken(tokenRecord.userId);
+  const accessToken = generateToken({
+    id: tokenRecord.user.id,
+    email: tokenRecord.user.email,
+    role: tokenRecord.user.role,
+  });
+  
+  return {
+    accessToken,
+    refreshToken: newRefreshToken,
+    user: tokenRecord.user,
+  };
+}
+
+// Invalidate all refresh tokens for a user (logout all devices)
+export async function invalidateAllRefreshTokens(userId: string): Promise<void> {
+  await prisma.refreshToken.deleteMany({ where: { userId } });
+}
+
 export async function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith("Bearer ")) {
+    // Try cookie first, then Authorization header (for backward compatibility/API clients)
+    let token = req.cookies?.auth_token;
+    
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        token = authHeader.split(" ")[1];
+      }
+    }
+    
+    if (!token) {
       return res.status(401).json({ error: "No token provided" });
     }
 
-    const token = authHeader.split(" ")[1];
     const decoded = verifyToken(token);
 
     if (!decoded) {
@@ -58,9 +148,17 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
 
 export async function optionalAuth(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.split(" ")[1];
+    // Try cookie first, then Authorization header
+    let token = req.cookies?.auth_token;
+    
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        token = authHeader.split(" ")[1];
+      }
+    }
+    
+    if (token) {
       const decoded = verifyToken(token);
       if (decoded) {
         req.user = decoded;

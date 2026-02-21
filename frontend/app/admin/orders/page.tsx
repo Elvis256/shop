@@ -13,7 +13,7 @@ interface Order {
   totalAmount: number;
   status: string;
   paymentStatus: string;
-  paymentMethod: string;
+  paymentMethod: string | null;
   itemCount: number;
   createdAt: string;
 }

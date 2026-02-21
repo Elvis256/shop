@@ -15,15 +15,37 @@ model User {
   phone         String?
   role          UserRole @default(CUSTOMER)
   emailVerified Boolean  @default(false)
+  wishlistPin   String?  // 4-6 digit PIN for wishlist privacy
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
-  orders        Order[]
-  wishlist      WishlistItem[]
-  reviews       Review[]
-  addresses     Address[]
-  cart          Cart?
-  passwordReset PasswordReset?
+  orders            Order[]
+  wishlist          WishlistItem[]
+  reviews           Review[]
+  addresses         Address[]
+  cart              Cart?
+  passwordReset     PasswordReset?
+  emailVerification EmailVerification?
+  refreshTokens     RefreshToken[]
+  activityLogs      ActivityLog[]
+  returnRequests    ReturnRequest[]
+  supportTickets    SupportTicket[]
+  loyaltyAccount    LoyaltyAccount?
+  referralCode      ReferralCode?
+  referredBy        Referral?        @relation("ReferredUser")
+  twoFactorAuth     TwoFactorAuth?
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model PasswordReset {
@@ -33,6 +55,25 @@ model PasswordReset {
   token     String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+}
+
+model EmailVerification {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Newsletter {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  isSubscribed Boolean  @default(true)
+  source       String?  // where they signed up (footer, popup, checkout)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Address {
@@ -45,7 +86,7 @@ model Address {
   city       String
   county     String?
   postalCode String?
-  country    String  @default("Kenya")
+  country    String  @default("Uganda")
   isDefault  Boolean @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -58,7 +99,7 @@ model Product {
   description String?  @db.Text
   price       Decimal  @db.Decimal(10, 2)
   comparePrice Decimal? @db.Decimal(10, 2)
-  currency    String   @default("KES")
+  currency    String   @default("UGX")
   rating      Decimal  @default(0) @db.Decimal(2, 1)
   reviewCount Int      @default(0)
   sku         String?  @unique
@@ -66,6 +107,7 @@ model Product {
   
   // Inventory
   stock           Int     @default(0)
+  reservedStock   Int     @default(0) // Stock reserved during checkout
   lowStockAlert   Int     @default(5)
   trackInventory  Boolean @default(true)
   allowBackorder  Boolean @default(false)
@@ -82,6 +124,15 @@ model Product {
   status      ProductStatus @default(DRAFT)
   featured    Boolean       @default(false)
   
+  // Badges & Highlights
+  isNew         Boolean   @default(false)
+  isBestseller  Boolean   @default(false)
+  badgeText     String?   // Custom badge like "Limited Edition"
+  
+  // Variants
+  hasVariants   Boolean   @default(false)
+  variants      ProductVariant[]
+  
   // SEO
   metaTitle       String?
   metaDescription String?
@@ -93,6 +144,27 @@ model Product {
   orderItems  OrderItem[]
   wishlist    WishlistItem[]
   reviews     Review[]
+}
+
+model ProductVariant {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name        String   // e.g., "Large / Pink"
+  sku         String?  @unique
+  price       Decimal? @db.Decimal(10, 2) // Override product price if set
+  stock       Int      @default(0)
+  reservedStock Int    @default(0) // Stock reserved during checkout
+  
+  // Variant attributes
+  size        String?  // S, M, L, XL, etc.
+  color       String?  // Pink, Black, etc.
+  material    String?  // Silicone, Leather, etc.
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([productId])
 }
 
 model ProductImage {
@@ -161,7 +233,7 @@ model Order {
   discount        Decimal     @default(0) @db.Decimal(10, 2)
   tax             Decimal     @default(0) @db.Decimal(10, 2)
   totalAmount     Decimal     @db.Decimal(10, 2)
-  currency        String      @default("KES")
+  currency        String      @default("UGX")
   
   // Status
   status          OrderStatus @default(PENDING)
@@ -178,6 +250,9 @@ model Order {
   items           OrderItem[]
   payments        Payment[]
   timeline        OrderEvent[]
+  mobileMoneyTxns MobileMoneyTransaction[]
+  stockReservations StockReservation[]
+  returnRequests  ReturnRequest[]
   
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -203,6 +278,22 @@ model OrderEvent {
   createdAt DateTime @default(now())
 }
 
+// Stock reservation during checkout (expires after timeout)
+model StockReservation {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  variantId   String?
+  quantity    Int
+  expiresAt   DateTime
+  released    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  @@index([expiresAt, released])
+  @@index([orderId])
+}
+
 model Payment {
   id        String        @id @default(cuid())
   orderId   String
@@ -213,7 +304,7 @@ model Payment {
   flwTxId   String?
   flwRef    String?
   amount    Decimal       @db.Decimal(10, 2)
-  currency  String        @default("KES")
+  currency  String        @default("UGX")
   metadata  Json?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
@@ -271,11 +362,90 @@ model Setting {
   value String @db.Text
 }
 
+// Blog System
+model BlogPost {
+  id            String   @id @default(cuid())
+  title         String
+  slug          String   @unique
+  excerpt       String?  @db.Text
+  content       String   @db.Text
+  featuredImage String?
+  author        String?
+  tags          String[]
+  category      String?
+  
+  status        BlogStatus @default(DRAFT)
+  featured      Boolean    @default(false)
+  
+  publishedAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+// Gift Cards
+model GiftCard {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  initialValue  Decimal  @db.Decimal(10, 2)
+  currentValue  Decimal  @db.Decimal(10, 2)
+  currency      String   @default("UGX")
+  
+  purchaserEmail String?
+  purchaserName  String?
+  recipientEmail String?
+  recipientName  String?
+  message        String?  @db.Text
+  
+  isActive      Boolean  @default(true)
+  expiresAt     DateTime?
+  
+  redemptions   GiftCardRedemption[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model GiftCardRedemption {
+  id          String   @id @default(cuid())
+  giftCardId  String
+  giftCard    GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  orderId     String?
+  amount      Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+}
+
+// Promotional Banners
+model Banner {
+  id            String   @id @default(cuid())
+  title         String
+  subtitle      String?
+  imageUrl      String
+  mobileImageUrl String?
+  linkUrl       String?
+  buttonText    String?
+  
+  position      String   @default("home-hero") // home-hero, home-secondary, category-top
+  sortOrder     Int      @default(0)
+  
+  isActive      Boolean  @default(true)
+  startDate     DateTime?
+  endDate       DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
 // Enums
 enum UserRole {
   CUSTOMER
   ADMIN
   MANAGER
+}
+
+enum BlogStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }
 
 enum ProductStatus {
@@ -309,4 +479,390 @@ enum PaymentMethod {
 enum DiscountType {
   PERCENTAGE
   FIXED
+}
+
+// Multi-currency Support
+model Currency {
+  id            String   @id @default(cuid())
+  code          String   @unique // USD, UGX, KES, TZS
+  name          String   // US Dollar, Ugandan Shilling
+  symbol        String   // $, USh, KSh, TSh
+  exchangeRate  Decimal  @db.Decimal(15, 6) // Rate to base currency (UGX)
+  isBase        Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  decimalPlaces Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Payment Providers (Mobile Money, etc.)
+model PaymentProvider {
+  id            String   @id @default(cuid())
+  name          String   // MTN Mobile Money, Airtel Money
+  code          String   @unique // mtn_ug, airtel_ug, flutterwave
+  type          PaymentProviderType
+  
+  // API Configuration (encrypted in practice)
+  apiKey        String?
+  apiSecret     String?
+  merchantId    String?
+  callbackUrl   String?
+  
+  // Supported currencies
+  currencies    String[] // ["UGX", "USD"]
+  
+  // Fees
+  feeType       DiscountType @default(PERCENTAGE)
+  feeValue      Decimal   @db.Decimal(10, 4) @default(0)
+  minFee        Decimal?  @db.Decimal(10, 2)
+  maxFee        Decimal?  @db.Decimal(10, 2)
+  
+  isActive      Boolean  @default(true)
+  isTest        Boolean  @default(true) // Test/sandbox mode
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Mobile Money Transactions
+model MobileMoneyTransaction {
+  id              String   @id @default(cuid())
+  orderId         String?
+  order           Order?   @relation(fields: [orderId], references: [id])
+  
+  provider        String   // mtn_ug, airtel_ug
+  phoneNumber     String
+  amount          Decimal  @db.Decimal(10, 2)
+  currency        String   @default("UGX")
+  
+  externalRef     String?  // Provider's reference
+  transactionId   String?  // Provider's transaction ID
+  
+  status          MobileMoneyStatus @default(PENDING)
+  statusMessage   String?
+  
+  initiatedAt     DateTime @default(now())
+  completedAt     DateTime?
+  
+  @@index([orderId])
+  @@index([externalRef])
+}
+
+enum PaymentProviderType {
+  MOBILE_MONEY
+  CARD
+  BANK_TRANSFER
+  WALLET
+}
+
+enum MobileMoneyStatus {
+  PENDING
+  PROCESSING
+  SUCCESSFUL
+  FAILED
+  CANCELLED
+  TIMEOUT
+}
+
+// Webhook Idempotency Tracking
+model ProcessedWebhook {
+  id          String   @id @default(cuid())
+  webhookId   String   @unique // Unique identifier from webhook payload (e.g., flw_ref)
+  provider    String   // flutterwave, etc.
+  eventType   String   // charge.completed, etc.
+  processedAt DateTime @default(now())
+  
+  @@index([provider, webhookId])
+}
+
+// Activity Log for Admin Audit Trail
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action      String   // CREATE, UPDATE, DELETE, LOGIN, LOGOUT, etc.
+  entityType  String   // Product, Order, User, Coupon, etc.
+  entityId    String?  // ID of the affected entity
+  description String   // Human-readable description
+  metadata    Json?    // Additional data (old values, new values, etc.)
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// Return/Refund System
+model ReturnRequest {
+  id            String        @id @default(cuid())
+  orderId       String
+  order         Order         @relation(fields: [orderId], references: [id])
+  userId        String?
+  user          User?         @relation(fields: [userId], references: [id])
+  
+  reason        ReturnReason
+  description   String?       @db.Text
+  status        ReturnStatus  @default(PENDING)
+  
+  // Admin response
+  adminNotes    String?       @db.Text
+  refundAmount  Decimal?      @db.Decimal(10, 2)
+  refundMethod  String?       // original_payment, store_credit, bank_transfer
+  
+  // Tracking
+  returnLabel   String?       // Return shipping label URL
+  trackingNumber String?
+  
+  // Items being returned
+  items         ReturnItem[]
+  
+  processedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  @@index([orderId])
+  @@index([userId])
+  @@index([status])
+}
+
+model ReturnItem {
+  id              String        @id @default(cuid())
+  returnRequestId String
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  orderItemId     String
+  quantity        Int
+  reason          String?
+  condition       String?       // unopened, opened, damaged
+  
+  @@index([returnRequestId])
+}
+
+enum ReturnReason {
+  DEFECTIVE
+  WRONG_ITEM
+  NOT_AS_DESCRIBED
+  CHANGED_MIND
+  ARRIVED_LATE
+  OTHER
+}
+
+enum ReturnStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SHIPPED
+  RECEIVED
+  REFUNDED
+  CLOSED
+}
+
+// Support Ticket System
+model SupportTicket {
+  id            String        @id @default(cuid())
+  ticketNumber  String        @unique
+  userId        String?
+  user          User?         @relation(fields: [userId], references: [id])
+  
+  email         String
+  name          String
+  subject       String
+  category      TicketCategory
+  priority      TicketPriority @default(MEDIUM)
+  status        TicketStatus   @default(OPEN)
+  
+  orderId       String?       // Related order if applicable
+  
+  messages      TicketMessage[]
+  
+  assignedTo    String?       // Admin user ID
+  resolvedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  @@index([userId])
+  @@index([status])
+  @@index([ticketNumber])
+}
+
+model TicketMessage {
+  id          String        @id @default(cuid())
+  ticketId    String
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  senderId    String?       // User ID (null for customer if guest)
+  senderType  String        // customer, admin
+  senderName  String
+  message     String        @db.Text
+  attachments String[]      // URLs to attachments
+  
+  isInternal  Boolean       @default(false) // Internal admin notes
+  
+  createdAt   DateTime      @default(now())
+  
+  @@index([ticketId])
+}
+
+enum TicketCategory {
+  ORDER_ISSUE
+  SHIPPING
+  RETURNS
+  PAYMENT
+  PRODUCT_INQUIRY
+  TECHNICAL
+  OTHER
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+// Loyalty Points System
+model LoyaltyAccount {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  points        Int      @default(0)
+  lifetimePoints Int     @default(0)
+  tier          LoyaltyTier @default(BRONZE)
+  
+  transactions  LoyaltyTransaction[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model LoyaltyTransaction {
+  id            String          @id @default(cuid())
+  accountId     String
+  account       LoyaltyAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  type          LoyaltyTxType
+  points        Int             // Positive for earn, negative for redeem
+  description   String
+  
+  orderId       String?         // Related order
+  expiresAt     DateTime?       // Points expiry
+  
+  createdAt     DateTime        @default(now())
+  
+  @@index([accountId])
+}
+
+enum LoyaltyTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum LoyaltyTxType {
+  PURCHASE_EARN
+  REFERRAL_BONUS
+  SIGNUP_BONUS
+  REDEMPTION
+  EXPIRY
+  ADJUSTMENT
+}
+
+// Referral System
+model ReferralCode {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  code          String   @unique
+  usageCount    Int      @default(0)
+  totalEarnings Decimal  @default(0) @db.Decimal(10, 2)
+  
+  referrals     Referral[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Referral {
+  id              String       @id @default(cuid())
+  referralCodeId  String
+  referralCode    ReferralCode @relation(fields: [referralCodeId], references: [id], onDelete: Cascade)
+  
+  referredUserId  String       @unique
+  referredUser    User         @relation("ReferredUser", fields: [referredUserId], references: [id])
+  
+  status          ReferralStatus @default(PENDING)
+  rewardAmount    Decimal?     @db.Decimal(10, 2)
+  rewardPaid      Boolean      @default(false)
+  
+  firstOrderId    String?      // The qualifying order
+  firstOrderAt    DateTime?
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  @@index([referralCodeId])
+}
+
+enum ReferralStatus {
+  PENDING       // Signed up but no order
+  QUALIFIED     // Made first order
+  REWARDED      // Reward given to referrer
+  EXPIRED
+}
+
+// Abandoned Cart Tracking
+model AbandonedCart {
+  id            String   @id @default(cuid())
+  cartId        String   @unique
+  userId        String?
+  email         String?
+  
+  cartData      Json     // Snapshot of cart items
+  cartValue     Decimal  @db.Decimal(10, 2)
+  currency      String   @default("KES")
+  
+  // Email tracking
+  email1SentAt  DateTime?
+  email2SentAt  DateTime?
+  email3SentAt  DateTime?
+  
+  recoveredAt   DateTime?
+  recoveredOrderId String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([email])
+  @@index([createdAt])
+}
+
+// Two-Factor Authentication
+model TwoFactorAuth {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  secret        String   // Encrypted TOTP secret
+  isEnabled     Boolean  @default(false)
+  
+  // Backup codes
+  backupCodes   String[] // Hashed backup codes
+  
+  // Recovery
+  lastUsedAt    DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

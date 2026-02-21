@@ -7,8 +7,8 @@ import { Search, Mail, Package, Star } from "lucide-react";
 interface Customer {
   id: string;
   email: string;
-  name: string;
-  phone: string;
+  name: string | null;
+  phone: string | null;
   orderCount: number;
   totalSpent: number;
   createdAt: string;

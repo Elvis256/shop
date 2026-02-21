@@ -8,7 +8,12 @@ const tabs = [
   { id: "reviews", label: "Reviews" },
 ];
 
-export default function ProductTabs() {
+interface ProductTabsProps {
+  description?: string | null;
+  productId?: string;
+}
+
+export default function ProductTabs({ description, productId }: ProductTabsProps) {
   const [activeTab, setActiveTab] = useState("details");
 
   return (
@@ -36,8 +41,7 @@ export default function ProductTabs() {
           <div className="prose max-w-none">
             <h3>Product Description</h3>
             <p className="text-text-muted">
-              Experience premium quality with this carefully designed product. Made from
-              body-safe materials, this item offers exceptional comfort and durability.
+              {description || "Experience premium quality with this carefully designed product. Made from body-safe materials, this item offers exceptional comfort and durability."}
             </p>
             <h4>Features</h4>
             <ul className="text-text-muted space-y-2">

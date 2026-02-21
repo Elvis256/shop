@@ -176,4 +176,107 @@ router.delete("/:cartId/items/:itemId", async (req: Request, res: Response) => {
   }
 });
 
+// Schema for cart sync
+const SyncCartSchema = z.object({
+  items: z.array(z.object({
+    productId: z.string(),
+    quantity: z.number().int().positive(),
+  })),
+});
+
+// POST /api/cart/sync - Sync localStorage cart items to a new/existing cart
+router.post("/sync", async (req: Request, res: Response) => {
+  try {
+    const { items } = SyncCartSchema.parse(req.body);
+
+    if (items.length === 0) {
+      const cart = await prisma.cart.create({ data: {} });
+      return res.json({ id: cart.id, items: [], total: 0, itemCount: 0 });
+    }
+
+    // Validate all products exist and have stock
+    const productIds = items.map(item => item.productId);
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds }, status: "ACTIVE" },
+      include: { images: { take: 1, orderBy: { position: 'asc' } } },
+    });
+
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    // Filter to valid products with stock
+    const validItems = items.filter(item => {
+      const product = productMap.get(item.productId);
+      return product && product.stock > 0;
+    }).map(item => {
+      const product = productMap.get(item.productId)!;
+      // Cap quantity to available stock
+      const quantity = Math.min(item.quantity, product.stock);
+      return { productId: item.productId, quantity };
+    });
+
+    // Create cart with items in a transaction
+    const cart = await prisma.$transaction(async (tx) => {
+      const newCart = await tx.cart.create({ data: {} });
+      
+      if (validItems.length > 0) {
+        await tx.cartItem.createMany({
+          data: validItems.map(item => ({
+            cartId: newCart.id,
+            productId: item.productId,
+            quantity: item.quantity,
+          })),
+        });
+      }
+
+      return tx.cart.findUnique({
+        where: { id: newCart.id },
+        include: {
+          items: {
+            include: {
+              product: {
+                include: { images: { take: 1, orderBy: { position: 'asc' } } },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    if (!cart) {
+      return res.status(500).json({ error: "Failed to create cart" });
+    }
+
+    const total = cart.items.reduce((sum: number, item) => {
+      return sum + Number(item.product.price) * item.quantity;
+    }, 0);
+
+    return res.json({
+      id: cart.id,
+      items: cart.items.map((item) => ({
+        id: item.id,
+        productId: item.productId,
+        product: {
+          id: item.product.id,
+          name: item.product.name,
+          slug: item.product.slug,
+          price: item.product.price,
+          currency: item.product.currency,
+          imageUrl: item.product.images[0]?.url || null,
+          stock: item.product.stock,
+        },
+        quantity: item.quantity,
+        subtotal: Number(item.product.price) * item.quantity,
+      })),
+      total,
+      itemCount: cart.items.reduce((sum: number, item) => sum + item.quantity, 0),
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid cart data", details: error.errors });
+    }
+    console.error("Sync cart error:", error);
+    return res.status(500).json({ error: "Failed to sync cart" });
+  }
+});
+
 export default router;

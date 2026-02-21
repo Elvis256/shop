@@ -1,4 +1,5 @@
 import axios from "axios";
+import { withRetryAndCircuitBreaker } from "../utils/retry";
 
 type CreatePaymentInput = {
   tx_ref: string;
@@ -27,6 +28,29 @@ type FlutterwaveResponse = {
 };
 
 const FLW_BASE_URL = "https://api.flutterwave.com/v3";
+
+// Retry options for Flutterwave API calls
+const FLUTTERWAVE_RETRY_OPTIONS = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 5000,
+  shouldRetry: (error: any) => {
+    // Retry on network errors
+    if (error?.code === "ECONNREFUSED" || error?.code === "ETIMEDOUT" || error?.code === "ENOTFOUND") {
+      return true;
+    }
+    // Retry on 5xx server errors
+    const status = error?.response?.status;
+    if (status && status >= 500) {
+      return true;
+    }
+    // Retry on rate limiting
+    if (status === 429) {
+      return true;
+    }
+    return false;
+  },
+};
 
 export async function createFlutterwavePayment(
   input: CreatePaymentInput
@@ -63,15 +87,21 @@ export async function createFlutterwavePayment(
     }
 
     try {
-      const response = await axios.post<FlutterwaveResponse>(
-        `${FLW_BASE_URL}${endpoint}`,
-        mobileMoneyPayload,
-        { headers }
+      return await withRetryAndCircuitBreaker(
+        "flutterwave-mobile-money",
+        async () => {
+          const response = await axios.post<FlutterwaveResponse>(
+            `${FLW_BASE_URL}${endpoint}`,
+            mobileMoneyPayload,
+            { headers, timeout: 30000 }
+          );
+          return response.data;
+        },
+        FLUTTERWAVE_RETRY_OPTIONS
       );
-      return response.data;
     } catch (error: any) {
       console.error("Flutterwave mobile money error:", error.response?.data || error.message);
-      throw new Error("Mobile money payment initiation failed");
+      throw new Error("Mobile money payment initiation failed. Please try again.");
     }
   }
 
@@ -94,15 +124,21 @@ export async function createFlutterwavePayment(
   };
 
   try {
-    const response = await axios.post<FlutterwaveResponse>(
-      `${FLW_BASE_URL}/payments`,
-      payload,
-      { headers }
+    return await withRetryAndCircuitBreaker(
+      "flutterwave-card",
+      async () => {
+        const response = await axios.post<FlutterwaveResponse>(
+          `${FLW_BASE_URL}/payments`,
+          payload,
+          { headers, timeout: 30000 }
+        );
+        return response.data;
+      },
+      FLUTTERWAVE_RETRY_OPTIONS
     );
-    return response.data;
   } catch (error: any) {
     console.error("Flutterwave card payment error:", error.response?.data || error.message);
-    throw new Error("Card payment initiation failed");
+    throw new Error("Card payment initiation failed. Please try again.");
   }
 }
 
@@ -112,13 +148,19 @@ export async function verifyFlutterwaveTransaction(transactionId: string) {
   };
 
   try {
-    const response = await axios.get(
-      `${FLW_BASE_URL}/transactions/${transactionId}/verify`,
-      { headers }
+    return await withRetryAndCircuitBreaker(
+      "flutterwave-verify",
+      async () => {
+        const response = await axios.get(
+          `${FLW_BASE_URL}/transactions/${transactionId}/verify`,
+          { headers, timeout: 15000 }
+        );
+        return response.data;
+      },
+      FLUTTERWAVE_RETRY_OPTIONS
     );
-    return response.data;
   } catch (error: any) {
     console.error("Flutterwave verify error:", error.response?.data || error.message);
-    throw new Error("Transaction verification failed");
+    throw new Error("Transaction verification failed. Please try again.");
   }
 }

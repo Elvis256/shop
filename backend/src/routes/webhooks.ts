@@ -1,8 +1,6 @@
 import { Router, Request, Response } from "express";
 import { verifyFlutterwaveHash } from "../utils/verifyFlutterwave";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "../lib/prisma";
 const router = Router();
 
 // POST /api/webhooks/flutterwave
@@ -19,6 +17,16 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
 
     if (event === "charge.completed") {
       const { tx_ref, status, flw_ref, amount, currency } = data;
+
+      // Idempotency check - prevent duplicate processing
+      const existingWebhook = await prisma.processedWebhook.findUnique({
+        where: { webhookId: flw_ref },
+      });
+
+      if (existingWebhook) {
+        console.log(`Webhook ${flw_ref} already processed, skipping`);
+        return res.status(200).json({ received: true, duplicate: true });
+      }
 
       // Find the order
       const order = await prisma.order.findUnique({
@@ -37,36 +45,82 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
         return res.status(400).json({ error: "Amount mismatch" });
       }
 
-      // Update payment status
-      if (status === "successful") {
-        await prisma.payment.updateMany({
-          where: { orderId: tx_ref },
+      // Process webhook in a transaction with idempotency record
+      await prisma.$transaction(async (tx) => {
+        // Record webhook as processed first (idempotency)
+        await tx.processedWebhook.create({
           data: {
-            status: "SUCCESSFUL",
-            flwTxId: flw_ref,
+            webhookId: flw_ref,
+            provider: "flutterwave",
+            eventType: event,
           },
         });
 
-        // Update order status
-        await prisma.order.update({
-          where: { id: tx_ref },
-          data: { status: "CONFIRMED", paymentStatus: "SUCCESSFUL" },
+        // Get stock reservations for this order
+        const reservations = await tx.stockReservation.findMany({
+          where: { orderId: tx_ref, released: false },
         });
 
-        console.log(`✅ Order ${tx_ref} marked as CONFIRMED`);
-      } else {
-        await prisma.payment.updateMany({
-          where: { orderId: tx_ref },
-          data: { status: "FAILED" },
-        });
+        if (status === "successful") {
+          await tx.payment.updateMany({
+            where: { orderId: tx_ref },
+            data: {
+              status: "SUCCESSFUL",
+              flwTxId: flw_ref,
+            },
+          });
 
-        await prisma.order.update({
-          where: { id: tx_ref },
-          data: { status: "CANCELLED", paymentStatus: "FAILED" },
-        });
+          await tx.order.update({
+            where: { id: tx_ref },
+            data: { status: "CONFIRMED", paymentStatus: "SUCCESSFUL" },
+          });
 
-        console.log(`❌ Order ${tx_ref} payment failed`);
-      }
+          // Finalize stock: decrement actual stock, release reservation
+          for (const reservation of reservations) {
+            await tx.product.update({
+              where: { id: reservation.productId },
+              data: {
+                stock: { decrement: reservation.quantity },
+                reservedStock: { decrement: reservation.quantity },
+              },
+            });
+            
+            await tx.stockReservation.update({
+              where: { id: reservation.id },
+              data: { released: true },
+            });
+          }
+
+          console.log(`✅ Order ${tx_ref} marked as CONFIRMED`);
+        } else {
+          await tx.payment.updateMany({
+            where: { orderId: tx_ref },
+            data: { status: "FAILED" },
+          });
+
+          await tx.order.update({
+            where: { id: tx_ref },
+            data: { status: "CANCELLED", paymentStatus: "FAILED" },
+          });
+
+          // Release reserved stock back to available
+          for (const reservation of reservations) {
+            await tx.product.update({
+              where: { id: reservation.productId },
+              data: {
+                reservedStock: { decrement: reservation.quantity },
+              },
+            });
+            
+            await tx.stockReservation.update({
+              where: { id: reservation.id },
+              data: { released: true },
+            });
+          }
+
+          console.log(`❌ Order ${tx_ref} payment failed`);
+        }
+      });
     }
 
     return res.status(200).json({ received: true });

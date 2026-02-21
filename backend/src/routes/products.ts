@@ -1,7 +1,6 @@
 import { Router, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../lib/prisma";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // GET /api/products
@@ -79,11 +78,16 @@ router.get("/", async (req: Request, res: Response) => {
         name: p.name,
         slug: p.slug,
         price: p.price,
+        comparePrice: p.comparePrice,
         currency: p.currency,
         rating: p.rating,
         imageUrl: p.images[0]?.url || null,
         category: p.category?.name,
         inStock: p.stock > 0,
+        stock: p.stock,
+        isNew: p.isNew,
+        isBestseller: p.isBestseller,
+        badgeText: p.badgeText,
       })),
       pagination: {
         total,
@@ -106,8 +110,9 @@ router.get("/:slug", async (req: Request, res: Response) => {
     const product = await prisma.product.findUnique({
       where: { slug },
       include: {
-        category: { select: { name: true, slug: true } },
+        category: { select: { id: true, name: true, slug: true } },
         images: { orderBy: { position: 'asc' } },
+        variants: true,
       },
     });
 
@@ -121,17 +126,82 @@ router.get("/:slug", async (req: Request, res: Response) => {
       slug: product.slug,
       description: product.description,
       price: product.price,
+      comparePrice: product.comparePrice,
       currency: product.currency,
       rating: product.rating,
+      reviewCount: product.reviewCount,
       imageUrl: product.images[0]?.url || null,
       images: product.images.map(img => img.url),
       category: product.category,
       inStock: product.stock > 0,
       stock: product.stock,
+      lowStockAlert: product.lowStockAlert,
+      isNew: product.isNew,
+      isBestseller: product.isBestseller,
+      badgeText: product.badgeText,
+      hasVariants: product.hasVariants,
+      variants: product.variants,
+      tags: product.tags,
     });
   } catch (error) {
     console.error("Get product error:", error);
     return res.status(500).json({ error: "Failed to fetch product" });
+  }
+});
+
+// GET /api/products/:slug/related
+router.get("/:slug/related", async (req: Request, res: Response) => {
+  try {
+    const { slug } = req.params;
+    const { limit = "4" } = req.query;
+
+    // Get the current product to find its category
+    const product = await prisma.product.findUnique({
+      where: { slug },
+      select: { id: true, categoryId: true, tags: true },
+    });
+
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Find related products from same category, excluding current product
+    const relatedProducts = await prisma.product.findMany({
+      where: {
+        id: { not: product.id },
+        status: "ACTIVE",
+        OR: [
+          { categoryId: product.categoryId },
+          { tags: { hasSome: product.tags } },
+        ],
+      },
+      orderBy: [
+        { isBestseller: "desc" },
+        { rating: "desc" },
+      ],
+      take: parseInt(limit as string, 10),
+      include: {
+        category: { select: { name: true } },
+        images: { take: 1, orderBy: { position: 'asc' } },
+      },
+    });
+
+    return res.json({
+      products: relatedProducts.map((p) => ({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        price: p.price,
+        comparePrice: p.comparePrice,
+        currency: p.currency,
+        rating: p.rating,
+        imageUrl: p.images[0]?.url || null,
+        category: p.category?.name,
+      })),
+    });
+  } catch (error) {
+    console.error("Get related products error:", error);
+    return res.status(500).json({ error: "Failed to fetch related products" });
   }
 });
 
