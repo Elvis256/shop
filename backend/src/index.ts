@@ -42,9 +42,11 @@ import adminCustomers from "./routes/admin/customers";
 import adminCoupons from "./routes/admin/coupons";
 import adminCategories from "./routes/admin/categories";
 import adminSettings from "./routes/admin/settings";
+import adminBlog from "./routes/admin/blog";
 import adminStaff from "./routes/adminStaff";
 import adminActivity from "./routes/adminActivity";
 import adminAuthRoutes from "./routes/adminAuth";
+import settingsRoutes from "./routes/settings";
 
 // Middleware
 import { setupSecurity } from "./middleware/security";
@@ -130,9 +132,11 @@ app.use("/api/admin/customers", adminCustomers);
 app.use("/api/admin/coupons", adminCoupons);
 app.use("/api/admin/categories", adminCategories);
 app.use("/api/admin/settings", adminSettings);
+app.use("/api/admin/blog", adminBlog);
 app.use("/api/admin/staff", adminStaff);
 app.use("/api/admin/activity", adminActivity);
 app.use("/api/admin/auth", adminAuthRoutes);
+app.use("/api/settings", settingsRoutes);
 
 // Health check
 app.get("/health", (_req, res) => {

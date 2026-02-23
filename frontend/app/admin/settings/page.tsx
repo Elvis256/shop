@@ -41,6 +41,12 @@ const settingDefinitions: Record<string, { label: string; type: string; descript
   store_address: { label: "Store Address", type: "textarea" },
   store_currency: { label: "Default Currency", type: "select", options: ["UGX", "USD", "EUR", "GBP", "KES"] },
   store_timezone: { label: "Timezone", type: "select", options: ["Africa/Kampala", "Africa/Nairobi", "UTC", "America/New_York", "Europe/London"] },
+
+  // Contact Info (used on store contact page)
+  contact_email: { label: "Support Email", type: "email", description: "Shown on the contact page" },
+  contact_phone: { label: "Support Phone", type: "tel", description: "e.g. +256 700 000 000" },
+  contact_whatsapp: { label: "WhatsApp Number", type: "text", description: "Digits only, no spaces (e.g. 256700000000)" },
+  contact_hours: { label: "Business Hours", type: "text", description: "e.g. Mon-Sat, 9am-6pm EAT" },
   
   // Payment
   payment_flutterwave_enabled: { label: "Enable Flutterwave", type: "toggle" },
@@ -138,7 +144,11 @@ export default function SettingsPage() {
   };
 
   const getCategorySettings = (category: string) => {
-    return Object.entries(settingDefinitions).filter(([key]) => key.startsWith(category + "_") || key.startsWith(category.replace("notifications", "low_stock")));
+    return Object.entries(settingDefinitions).filter(([key]) =>
+      key.startsWith(category + "_") ||
+      key.startsWith(category.replace("notifications", "low_stock")) ||
+      (category === "store" && key.startsWith("contact_"))
+    );
   };
 
   const renderSettingInput = (key: string, def: typeof settingDefinitions[string]) => {

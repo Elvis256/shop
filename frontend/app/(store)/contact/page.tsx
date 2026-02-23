@@ -1,9 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Mail, Phone, MapPin, Clock, Send, MessageCircle } from "lucide-react";
 
+interface ContactInfo {
+  email: string;
+  phone: string;
+  whatsapp: string;
+  hours: string;
+}
+
+const DEFAULTS: ContactInfo = {
+  email: "support@adultstore.com",
+  phone: "+256 700 000 000",
+  whatsapp: "256700000000",
+  hours: "Mon-Sat, 9am-6pm EAT",
+};
+
 export default function ContactPage() {
+  const [contactInfo, setContactInfo] = useState<ContactInfo>(DEFAULTS);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -12,6 +27,21 @@ export default function ContactPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/public")
+      .then(r => r.json())
+      .then(data => {
+        const s = data.settings || {};
+        setContactInfo({
+          email: s.contact_email || DEFAULTS.email,
+          phone: s.contact_phone || DEFAULTS.phone,
+          whatsapp: s.contact_whatsapp || DEFAULTS.whatsapp,
+          hours: s.contact_hours || DEFAULTS.hours,
+        });
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,7 +105,7 @@ export default function ContactPage() {
                 <div>
                   <h3 className="font-medium">Email</h3>
                   <a href="mailto:support@adultstore.com" className="text-accent hover:underline">
-                    support@adultstore.com
+                    {contactInfo.email}
                   </a>
                   <p className="text-sm text-gray-500 mt-1">We respond within 24 hours</p>
                 </div>
@@ -87,10 +117,10 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <h3 className="font-medium">Phone</h3>
-                  <a href="tel:+254700000000" className="text-accent hover:underline">
-                    +254 700 000 000
+                  <a href={`tel:${contactInfo.phone.replace(/\s/g, "")}`} className="text-accent hover:underline">
+                    {contactInfo.phone}
                   </a>
-                  <p className="text-sm text-gray-500 mt-1">Mon-Sat, 9am-6pm EAT</p>
+                  <p className="text-sm text-gray-500 mt-1">{contactInfo.hours}</p>
                 </div>
               </div>
 
@@ -101,7 +131,7 @@ export default function ContactPage() {
                 <div>
                   <h3 className="font-medium">WhatsApp</h3>
                   <a 
-                    href="https://wa.me/254700000000" 
+                    href={`https://wa.me/${contactInfo.whatsapp}`} 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="text-accent hover:underline"
@@ -118,8 +148,7 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <h3 className="font-medium">Business Hours</h3>
-                  <p className="text-gray-600">Monday - Saturday</p>
-                  <p className="text-gray-600">9:00 AM - 6:00 PM EAT</p>
+                  <p className="text-gray-600">{contactInfo.hours}</p>
                 </div>
               </div>
             </div>

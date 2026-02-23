@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChevronDown, Search } from "lucide-react";
 import Link from "next/link";
 
@@ -15,7 +15,7 @@ interface FAQCategory {
   items: FAQItem[];
 }
 
-const faqData: FAQCategory[] = [
+const DEFAULT_FAQ: FAQCategory[] = [
   {
     title: "Orders & Shipping",
     icon: "📦",
@@ -151,8 +151,24 @@ const faqData: FAQCategory[] = [
 ];
 
 export default function FAQPage() {
+  const [faqData, setFaqData] = useState<FAQCategory[]>(DEFAULT_FAQ);
   const [searchQuery, setSearchQuery] = useState("");
   const [openItems, setOpenItems] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    fetch("/api/settings/public")
+      .then(r => r.json())
+      .then(data => {
+        const raw = data.settings?.faq_items;
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) setFaqData(parsed);
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const toggleItem = (key: string) => {
     const newOpen = new Set(openItems);
