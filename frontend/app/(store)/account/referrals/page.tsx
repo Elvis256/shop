@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { ArrowLeft, Users, Gift, Copy, Check, Share2 } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
 
 interface ReferralData {
   code: string;
@@ -23,6 +24,7 @@ interface ReferralData {
 export default function ReferralsPage() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
+  const { formatPrice } = useCurrency();
   const [data, setData] = useState<ReferralData | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -114,7 +116,7 @@ export default function ReferralsPage() {
                 <div>
                   <h2 className="text-xl font-semibold mb-2">Share & Earn</h2>
                   <p className="text-sm opacity-90">
-                    Give friends 10% off their first order. Get KES 500 when they buy!
+                    Give friends 10% off their first order. Get USh 5,000 when they buy!
                   </p>
                 </div>
                 <Gift className="w-10 h-10 opacity-80" />
@@ -156,7 +158,7 @@ export default function ReferralsPage() {
               </div>
               <div className="card text-center">
                 <Gift className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold">KES {(data?.totalEarned || 0).toLocaleString()}</p>
+                <p className="text-2xl font-bold">{formatPrice(data?.totalEarned || 0)}</p>
                 <p className="text-xs text-text-muted">Total Earned</p>
               </div>
             </div>
@@ -183,7 +185,7 @@ export default function ReferralsPage() {
                   <span className="w-8 h-8 bg-accent/10 text-accent rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</span>
                   <div>
                     <p className="font-medium">You Earn Rewards</p>
-                    <p className="text-sm text-text-muted">Get KES 500 credit for each successful referral</p>
+                    <p className="text-sm text-text-muted">Get USh 5,000 credit for each successful referral</p>
                   </div>
                 </div>
               </div>
@@ -211,7 +213,7 @@ export default function ReferralsPage() {
                           {ref.status}
                         </span>
                         {ref.rewardAmount && (
-                          <p className="text-sm text-green-600 mt-1">+KES {ref.rewardAmount}</p>
+                          <p className="text-sm text-green-600 mt-1">+{formatPrice(ref.rewardAmount)}</p>
                         )}
                       </div>
                     </div>

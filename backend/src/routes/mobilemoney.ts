@@ -169,6 +169,28 @@ router.post("/callback/:provider", async (req, res) => {
     const { provider } = req.params;
     const payload = req.body;
 
+    // Validate webhook signatures
+    if (provider === "mtn_ug") {
+      const signature = req.headers["x-callback-signature"] as string | undefined;
+      const secret = process.env.MTN_WEBHOOK_SECRET;
+      if (secret && signature) {
+        const crypto = await import("crypto");
+        const expected = crypto.createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex");
+        if (signature !== expected) {
+          console.warn("[MTN Callback] Invalid signature — request rejected");
+          return res.status(401).json({ error: "Invalid signature" });
+        }
+      }
+    } else if (provider === "airtel_ug") {
+      // Airtel uses Bearer token validation
+      const authHeader = req.headers["authorization"] as string | undefined;
+      const expectedToken = process.env.AIRTEL_CALLBACK_TOKEN;
+      if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+        console.warn("[Airtel Callback] Invalid token — request rejected");
+        return res.status(401).json({ error: "Invalid token" });
+      }
+    }
+
     console.log(`Mobile money callback from ${provider}:`, payload);
 
     // Extract reference and status based on provider format

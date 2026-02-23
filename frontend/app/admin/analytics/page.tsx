@@ -128,13 +128,13 @@ export default function AnalyticsPage() {
     // KPIs
     csvRows.push("KEY METRICS");
     csvRows.push(`Total Revenue,${data.revenue.total}`);
-    csvRows.push(`Revenue Growth,${data.revenue.growth.toFixed(1)}%`);
+    csvRows.push(`Revenue Growth,${(data.revenue.growth || 0).toFixed(1)}%`);
     csvRows.push(`Total Orders,${data.orders.total}`);
-    csvRows.push(`Orders Growth,${data.orders.growth.toFixed(1)}%`);
+    csvRows.push(`Orders Growth,${(data.orders.growth || 0).toFixed(1)}%`);
     csvRows.push(`Total Customers,${data.customers.total}`);
     csvRows.push(`New Customers,${data.customers.newThisMonth}`);
     csvRows.push(`Returning Customers,${data.customers.returning}`);
-    csvRows.push(`Conversion Rate,${data.customers.conversionRate.toFixed(2)}%`);
+    csvRows.push(`Conversion Rate,${(data.customers.conversionRate || 0).toFixed(2)}%`);
     csvRows.push(`Avg Order Value,${data.revenue.avgOrderValue}`);
     csvRows.push("");
     
@@ -182,17 +182,18 @@ export default function AnalyticsPage() {
     document.body.removeChild(link);
   };
 
-  const formatCurrency = (amount: number) => `USh ${amount.toLocaleString()}`;
-  const formatCompact = (amount: number) => {
-    if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-    if (amount >= 1000) return `${(amount / 1000).toFixed(1)}K`;
-    return amount.toString();
+  const formatCurrency = (amount: number | null | undefined) => `USh ${(amount || 0).toLocaleString()}`;
+  const formatCompact = (amount: number | null | undefined) => {
+    const n = amount || 0;
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return n.toString();
   };
   const formatDate = (date: string) => {
     const d = new Date(date);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
-  const formatPercent = (value: number) => `${value.toFixed(1)}%`;
+  const formatPercent = (value: number | null | undefined) => `${(value || 0).toFixed(1)}%`;
 
   if (loading) {
     return (
@@ -235,9 +236,9 @@ export default function AnalyticsPage() {
     );
   }
 
-  const statusData = Object.entries(data.orders.byStatus).map(([name, value]) => ({
+  const statusData = Object.entries(data.orders?.byStatus || {}).map(([name, value]) => ({
     name,
-    value,
+    value: value as number,
     color: STATUS_COLORS[name] || COLORS[0],
   }));
 

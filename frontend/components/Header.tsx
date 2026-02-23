@@ -113,6 +113,7 @@ export default function Header() {
                 onClick={() => setMobileSearchOpen(true)}
                 className="btn-icon md:hidden"
                 aria-label="Search"
+                suppressHydrationWarning
               >
                 <Search className="w-5 h-5" />
               </button>
@@ -144,7 +145,7 @@ export default function Header() {
                 )}
               </Link>
               
-              <button onClick={openCart} className="btn-icon relative">
+              <button onClick={openCart} className="btn-icon relative" suppressHydrationWarning>
                 <ShoppingBag className="w-5 h-5" />
                 {itemCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-primary text-white text-[10px] font-medium rounded-full flex items-center justify-center">
@@ -157,6 +158,7 @@ export default function Header() {
                 className="btn-icon lg:hidden"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 aria-label="Menu"
+                suppressHydrationWarning
               >
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
@@ -224,12 +226,14 @@ export default function Header() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="input pl-12"
                   autoFocus
+                  suppressHydrationWarning
                 />
               </div>
               <button 
                 type="button"
                 onClick={() => setMobileSearchOpen(false)}
                 className="btn-icon"
+                suppressHydrationWarning
               >
                 <X className="w-5 h-5" />
               </button>

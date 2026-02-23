@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ShoppingBag } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
 
 interface Product {
   id: string;
@@ -53,6 +54,7 @@ interface RecentlyViewedProps {
 
 export default function RecentlyViewed({ currentProductId }: RecentlyViewedProps) {
   const { items } = useRecentlyViewed();
+  const { formatPrice } = useCurrency();
 
   // Filter out current product
   const displayItems = items.filter((item) => item.id !== currentProductId);
@@ -91,8 +93,7 @@ export default function RecentlyViewed({ currentProductId }: RecentlyViewedProps
                 {product.name}
               </h3>
               <p className="text-sm font-semibold mt-1">
-                KES {Number(product.price).toLocaleString()}
-              </p>
+                {formatPrice(Number(product.price))}              </p>
             </Link>
           ))}
         </div>

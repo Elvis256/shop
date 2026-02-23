@@ -42,7 +42,7 @@ export const trackViewItem = (item: {
   category?: string;
 }) => {
   trackEvent("view_item", {
-    currency: "KES",
+    currency: "UGX",
     value: item.price,
     items: [
       {
@@ -63,7 +63,7 @@ export const trackAddToCart = (item: {
   category?: string;
 }) => {
   trackEvent("add_to_cart", {
-    currency: "KES",
+    currency: "UGX",
     value: item.price * item.quantity,
     items: [
       {
@@ -79,7 +79,7 @@ export const trackAddToCart = (item: {
 
 export const trackBeginCheckout = (value: number, items: Array<{ id: string; name: string; price: number; quantity: number }>) => {
   trackEvent("begin_checkout", {
-    currency: "KES",
+    currency: "UGX",
     value,
     items: items.map((item) => ({
       item_id: item.id,
@@ -93,7 +93,7 @@ export const trackBeginCheckout = (value: number, items: Array<{ id: string; nam
 export const trackPurchase = (transactionId: string, value: number, items: Array<{ id: string; name: string; price: number; quantity: number }>) => {
   trackEvent("purchase", {
     transaction_id: transactionId,
-    currency: "KES",
+    currency: "UGX",
     value,
     items: items.map((item) => ({
       item_id: item.id,

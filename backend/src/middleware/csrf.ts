@@ -46,6 +46,11 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction) {
     return next();
   }
 
+  // Skip for analytics tracking (not sensitive, no auth required)
+  if (req.path === "/api/analytics/track") {
+    return next();
+  }
+
   const cookieToken = req.cookies[CSRF_COOKIE_NAME];
   const headerToken = req.headers[CSRF_HEADER_NAME] as string;
 

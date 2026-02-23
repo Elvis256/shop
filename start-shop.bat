@@ -14,7 +14,7 @@ start "Frontend Server" cmd /k "cd /d C:\SHOP\shop\frontend && npm run dev"
 echo.
 echo Servers starting...
 echo - Backend: http://localhost:4000
-echo - Frontend: http://localhost:3000
-echo - Admin: http://localhost:3000/admin
+echo - Frontend: http://localhost:8080
+echo - Admin: http://localhost:8080/admin
 echo.
 pause

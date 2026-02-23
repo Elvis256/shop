@@ -36,7 +36,7 @@ export default function TermsPage() {
 
           <h2>4. Products and Pricing</h2>
           <ul>
-            <li>All prices are displayed in Kenyan Shillings (KES) unless otherwise stated</li>
+            <li>All prices are displayed in Ugandan Shillings (UGX) unless otherwise stated</li>
             <li>Prices may change without notice</li>
             <li>We reserve the right to correct pricing errors</li>
             <li>Product images are for illustration; actual products may vary slightly</li>
@@ -113,8 +113,8 @@ export default function TermsPage() {
 
           <h2>13. Governing Law</h2>
           <p>
-            These terms are governed by the laws of Kenya. Any disputes shall be 
-            resolved in the courts of Nairobi, Kenya.
+            These terms are governed by the laws of Uganda. Any disputes shall be 
+            resolved in the courts of Kampala, Uganda.
           </p>
 
           <h2>14. Changes to Terms</h2>

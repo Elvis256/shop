@@ -38,33 +38,33 @@ export default function ShippingPage() {
                   <tbody className="divide-y">
                     <tr>
                       <td className="py-3 px-4 font-medium">Same-Day Delivery</td>
-                      <td className="py-3 px-4">Nairobi CBD & Suburbs</td>
+                      <td className="py-3 px-4">Kampala CBD & Suburbs</td>
                       <td className="py-3 px-4">3-6 hours</td>
-                      <td className="py-3 px-4">KES 500</td>
+                      <td className="py-3 px-4">USh 500</td>
                     </tr>
                     <tr>
                       <td className="py-3 px-4 font-medium">Express Delivery</td>
-                      <td className="py-3 px-4">Nairobi & Environs</td>
+                      <td className="py-3 px-4">Kampala & Environs</td>
                       <td className="py-3 px-4">24 hours</td>
-                      <td className="py-3 px-4">KES 350</td>
+                      <td className="py-3 px-4">USh 350</td>
                     </tr>
                     <tr>
                       <td className="py-3 px-4 font-medium">Standard Delivery</td>
                       <td className="py-3 px-4">Major Towns</td>
                       <td className="py-3 px-4">1-2 days</td>
-                      <td className="py-3 px-4">KES 300</td>
+                      <td className="py-3 px-4">USh 300</td>
                     </tr>
                     <tr>
                       <td className="py-3 px-4 font-medium">Countrywide</td>
                       <td className="py-3 px-4">All Areas</td>
                       <td className="py-3 px-4">2-4 days</td>
-                      <td className="py-3 px-4">KES 400</td>
+                      <td className="py-3 px-4">USh 400</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
               <p className="text-sm text-gray-500 mt-3">
-                * Free shipping on orders over KES 5,000
+                * Free shipping on orders over USh 100,000 (Kampala)
               </p>
             </div>
 

@@ -184,7 +184,7 @@ function CategoryContent() {
       <div className="container py-8">
         <div className="flex gap-8">
           {/* Desktop Sidebar */}
-          <aside className="hidden lg:block w-56 flex-shrink-0">
+          <aside className="hidden md:block md:w-48 lg:w-56 flex-shrink-0">
             <div className="sticky top-24">
               <CategorySidebar />
             </div>

@@ -34,7 +34,7 @@ export function ProductSchema({ product }: ProductSchemaProps) {
     offers: {
       "@type": "Offer",
       url: `${siteUrl}/product/${product.slug}`,
-      priceCurrency: product.currency || "KES",
+      priceCurrency: product.currency || "UGX",
       price: product.price,
       priceValidUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
       availability: product.inStock !== false

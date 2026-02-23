@@ -74,7 +74,7 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#0071e3" />
       </head>
-      <body className="min-h-screen flex flex-col bg-bg text-text transition-colors">
+      <body className="min-h-screen flex flex-col bg-bg text-text transition-colors" suppressHydrationWarning>
         <GoogleAnalytics />
         <ServiceWorkerRegistration />
         <ThemeProvider>

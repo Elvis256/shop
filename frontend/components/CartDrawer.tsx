@@ -1,11 +1,13 @@
 "use client";
 
 import { useCart } from "@/lib/hooks/useCart";
+import { useCurrency } from "@/contexts/CurrencyContext";
 import Link from "next/link";
 import Image from "next/image";
 
 export default function CartDrawer() {
   const { items, isOpen, closeCart, total, updateQuantity, removeItem } = useCart();
+  const { formatPrice } = useCurrency();
 
   if (!isOpen) return null;
 
@@ -77,7 +79,7 @@ export default function CartDrawer() {
                       {item.name}
                     </Link>
                     <p className="text-sm text-gray-600 mt-1">
-                      KES {item.price.toLocaleString()}
+                      {formatPrice(item.price)}
                     </p>
 
                     {/* Quantity controls */}
@@ -114,7 +116,7 @@ export default function CartDrawer() {
           <div className="border-t p-4 space-y-4">
             <div className="flex justify-between text-lg font-semibold">
               <span>Total</span>
-              <span>KES {total.toLocaleString()}</span>
+              <span>{formatPrice(total)}</span>
             </div>
             <Link
               href="/checkout"

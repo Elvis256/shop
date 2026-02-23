@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useCart } from "@/lib/hooks/useCart";
+import { useCurrency } from "@/contexts/CurrencyContext";
 import Image from "next/image";
 
 export default function OrderSummary() {
   const { items, total } = useCart();
+  const { formatPrice } = useCurrency();
   const [promoCode, setPromoCode] = useState("");
   const [discount, setDiscount] = useState(0);
   const [promoError, setPromoError] = useState("");
@@ -79,7 +81,7 @@ export default function OrderSummary() {
               <p className="text-small text-text-muted">Qty: {item.quantity}</p>
             </div>
             <p className="font-medium text-small">
-              KES {(item.price * item.quantity).toLocaleString()}
+              {formatPrice(item.price * item.quantity)}
             </p>
           </div>
         ))}
@@ -89,12 +91,12 @@ export default function OrderSummary() {
       <div className="space-y-2 pt-4 border-t border-border text-small">
         <div className="flex justify-between">
           <span className="text-text-muted">Subtotal</span>
-          <span>KES {total.toLocaleString()}</span>
+          <span>{formatPrice(total)}</span>
         </div>
         {discount > 0 && (
           <div className="flex justify-between text-green-600">
             <span>Discount ({promoApplied})</span>
-            <span>-KES {discount.toLocaleString()}</span>
+            <span>-{formatPrice(discount)}</span>
           </div>
         )}
         <div className="flex justify-between">
@@ -102,15 +104,15 @@ export default function OrderSummary() {
           {shipping === 0 ? (
             <span className="text-green-600">Free</span>
           ) : (
-            <span>KES {shipping.toLocaleString()}</span>
+            <span>{formatPrice(shipping)}</span>
           )}
         </div>
         {shipping === 0 && (
-          <p className="text-xs text-green-600">Free shipping on orders over KES 5,000</p>
+          <p className="text-xs text-green-600">Free shipping on orders over USh 100,000 in Kampala</p>
         )}
         <div className="flex justify-between pt-2 border-t border-border font-semibold text-base">
           <span>Total</span>
-          <span>KES {finalTotal.toLocaleString()}</span>
+          <span>{formatPrice(finalTotal)}</span>
         </div>
       </div>
 

@@ -1,14 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Section from "@/components/Section";
 import OrderSummary from "@/components/OrderSummary";
 import { useCart } from "@/lib/hooks/useCart";
 import { useToast } from "@/lib/hooks/useToast";
-import { Check, CreditCard, Smartphone, Loader2, AlertCircle } from "lucide-react";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { useCurrency } from "@/contexts/CurrencyContext";
+import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : null;
+}
 
 type Step = 1 | 2 | 3;
 
@@ -28,10 +37,12 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { items, total: cartTotal, clearCart } = useCart();
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const { formatPrice } = useCurrency();
   
   const [step, setStep] = useState<Step>(1);
   const [paymentMethod, setPaymentMethod] = useState<"card" | "mobile_money">("mobile_money");
-  const [mobileNetwork, setMobileNetwork] = useState<"MPESA" | "AIRTEL" | "MTN">("MPESA");
+  const [mobileNetwork, setMobileNetwork] = useState<"MPESA" | "AIRTEL" | "MTN">("MTN");
   const [mobilePhone, setMobilePhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +60,22 @@ export default function CheckoutPage() {
     postalCode: "",
     discreet: true,
   });
+
+  // Auto-fill from logged-in user
+  useEffect(() => {
+    if (user) {
+      const nameParts = (user.name || "").split(" ");
+      setShipping((prev) => ({
+        ...prev,
+        firstName: prev.firstName || nameParts[0] || "",
+        lastName: prev.lastName || nameParts.slice(1).join(" ") || "",
+        email: prev.email || user.email || "",
+        phone: prev.phone || user.phone || "",
+        city: prev.city || "Kampala",
+        county: prev.county || "Kampala",
+      }));
+    }
+  }, [user]);
 
   const steps = [
     { num: 1, label: "Shipping" },
@@ -100,7 +127,7 @@ export default function CheckoutPage() {
           quantity: item.quantity,
           price: item.price,
         })),
-        currency: "KES",
+        currency: "UGX",
         amount: cartTotal,
         paymentMethod,
         ...(paymentMethod === "mobile_money" && {
@@ -119,17 +146,20 @@ export default function CheckoutPage() {
           address: shipping.address,
           city: shipping.city,
           postalCode: shipping.postalCode,
-          country: "Kenya",
+          country: "Uganda",
           phone: shipping.phone,
         },
         discreet: shipping.discreet,
       };
 
+      const csrf = getCsrfToken();
       const res = await fetch(`${API_URL}/api/checkout/create`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(csrf ? { "x-csrf-token": csrf } : {}),
         },
         body: JSON.stringify(payload),
       });
@@ -257,12 +287,12 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-8">
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
         {/* Form */}
         <div className="lg:col-span-2">
           {step === 1 && (
             <div className="card space-y-6">
-              <h3>Shipping Information</h3>
+              <h3 className="flex items-center gap-2"><Package className="w-5 h-5 text-accent" />Shipping Information</h3>
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
@@ -297,11 +327,11 @@ export default function CheckoutPage() {
               </div>
 
               <div>
-                <label className="block text-small font-medium mb-2">Phone *</label>
+                <label className="block text-small font-medium mb-2">Phone * <span className="text-text-muted font-normal">(Uganda format)</span></label>
                 <input
                   className="input"
                   type="tel"
-                  placeholder="+254 712 345 678"
+                  placeholder="+256 700 000 000"
                   value={shipping.phone}
                   onChange={(e) => updateShipping("phone", e.target.value)}
                 />
@@ -322,16 +352,16 @@ export default function CheckoutPage() {
                   <label className="block text-small font-medium mb-2">City *</label>
                   <input
                     className="input"
-                    placeholder="Nairobi"
+                    placeholder="Kampala"
                     value={shipping.city}
                     onChange={(e) => updateShipping("city", e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className="block text-small font-medium mb-2">County</label>
+                  <label className="block text-small font-medium mb-2">District</label>
                   <input
                     className="input"
-                    placeholder="Nairobi"
+                    placeholder="Kampala"
                     value={shipping.county}
                     onChange={(e) => updateShipping("county", e.target.value)}
                   />
@@ -340,7 +370,7 @@ export default function CheckoutPage() {
                   <label className="block text-small font-medium mb-2">Postal Code</label>
                   <input
                     className="input"
-                    placeholder="00100"
+                    placeholder="e.g. 256"
                     value={shipping.postalCode}
                     onChange={(e) => updateShipping("postalCode", e.target.value)}
                   />
@@ -374,7 +404,7 @@ export default function CheckoutPage() {
 
           {step === 2 && (
             <div className="card space-y-6">
-              <h3>Payment Method</h3>
+              <h3 className="flex items-center gap-2"><CreditCard className="w-5 h-5 text-accent" />Payment Method</h3>
 
               {/* Payment Options */}
               <div className="space-y-4">
@@ -392,7 +422,7 @@ export default function CheckoutPage() {
                   <Smartphone className="w-6 h-6" />
                   <div>
                     <span className="font-medium">Mobile Money</span>
-                    <p className="text-small text-text-muted">M-Pesa, Airtel Money, MTN MoMo</p>
+                    <p className="text-small text-text-muted">MTN MoMo, Airtel Money (Uganda)</p>
                   </div>
                 </label>
 
@@ -425,16 +455,16 @@ export default function CheckoutPage() {
                       value={mobileNetwork}
                       onChange={(e) => setMobileNetwork(e.target.value as any)}
                     >
-                      <option value="MPESA">M-Pesa (Kenya)</option>
-                      <option value="AIRTEL">Airtel Money (Kenya/Uganda)</option>
-                      <option value="MTN">MTN MoMo (Uganda)</option>
+                      <option value="MTN">MTN MoMo Uganda</option>
+                      <option value="AIRTEL">Airtel Money Uganda</option>
+                      <option value="MPESA">M-Pesa (Kenya/Uganda)</option>
                     </select>
                   </div>
                   <div>
                     <label className="block text-small font-medium mb-2">Phone Number *</label>
                     <input
                       className="input"
-                      placeholder="+254 712 345 678"
+                      placeholder="+256 700 000 000"
                       value={mobilePhone}
                       onChange={(e) => setMobilePhone(e.target.value)}
                     />
@@ -470,7 +500,7 @@ export default function CheckoutPage() {
 
           {step === 3 && (
             <div className="card space-y-6">
-              <h3>Review & Confirm</h3>
+              <h3 className="flex items-center gap-2"><Check className="w-5 h-5 text-accent" />Review & Confirm</h3>
 
               <div className="space-y-4">
                 <div className="p-4 bg-gray-50 rounded-8">
@@ -526,14 +556,21 @@ export default function CheckoutPage() {
                       Processing...
                     </>
                   ) : (
-                    `Place Order - KES ${cartTotal.toLocaleString()}`
+                    `Place Order · ${formatPrice(cartTotal)}`
                   )}
                 </button>
               </div>
 
               <p className="text-center text-small text-text-muted">
-                By placing this order, you agree to our Terms of Service and Privacy Policy.
+                By placing this order, you agree to our{" "}
+                <Link href="/policies/terms" className="underline hover:text-text">Terms of Service</Link> and{" "}
+                <Link href="/policies/privacy" className="underline hover:text-text">Privacy Policy</Link>.
               </p>
+              <div className="flex flex-wrap items-center justify-center gap-4 pt-2 text-xs text-text-muted border-t border-border">
+                <span className="flex items-center gap-1"><Shield className="w-3.5 h-3.5 text-green-600" />Secure Checkout</span>
+                <span className="flex items-center gap-1"><Package className="w-3.5 h-3.5 text-green-600" />Discreet Packaging</span>
+                <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5 text-green-600" />Plain Shipping</span>
+              </div>
             </div>
           )}
         </div>

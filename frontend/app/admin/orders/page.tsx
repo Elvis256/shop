@@ -143,7 +143,7 @@ export default function AdminOrdersPage() {
                     <p className="text-sm text-text-muted">{order.customerEmail}</p>
                   </td>
                   <td className="p-4 font-medium">
-                    KES {Number(order.totalAmount).toLocaleString()}
+                    USh {Number(order.totalAmount).toLocaleString()}
                   </td>
                   <td className="p-4">
                     <p className={`text-sm ${getPaymentBadge(order.paymentStatus)}`}>

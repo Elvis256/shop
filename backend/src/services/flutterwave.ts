@@ -164,3 +164,32 @@ export async function verifyFlutterwaveTransaction(transactionId: string) {
     throw new Error("Transaction verification failed. Please try again.");
   }
 }
+
+export async function refundFlutterwaveTransaction(
+  transactionId: string,
+  amount?: number,
+  comment?: string
+): Promise<{ status: string; message: string; data?: any }> {
+  const headers = {
+    Authorization: `Bearer ${process.env.FLW_SECRET_KEY}`,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    return await withRetryAndCircuitBreaker(
+      "flutterwave-refund",
+      async () => {
+        const response = await axios.post(
+          `${FLW_BASE_URL}/transactions/${transactionId}/refund`,
+          { amount, comment: comment || "Refund requested" },
+          { headers, timeout: 20000 }
+        );
+        return response.data;
+      },
+      FLUTTERWAVE_RETRY_OPTIONS
+    );
+  } catch (error: any) {
+    console.error("Flutterwave refund error:", error.response?.data || error.message);
+    throw new Error("Refund failed. Please try again or contact Flutterwave support.");
+  }
+}

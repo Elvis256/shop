@@ -3,11 +3,11 @@
 import { useState } from "react";
 
 const priceRanges = [
-  { label: "Under KES 1,000", min: 0, max: 1000 },
-  { label: "KES 1,000 - 3,000", min: 1000, max: 3000 },
-  { label: "KES 3,000 - 5,000", min: 3000, max: 5000 },
-  { label: "KES 5,000 - 10,000", min: 5000, max: 10000 },
-  { label: "Over KES 10,000", min: 10000, max: null },
+  { label: "Under USh 1,000", min: 0, max: 1000 },
+  { label: "USh 1,000 - 3,000", min: 1000, max: 3000 },
+  { label: "USh 3,000 - 5,000", min: 3000, max: 5000 },
+  { label: "USh 5,000 - 10,000", min: 5000, max: 10000 },
+  { label: "Over USh 10,000", min: 10000, max: null },
 ];
 
 const ratings = [5, 4, 3, 2, 1];

@@ -32,6 +32,7 @@ import loyaltyRoutes from "./routes/loyalty";
 import referralsRoutes from "./routes/referrals";
 import twoFactorRoutes from "./routes/twoFactor";
 import invoicesRoutes from "./routes/invoices";
+import analyticsRoutes from "./routes/analytics";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -43,6 +44,7 @@ import adminCategories from "./routes/admin/categories";
 import adminSettings from "./routes/admin/settings";
 import adminStaff from "./routes/adminStaff";
 import adminActivity from "./routes/adminActivity";
+import adminAuthRoutes from "./routes/adminAuth";
 
 // Middleware
 import { setupSecurity } from "./middleware/security";
@@ -57,8 +59,12 @@ setupSecurity(app);
 const allowedOrigins = [
   process.env.BASE_URL || "http://localhost:3000",
   "http://localhost:3001",
+  "http://localhost:5000",
+  "http://localhost:8080",
   "http://127.0.0.1:3000",
-  "http://127.0.0.1:3001",
+  "http://127.0.0.1:5000",
+  `http://100.83.8.43:5000`,
+  `http://192.168.1.250:5000`,
 ];
 
 app.use(cors({
@@ -114,6 +120,7 @@ app.use("/api/loyalty", loyaltyRoutes);
 app.use("/api/referrals", referralsRoutes);
 app.use("/api/2fa", twoFactorRoutes);
 app.use("/api/invoices", invoicesRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);
@@ -125,6 +132,7 @@ app.use("/api/admin/categories", adminCategories);
 app.use("/api/admin/settings", adminSettings);
 app.use("/api/admin/staff", adminStaff);
 app.use("/api/admin/activity", adminActivity);
+app.use("/api/admin/auth", adminAuthRoutes);
 
 // Health check
 app.get("/health", (_req, res) => {
@@ -142,7 +150,7 @@ app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
-app.listen(PORT, () => {
+app.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Admin panel: ${process.env.BASE_URL || "http://localhost:3000"}/admin`);
   
@@ -154,5 +162,10 @@ app.listen(PORT, () => {
   // Start abandoned cart email job
   import("./services/abandonedCart").then(({ startAbandonedCartJob }) => {
     startAbandonedCartJob();
+  });
+
+  // Start real-time exchange rate refresh job
+  import("./services/exchangeRates").then(({ startRateRefreshJob }) => {
+    startRateRefreshJob();
   });
 });

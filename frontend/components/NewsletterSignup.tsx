@@ -73,11 +73,13 @@ export default function NewsletterSignup({
           placeholder="Your email"
           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent focus:border-accent text-sm"
           disabled={status === "loading"}
+          suppressHydrationWarning
         />
         <button
           type="submit"
           disabled={status === "loading"}
           className="btn-primary text-sm px-4"
+          suppressHydrationWarning
         >
           {status === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Subscribe"}
         </button>
@@ -104,11 +106,13 @@ export default function NewsletterSignup({
               placeholder="Enter your email address"
               className="flex-1 px-4 py-3 rounded-lg text-gray-900 focus:ring-2 focus:ring-white"
               disabled={status === "loading"}
+              suppressHydrationWarning
             />
             <button
               type="submit"
               disabled={status === "loading"}
               className="px-6 py-3 bg-white text-accent font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+              suppressHydrationWarning
             >
               {status === "loading" ? "Subscribing..." : "Subscribe"}
             </button>
@@ -141,12 +145,14 @@ export default function NewsletterSignup({
             placeholder="Enter your email"
             className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent focus:border-accent"
             disabled={status === "loading"}
+            suppressHydrationWarning
           />
         </div>
         <button
           type="submit"
           disabled={status === "loading"}
           className="btn-primary w-full"
+          suppressHydrationWarning
         >
           {status === "loading" ? (
             <span className="flex items-center justify-center gap-2">

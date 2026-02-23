@@ -9,7 +9,7 @@ export default function Hero() {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-surface shadow-soft mb-8">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-            <span className="text-sm text-text-muted">Free discreet shipping on orders over KES 5,000</span>
+            <span className="text-sm text-text-muted">Free discreet shipping on orders over USh 100,000 in Kampala</span>
           </div>
 
           {/* Headline */}

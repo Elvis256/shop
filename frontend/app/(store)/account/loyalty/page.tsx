@@ -6,13 +6,13 @@ import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { ArrowLeft, Award, Gift, TrendingUp, Star } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
 
 interface LoyaltyAccount {
   id: string;
   points: number;
   tier: string;
-  totalEarned: number;
-  totalRedeemed: number;
+  lifetimePoints: number;
   transactions: Array<{
     id: string;
     type: string;
@@ -26,12 +26,12 @@ const tierConfig: Record<string, { color: string; minPoints: number; perks: stri
   BRONZE: { 
     color: "from-amber-600 to-amber-800", 
     minPoints: 0,
-    perks: ["Earn 1 point per KES 100 spent", "Birthday bonus points"]
+    perks: ["Earn 1 point per USh 100 spent", "Birthday bonus points"]
   },
   SILVER: { 
     color: "from-gray-400 to-gray-600", 
     minPoints: 1000,
-    perks: ["1.5x points earning", "Early access to sales", "Free shipping over KES 5,000"]
+    perks: ["1.5x points earning", "Early access to sales", "Free shipping over USh 100,000"]
   },
   GOLD: { 
     color: "from-yellow-400 to-yellow-600", 
@@ -48,6 +48,7 @@ const tierConfig: Record<string, { color: string; minPoints: number; perks: stri
 export default function LoyaltyPage() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
+  const { formatPrice } = useCurrency();
   const [account, setAccount] = useState<LoyaltyAccount | null>(null);
   const [loading, setLoading] = useState(true);
   const [redeeming, setRedeeming] = useState(false);
@@ -71,7 +72,7 @@ export default function LoyaltyPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setAccount(data);
+        setAccount({ ...data.account, transactions: data.transactions || [] });
       }
     } catch (error) {
       console.error("Failed to fetch loyalty:", error);
@@ -114,8 +115,8 @@ export default function LoyaltyPage() {
 
   const tier = account ? tierConfig[account.tier] || tierConfig.BRONZE : tierConfig.BRONZE;
   const nextTier = account?.tier === "PLATINUM" ? null : 
-    Object.entries(tierConfig).find(([, config]) => config.minPoints > (account?.totalEarned || 0))?.[0];
-  const pointsToNextTier = nextTier ? tierConfig[nextTier].minPoints - (account?.totalEarned || 0) : 0;
+    Object.entries(tierConfig).find(([, config]) => config.minPoints > (account?.lifetimePoints || 0))?.[0];
+  const pointsToNextTier = nextTier ? tierConfig[nextTier].minPoints - (account?.lifetimePoints || 0) : 0;
 
   return (
     <Section>
@@ -160,7 +161,7 @@ export default function LoyaltyPage() {
                 <div className="bg-white/20 rounded-full p-1 mb-4">
                   <div 
                     className="bg-white/80 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(100, ((account.totalEarned) / tierConfig[nextTier].minPoints) * 100)}%` }}
+                    style={{ width: `${Math.min(100, ((account.lifetimePoints) / tierConfig[nextTier].minPoints) * 100)}%` }}
                   />
                 </div>
               )}
@@ -177,12 +178,12 @@ export default function LoyaltyPage() {
             <div className="grid grid-cols-3 gap-4 mb-8">
               <div className="card text-center">
                 <TrendingUp className="w-6 h-6 text-green-600 mx-auto mb-2" />
-                <p className="text-xl font-bold">{account.totalEarned.toLocaleString()}</p>
+                <p className="text-xl font-bold">{(account.lifetimePoints || 0).toLocaleString()}</p>
                 <p className="text-xs text-text-muted">Total Earned</p>
               </div>
               <div className="card text-center">
                 <Gift className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                <p className="text-xl font-bold">{account.totalRedeemed.toLocaleString()}</p>
+                <p className="text-xl font-bold">{account.transactions.filter(t => t.points < 0).reduce((s, t) => s + Math.abs(t.points), 0).toLocaleString()}</p>
                 <p className="text-xs text-text-muted">Redeemed</p>
               </div>
               <div className="card text-center">
@@ -195,7 +196,7 @@ export default function LoyaltyPage() {
             {/* Redeem Options */}
             <div className="card mb-8">
               <h3 className="font-medium mb-4">Redeem Points</h3>
-              <p className="text-sm text-text-muted mb-4">100 points = KES 1 discount</p>
+              <p className="text-sm text-text-muted mb-4">100 points = USh 100 discount</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[500, 1000, 2500, 5000].map((points) => (
                   <button
@@ -209,7 +210,7 @@ export default function LoyaltyPage() {
                     }`}
                   >
                     <p className="font-bold">{points.toLocaleString()}</p>
-                    <p className="text-xs">= KES {(points / 100).toLocaleString()}</p>
+                    <p className="text-xs">= {formatPrice(points)}</p>
                   </button>
                 ))}
               </div>

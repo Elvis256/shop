@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000; // refresh every 6 hours
 
 interface Currency {
   code: string;
@@ -20,6 +21,7 @@ interface CurrencyContextType {
   formatPrice: (amount: number, fromCurrency?: string) => string;
   convertPrice: (amount: number, fromCurrency?: string) => number;
   loading: boolean;
+  lastUpdated: Date | null;
 }
 
 const defaultCurrency: Currency = {
@@ -38,40 +40,45 @@ const CurrencyContext = createContext<CurrencyContextType>({
   formatPrice: (amount) => `USh ${amount.toLocaleString()}`,
   convertPrice: (amount) => amount,
   loading: true,
+  lastUpdated: null,
 });
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [currencies, setCurrencies] = useState<Currency[]>([defaultCurrency]);
   const [currency, setCurrencyState] = useState<Currency>(defaultCurrency);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
-    loadCurrencies();
-    // Load saved preference
+    // Load saved preference immediately
     const saved = localStorage.getItem("preferredCurrency");
     if (saved) {
-      const parsed = JSON.parse(saved);
-      setCurrencyState(parsed);
+      try { setCurrencyState(JSON.parse(saved)); } catch { /* ignore */ }
     }
+
+    loadCurrencies();
+
+    // Refresh rates every 6 hours
+    const interval = setInterval(loadCurrencies, REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, []);
 
   const loadCurrencies = async () => {
     try {
       const res = await fetch(`${API_URL}/api/currencies`);
-      if (res.ok) {
-        const data = await res.json();
-        setCurrencies(data.currencies);
-        
-        // Update current currency with latest rate
-        const saved = localStorage.getItem("preferredCurrency");
-        if (saved) {
-          const savedCode = JSON.parse(saved).code;
-          const updated = data.currencies.find((c: Currency) => c.code === savedCode);
-          if (updated) {
-            setCurrencyState(updated);
-          }
-        }
-      }
+      if (!res.ok) return;
+      const data = await res.json();
+      const fetched: Currency[] = data.currencies;
+      setCurrencies(fetched);
+      if (data.lastUpdated) setLastUpdated(new Date(data.lastUpdated));
+
+      // Keep selected currency in sync with latest rates
+      const savedCode = (() => {
+        try { return JSON.parse(localStorage.getItem("preferredCurrency") || "{}").code; } catch { return null; }
+      })();
+      const code = savedCode || "UGX";
+      const updated = fetched.find((c) => c.code === code);
+      if (updated) setCurrencyState(updated);
     } catch (error) {
       console.error("Failed to load currencies:", error);
     } finally {
@@ -88,38 +95,22 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   };
 
   const convertPrice = (amount: number, fromCurrency: string = "UGX"): number => {
-    // Convert from source currency to base (UGX), then to target
-    const fromRate = currencies.find((c) => c.code === fromCurrency)?.exchangeRate || 1;
+    const fromRate = currencies.find((c) => c.code === fromCurrency)?.exchangeRate ?? 1;
     const toRate = currency.exchangeRate;
-    
-    // amount in base = amount / fromRate
-    // amount in target = amount in base * toRate
-    const baseAmount = amount / fromRate;
-    return baseAmount * toRate;
+    return (amount / fromRate) * toRate;
   };
 
   const formatPrice = (amount: number, fromCurrency: string = "UGX"): string => {
     const converted = convertPrice(amount, fromCurrency);
-    
     const formatted = new Intl.NumberFormat("en-UG", {
       minimumFractionDigits: currency.decimalPlaces,
       maximumFractionDigits: currency.decimalPlaces,
     }).format(converted);
-
     return `${currency.symbol} ${formatted}`;
   };
 
   return (
-    <CurrencyContext.Provider
-      value={{
-        currency,
-        currencies,
-        setCurrency,
-        formatPrice,
-        convertPrice,
-        loading,
-      }}
-    >
+    <CurrencyContext.Provider value={{ currency, currencies, setCurrency, formatPrice, convertPrice, loading, lastUpdated }}>
       {children}
     </CurrencyContext.Provider>
   );

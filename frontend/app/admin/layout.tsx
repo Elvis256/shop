@@ -47,12 +47,18 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, isLoading, isAdmin, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isLoginPage = pathname === "/admin/login";
 
   useEffect(() => {
+    if (isLoginPage) return;
     if (!isLoading && (!user || !isAdmin)) {
-      router.push("/auth/login?redirect=/admin");
+      router.push("/admin/login");
     }
-  }, [user, isLoading, isAdmin, router]);
+  }, [user, isLoading, isAdmin, isLoginPage, router]);
+
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
 
   if (isLoading) {
     return (
@@ -72,7 +78,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white border-b z-40 flex items-center justify-between px-4">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white border-b z-[100] flex items-center justify-between px-4">
         <button onClick={() => setSidebarOpen(true)} className="p-2 hover:bg-gray-100 rounded-lg">
           <Menu className="w-5 h-5" />
         </button>
@@ -86,15 +92,16 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div 
-          className="lg:hidden fixed inset-0 bg-black/50 z-40 animate-fade-in"
+          className="lg:hidden fixed inset-0 bg-black/50 z-[200] animate-fade-in"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar — outer div handles fixed position + z-index, inner handles animation */}
+      <div className="fixed top-0 left-0 h-full w-64 z-[300]">
       <aside className={`
-        fixed top-0 left-0 h-full w-64 bg-white border-r z-50 shadow-xl lg:shadow-none
-        transform transition-transform duration-200 ease-in-out
+        h-full w-full bg-white border-r shadow-xl lg:shadow-sm
+        transition-transform duration-200 ease-in-out
         lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
       `}>
         {/* Sidebar Header */}
@@ -171,9 +178,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </aside>
+      </div>
 
       {/* Desktop Top Bar */}
-      <div className="hidden lg:flex fixed top-0 left-64 right-0 h-14 bg-white border-b z-30 items-center justify-between px-6">
+      <div className="hidden lg:flex fixed top-0 left-64 right-0 h-14 bg-white border-b z-[50] items-center justify-between px-6">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-semibold text-gray-900">
             {navItems.find(item => item.exact ? pathname === item.href : pathname.startsWith(item.href))?.label || "Admin"}

@@ -103,7 +103,7 @@ export default function AdminCustomersPage() {
                     </div>
                   </td>
                   <td className="p-4 font-medium">
-                    KES {customer.totalSpent.toLocaleString()}
+                    USh {customer.totalSpent.toLocaleString()}
                   </td>
                   <td className="p-4 text-sm text-text-muted">
                     {new Date(customer.createdAt).toLocaleDateString()}

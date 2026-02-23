@@ -70,9 +70,9 @@ export default function ProductTabs({ description, productId }: ProductTabsProps
             </p>
             <h4>Delivery Options</h4>
             <ul className="text-text-muted space-y-2">
-              <li><strong>Standard:</strong> 3-5 business days - Free over KES 5,000</li>
-              <li><strong>Express:</strong> 1-2 business days - KES 500</li>
-              <li><strong>Same Day (Nairobi):</strong> KES 800</li>
+              <li><strong>Standard:</strong> 3-5 business days - Free over USh 100,000</li>
+              <li><strong>Express:</strong> 1-2 business days - USh 500</li>
+              <li><strong>Same Day (Kampala):</strong> USh 5,000</li>
             </ul>
             <h4>Returns</h4>
             <p className="text-text-muted">

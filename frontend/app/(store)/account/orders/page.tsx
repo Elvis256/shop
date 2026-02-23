@@ -7,6 +7,7 @@ import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { api } from "@/lib/api";
 import { Package, Eye, ChevronLeft } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
 
 interface Order {
   id: string;
@@ -20,6 +21,7 @@ interface Order {
 export default function OrdersPage() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
+  const { formatPrice } = useCurrency();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -99,7 +101,7 @@ export default function OrdersPage() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold">KES {Number(order.totalAmount).toLocaleString()}</p>
+                    <p className="font-bold">{formatPrice(Number(order.totalAmount))}</p>
                     <span className={`badge ${getStatusColor(order.status)}`}>
                       {order.status}
                     </span>

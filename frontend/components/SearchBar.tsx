@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, X, Loader2 } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -17,6 +18,7 @@ interface SearchResult {
 
 export default function SearchBar() {
   const router = useRouter();
+  const { formatPrice } = useCurrency();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -92,6 +94,7 @@ export default function SearchBar() {
             onFocus={() => results.length > 0 && setShowDropdown(true)}
             placeholder="Search..."
             className="w-full h-10 pl-10 pr-10 text-sm bg-surface-secondary border-0 rounded-full placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+            suppressHydrationWarning
           />
           {query && (
             <button
@@ -102,6 +105,7 @@ export default function SearchBar() {
                 setShowDropdown(false);
               }}
               className="absolute right-3.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
+              suppressHydrationWarning
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
             </button>
@@ -139,7 +143,7 @@ export default function SearchBar() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate text-text">{product.name}</p>
-                    <p className="text-sm text-text-muted">KES {Number(product.price).toLocaleString()}</p>
+                    <p className="text-sm text-text-muted">{formatPrice(Number(product.price))}</p>
                   </div>
                 </Link>
               ))}

@@ -56,6 +56,7 @@ export default function ThemeToggle({ showLabel = false, variant = "icon" }: The
       onClick={toggleTheme}
       className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
       title={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      suppressHydrationWarning
     >
       {resolvedTheme === "dark" ? (
         <Sun className="w-5 h-5 text-gray-400" />

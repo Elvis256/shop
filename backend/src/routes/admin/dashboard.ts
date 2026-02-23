@@ -224,8 +224,23 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
         date,
         revenue: stats.revenue,
         orders: stats.orders,
-        visitors: Math.floor(stats.orders * (15 + Math.random() * 10)), // Simulated visitors
+        visitors: 0, // filled below from real PageView data
       }));
+
+    // Real visitor data from PageView table
+    const pageViews = await prisma.pageView.findMany({
+      where: { createdAt: { gte: startDate } },
+      select: { createdAt: true, sessionId: true },
+    });
+    const visitorMap = new Map<string, Set<string>>();
+    pageViews.forEach((pv) => {
+      const dateKey = pv.createdAt.toISOString().split("T")[0];
+      if (!visitorMap.has(dateKey)) visitorMap.set(dateKey, new Set());
+      visitorMap.get(dateKey)!.add(pv.sessionId || pv.createdAt.toISOString());
+    });
+    dailyData.forEach((d) => {
+      d.visitors = visitorMap.get(d.date)?.size || 0;
+    });
 
     // Current period totals
     const currentRevenue = dailyData.reduce((sum, d) => sum + d.revenue, 0);
@@ -398,7 +413,7 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
           revenue: d.revenue,
         })),
         totalVisitors,
-        bounceRate: 35 + Math.random() * 15, // Simulated
+        bounceRate: 0,
       },
       paymentMethods,
       hourlyOrders: hourlyData,

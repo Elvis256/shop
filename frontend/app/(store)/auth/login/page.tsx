@@ -17,34 +17,32 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [touched, setTouched] = useState({ email: false, password: false });
+
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const passwordValid = password.length >= 8;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setTouched({ email: true, password: true });
+    if (!emailValid || !passwordValid) return;
     setLoading(true);
 
     try {
-      // Login and get user data
       const response = await api.login(email, password);
       const userRole = (response.user?.role || "") as string;
       
-      // Determine redirect based on role and URL param
       const explicitRedirect = searchParams.get("redirect");
       let redirectTo = "/account";
       
       if (explicitRedirect) {
-        // If explicit redirect was requested (e.g., from admin), use that
         redirectTo = explicitRedirect;
       } else if (userRole === "ADMIN" || userRole === "STAFF" || userRole === "MANAGER") {
-        // Admin/Staff users go to admin dashboard by default
         redirectTo = "/admin";
       }
       
-      // Also call the useAuth login to update context state
-      await login(email, password).catch(() => {
-        // Already logged in via api.login, just ignore duplicate login error
-      });
-      
+      await login(email, password).catch(() => {});
       router.push(redirectTo);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Login failed";
@@ -61,7 +59,7 @@ function LoginForm() {
 
         <div className="card">
           {error && (
-            <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-xl mb-6 text-sm">
               {error}
             </div>
           )}
@@ -71,12 +69,16 @@ function LoginForm() {
               <label className="block text-small font-medium mb-2">Email</label>
               <input
                 type="email"
-                className="input"
+                className={`input ${touched.email && !emailValid ? "border-red-400" : ""}`}
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onBlur={() => setTouched((t) => ({ ...t, email: true }))}
                 required
               />
+              {touched.email && !emailValid && (
+                <p className="text-xs text-red-500 mt-1">Enter a valid email address</p>
+              )}
             </div>
 
             <div>
@@ -84,25 +86,30 @@ function LoginForm() {
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
-                  className="input pr-10"
+                  className={`input pr-10 ${touched.password && !passwordValid ? "border-red-400" : ""}`}
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onBlur={() => setTouched((t) => ({ ...t, password: true }))}
                   required
                 />
                 <button
                   type="button"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
                   onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {touched.password && !passwordValid && (
+                <p className="text-xs text-red-500 mt-1">Password must be at least 8 characters</p>
+              )}
             </div>
 
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-small">
-                <input type="checkbox" />
+              <label className="flex items-center gap-2 text-small cursor-pointer">
+                <input type="checkbox" className="rounded" />
                 Remember me
               </label>
               <Link href="/auth/forgot-password" className="text-small link">
@@ -110,14 +117,20 @@ function LoginForm() {
               </Link>
             </div>
 
-            <button type="submit" className="btn-primary w-full" disabled={loading}>
-              {loading ? "Signing in..." : "Sign In"}
+            <button
+              type="submit"
+              className="btn-primary w-full flex items-center justify-center gap-2"
+              disabled={loading}
+            >
+              {loading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Signing in...</>
+              ) : "Sign In"}
             </button>
           </form>
 
           <div className="mt-6 pt-6 border-t border-border text-center">
             <p className="text-small text-text-muted">
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <Link href="/auth/register" className="link">
                 Create one
               </Link>

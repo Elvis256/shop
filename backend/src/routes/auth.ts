@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../lib/prisma";
+import redis from "../lib/redis";
 import { 
   generateToken, 
   authenticate, 
@@ -119,40 +120,46 @@ router.post("/register", async (req, res: Response) => {
   }
 });
 
-// In-memory login attempt tracking (use Redis in production for distributed systems)
-const loginAttempts = new Map<string, { count: number; lockedUntil: number | null }>();
+// Redis-backed login attempt tracking (falls back gracefully if Redis unavailable)
 const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+const LOCKOUT_DURATION = 15 * 60; // 15 minutes in seconds
 
-function checkAccountLockout(email: string): { locked: boolean; remainingTime?: number } {
-  const attempts = loginAttempts.get(email);
-  if (!attempts) return { locked: false };
-  
-  if (attempts.lockedUntil && Date.now() < attempts.lockedUntil) {
-    return { locked: true, remainingTime: Math.ceil((attempts.lockedUntil - Date.now()) / 1000 / 60) };
+async function checkAccountLockout(email: string): Promise<{ locked: boolean; remainingTime?: number }> {
+  try {
+    const key = `lockout:${email}`;
+    const data = await redis.get(key);
+    if (!data) return { locked: false };
+    const { count, lockedUntil } = JSON.parse(data);
+    if (lockedUntil && Date.now() < lockedUntil) {
+      return { locked: true, remainingTime: Math.ceil((lockedUntil - Date.now()) / 1000 / 60) };
+    }
+    return { locked: false };
+  } catch {
+    return { locked: false }; // Redis down — allow login
   }
-  
-  // Reset if lockout expired
-  if (attempts.lockedUntil && Date.now() >= attempts.lockedUntil) {
-    loginAttempts.delete(email);
-  }
-  
-  return { locked: false };
 }
 
-function recordFailedLogin(email: string): void {
-  const attempts = loginAttempts.get(email) || { count: 0, lockedUntil: null };
-  attempts.count += 1;
-  
-  if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
-    attempts.lockedUntil = Date.now() + LOCKOUT_DURATION;
+async function recordFailedLogin(email: string): Promise<void> {
+  try {
+    const key = `lockout:${email}`;
+    const data = await redis.get(key);
+    const attempts = data ? JSON.parse(data) : { count: 0, lockedUntil: null };
+    attempts.count += 1;
+    if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
+      attempts.lockedUntil = Date.now() + LOCKOUT_DURATION * 1000;
+    }
+    await redis.set(key, JSON.stringify(attempts), "EX", LOCKOUT_DURATION * 2);
+  } catch {
+    // Redis down — skip tracking
   }
-  
-  loginAttempts.set(email, attempts);
 }
 
-function clearLoginAttempts(email: string): void {
-  loginAttempts.delete(email);
+async function clearLoginAttempts(email: string): Promise<void> {
+  try {
+    await redis.del(`lockout:${email}`);
+  } catch {
+    // Redis down — ignore
+  }
 }
 
 // POST /api/auth/login
@@ -160,8 +167,8 @@ router.post("/login", async (req, res: Response) => {
   try {
     const body = LoginSchema.parse(req.body);
 
-    // Check for account lockout
-    const lockoutStatus = checkAccountLockout(body.email);
+    // Check for account lockout (Redis-backed)
+    const lockoutStatus = await checkAccountLockout(body.email);
     if (lockoutStatus.locked) {
       return res.status(429).json({ 
         error: `Account temporarily locked. Try again in ${lockoutStatus.remainingTime} minutes.` 
@@ -175,19 +182,38 @@ router.post("/login", async (req, res: Response) => {
     });
 
     if (!user) {
-      recordFailedLogin(body.email);
+      await recordFailedLogin(body.email);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
     // Verify password
     const validPassword = await bcrypt.compare(body.password, user.password);
     if (!validPassword) {
-      recordFailedLogin(body.email);
+      await recordFailedLogin(body.email);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
     // Clear failed attempts on successful login
-    clearLoginAttempts(body.email);
+    await clearLoginAttempts(body.email);
+
+    // For admin/manager: check if 2FA is enabled — require TOTP code if so
+    if (user.role === "ADMIN" || user.role === "MANAGER") {
+      try {
+        const twoFactor = await prisma.twoFactorAuth.findUnique({
+          where: { userId: user.id },
+          select: { isEnabled: true },
+        });
+        if (twoFactor?.isEnabled) {
+          return res.status(202).json({
+            message: "2FA required",
+            requires2FA: true,
+            userId: user.id,
+          });
+        }
+      } catch {
+        // Table may not exist yet — skip 2FA check
+      }
+    }
 
     // Generate tokens
     const accessToken = generateToken({ id: user.id, email: user.email, role: user.role });

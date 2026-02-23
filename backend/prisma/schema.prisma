@@ -104,6 +104,13 @@ model Product {
   reviewCount Int      @default(0)
   sku         String?  @unique
   barcode     String?
+
+  // Flash sale
+  flashSalePrice  Decimal?  @db.Decimal(10, 2)
+  flashSaleEndsAt DateTime?
+
+  // Video
+  videoUrl    String?
   
   // Inventory
   stock           Int     @default(0)
@@ -144,6 +151,7 @@ model Product {
   orderItems  OrderItem[]
   wishlist    WishlistItem[]
   reviews     Review[]
+  stockAlerts StockAlert[]
 }
 
 model ProductVariant {
@@ -865,4 +873,106 @@ model TwoFactorAuth {
   
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// ─── Stock Alerts (back-in-stock notifications) ───────────────────────────────
+model StockAlert {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  email     String
+  userId    String?
+  notified  Boolean  @default(false)
+  notifiedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@unique([productId, email])
+  @@index([productId, notified])
+}
+
+// ─── Webhook Retry Queue ──────────────────────────────────────────────────────
+model WebhookRetry {
+  id          String   @id @default(cuid())
+  provider    String
+  eventType   String
+  payload     Json
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(5)
+  nextRetryAt DateTime @default(now())
+  lastError   String?  @db.Text
+  resolved    Boolean  @default(false)
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([resolved, nextRetryAt])
+}
+
+// ─── Fraud Log ────────────────────────────────────────────────────────────────
+model FraudLog {
+  id          String   @id @default(cuid())
+  ipAddress   String
+  userId      String?
+  action      String   // login_attempt, order_placed, coupon_abuse, etc.
+  riskScore   Int      @default(0) // 0-100
+  reason      String?
+  metadata    Json?
+  blocked     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([ipAddress, createdAt])
+  @@index([userId])
+}
+
+// ─── Shipping Zones ───────────────────────────────────────────────────────────
+model ShippingZone {
+  id          String   @id @default(cuid())
+  name        String   // e.g. "Kampala", "Upcountry", "International"
+  countries   String[] // ISO codes or region names
+  cities      String[] // specific cities
+  rate        Decimal  @db.Decimal(10, 2)
+  currency    String   @default("UGX")
+  freeAbove   Decimal? @db.Decimal(10, 2) // Free shipping threshold
+  estimatedDays String? // e.g. "1-2 days"
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Tax Rules ────────────────────────────────────────────────────────────────
+model TaxRule {
+  id          String   @id @default(cuid())
+  name        String   // e.g. "Uganda VAT"
+  country     String
+  region      String?
+  rate        Decimal  @db.Decimal(5, 4) // e.g. 0.18 = 18%
+  isInclusive Boolean  @default(false) // price already includes tax
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Frequently Bought Together ───────────────────────────────────────────────
+model ProductRelation {
+  id          String   @id @default(cuid())
+  productId   String
+  relatedId   String
+  score       Int      @default(1) // How often bought together
+  updatedAt   DateTime @updatedAt
+
+  @@unique([productId, relatedId])
+  @@index([productId, score])
+}
+
+// ─── Page Views (Visitor Tracking) ────────────────────────────────────────────
+model PageView {
+  id        String   @id @default(cuid())
+  path      String
+  referrer  String?
+  userAgent String?
+  sessionId String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([path])
 }

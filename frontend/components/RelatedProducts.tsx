@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ShoppingBag } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -33,6 +34,7 @@ export default function RelatedProducts({
   limit = 4,
 }: RelatedProductsProps) {
   const [products, setProducts] = useState<Product[]>([]);
+  const { formatPrice } = useCurrency();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -122,11 +124,11 @@ export default function RelatedProducts({
               
               <div className="mt-2 flex items-center gap-2">
                 <span className="font-semibold">
-                  KES {Number(product.price).toLocaleString()}
+                  {formatPrice(Number(product.price))}
                 </span>
                 {product.comparePrice && (
                   <span className="text-sm text-gray-400 line-through">
-                    KES {Number(product.comparePrice).toLocaleString()}
+                    {formatPrice(Number(product.comparePrice))}
                   </span>
                 )}
               </div>

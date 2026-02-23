@@ -3,6 +3,7 @@ import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { sendShippingNotification } from "../../lib/email";
+import { refundFlutterwaveTransaction } from "../../services/flutterwave";
 
 const router = Router();
 
@@ -284,6 +285,73 @@ router.post("/:id/note", async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Admin add note error:", error);
     return res.status(500).json({ error: "Failed to add note" });
+  }
+});
+
+// POST /api/admin/orders/:id/refund
+router.post("/:id/refund", async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { amount, reason } = z.object({
+      amount: z.number().positive().optional(),
+      reason: z.string().optional(),
+    }).parse(req.body);
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { payments: true },
+    });
+
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    const payment = order.payments?.[0];
+    if (!payment) return res.status(400).json({ error: "No payment record for this order" });
+    if (payment.status !== "SUCCESSFUL") {
+      return res.status(400).json({ error: "Only paid orders can be refunded" });
+    }
+
+    // Initiate refund via Flutterwave
+    const refundResult = await refundFlutterwaveTransaction(
+      payment.flwTxId!,
+      amount,
+      reason
+    );
+
+    // Update order and payment status
+    await prisma.$transaction([
+      prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: "REFUNDED" },
+      }),
+      prisma.order.update({
+        where: { id },
+        data: { status: "REFUNDED", paymentStatus: "REFUNDED" },
+      }),
+      prisma.orderEvent.create({
+        data: {
+          orderId: id,
+          status: "REFUNDED",
+          note: reason || "Refund processed by admin",
+        },
+      }),
+    ]);
+
+    // Log admin activity
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user!.id,
+        action: "REFUND_ORDER",
+        entityType: "Order",
+        entityId: id,
+        description: `Refunded order ${id}${reason ? ": " + reason : ""}`,
+        metadata: { amount, reason, flutterwaveResponse: refundResult },
+        ipAddress: req.ip,
+      },
+    }).catch(() => {});
+
+    return res.json({ message: "Refund processed successfully", data: refundResult });
+  } catch (error: any) {
+    console.error("Admin refund error:", error);
+    return res.status(500).json({ error: error.message || "Refund failed" });
   }
 });
 

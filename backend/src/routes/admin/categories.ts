@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { uploadSingle, validateUploadedFiles } from "../../middleware/upload";
 
 const router = Router();
 
@@ -99,6 +100,34 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Admin update category error:", error);
     return res.status(500).json({ error: "Failed to update category" });
+  }
+});
+
+// POST /api/admin/categories/:id/image - upload image file
+router.post("/:id/image", uploadSingle, validateUploadedFiles, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const file = req.file as Express.Multer.File | undefined;
+
+    if (!file) {
+      return res.status(400).json({ error: "No image file provided" });
+    }
+
+    const category = await prisma.category.findUnique({ where: { id } });
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+
+    const imageUrl = `/uploads/${file.filename}`;
+    const updated = await prisma.category.update({
+      where: { id },
+      data: { imageUrl },
+    });
+
+    return res.json({ message: "Image uploaded", imageUrl, category: updated });
+  } catch (error) {
+    console.error("Admin category image upload error:", error);
+    return res.status(500).json({ error: "Failed to upload image" });
   }
 });
 

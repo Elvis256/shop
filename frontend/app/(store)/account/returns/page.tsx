@@ -54,7 +54,7 @@ export default function ReturnsPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setReturns(data);
+        setReturns(data.returns || []);
       }
     } catch (error) {
       console.error("Failed to fetch returns:", error);

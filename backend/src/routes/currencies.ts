@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
+import { getLastUpdated } from "../services/exchangeRates";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -12,7 +13,7 @@ router.get("/", async (req, res) => {
       orderBy: [{ isBase: "desc" }, { code: "asc" }],
     });
 
-    res.json({ currencies });
+    res.json({ currencies, lastUpdated: getLastUpdated() });
   } catch (error) {
     console.error("Get currencies error:", error);
     res.status(500).json({ error: "Failed to fetch currencies" });

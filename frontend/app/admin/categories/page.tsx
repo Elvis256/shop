@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import {
   Plus,
@@ -11,7 +11,12 @@ import {
   X,
   Save,
   Image as ImageIcon,
+  Upload,
+  Link as LinkIcon,
+  Loader2,
 } from "lucide-react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 interface Category {
   id: string;
@@ -22,6 +27,12 @@ interface Category {
   _count?: { products: number };
 }
 
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : null;
+}
+
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,9 +40,13 @@ export default function CategoriesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [imageMode, setImageMode] = useState<"url" | "file">("file");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Form state
   const [formData, setFormData] = useState({
     name: "",
     slug: "",
@@ -64,10 +79,15 @@ export default function CategoriesPage() {
         description: category.description || "",
         imageUrl: category.imageUrl || "",
       });
+      setImagePreview(category.imageUrl || "");
+      setImageMode(category.imageUrl?.startsWith("/uploads") ? "file" : "url");
     } else {
       setEditingCategory(null);
       setFormData({ name: "", slug: "", description: "", imageUrl: "" });
+      setImagePreview("");
+      setImageMode("file");
     }
+    setImageFile(null);
     setModalOpen(true);
   };
 
@@ -75,14 +95,12 @@ export default function CategoriesPage() {
     setModalOpen(false);
     setEditingCategory(null);
     setFormData({ name: "", slug: "", description: "", imageUrl: "" });
+    setImageFile(null);
+    setImagePreview("");
   };
 
-  const generateSlug = (name: string) => {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "");
-  };
+  const generateSlug = (name: string) =>
+    name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
   const handleNameChange = (name: string) => {
     setFormData((prev) => ({
@@ -92,15 +110,59 @@ export default function CategoriesPage() {
     }));
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const uploadImageFile = async (categoryId: string): Promise<string | null> => {
+    if (!imageFile) return null;
+    setUploading(true);
+    try {
+      const csrf = getCsrfToken();
+      const fd = new FormData();
+      fd.append("image", imageFile);
+      const res = await fetch(`${API_URL}/api/admin/categories/${categoryId}/image`, {
+        method: "POST",
+        credentials: "include",
+        headers: { ...(csrf ? { "x-csrf-token": csrf } : {}) },
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      return data.imageUrl as string;
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
+      const payload = {
+        ...formData,
+        imageUrl: imageMode === "url" ? formData.imageUrl || null : (editingCategory?.imageUrl || null),
+      };
+
+      let savedCategory: Category;
       if (editingCategory) {
-        await api.admin.updateCategory(editingCategory.id, formData);
+        const res: any = await api.admin.updateCategory(editingCategory.id, payload);
+        savedCategory = res.category || res;
       } else {
-        await api.admin.createCategory(formData);
+        const res: any = await api.admin.createCategory(payload);
+        savedCategory = res.category || res;
       }
+
+      // Upload file image after save if file mode selected
+      if (imageMode === "file" && imageFile && savedCategory?.id) {
+        await uploadImageFile(savedCategory.id);
+      }
+
       closeModal();
       loadCategories();
     } catch (error) {
@@ -112,9 +174,7 @@ export default function CategoriesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this category? Products in this category will become uncategorized.")) {
-      return;
-    }
+    if (!confirm("Are you sure you want to delete this category? Products in this category will become uncategorized.")) return;
     setDeleting(id);
     try {
       await api.admin.deleteCategory(id);
@@ -130,6 +190,8 @@ export default function CategoriesPage() {
   const filteredCategories = categories.filter((cat) =>
     cat.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  const previewSrc = imageMode === "url" ? formData.imageUrl : imagePreview;
 
   return (
     <div className="space-y-6">
@@ -181,10 +243,7 @@ export default function CategoriesPage() {
             {search ? "Try a different search term" : "Create your first category to organize products"}
           </p>
           {!search && (
-            <button
-              onClick={() => openModal()}
-              className="text-primary hover:text-primary/80 font-medium"
-            >
+            <button onClick={() => openModal()} className="text-primary hover:text-primary/80 font-medium">
               Add Category
             </button>
           )}
@@ -192,14 +251,11 @@ export default function CategoriesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredCategories.map((category) => (
-            <div
-              key={category.id}
-              className="bg-white rounded-xl border shadow-sm p-6 hover:shadow-md transition-shadow"
-            >
+            <div key={category.id} className="bg-white rounded-xl border shadow-sm p-6 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-4">
                 {category.imageUrl ? (
                   <img
-                    src={category.imageUrl}
+                    src={category.imageUrl.startsWith("/uploads") ? `${API_URL}${category.imageUrl}` : category.imageUrl}
                     alt={category.name}
                     className="w-16 h-16 rounded-lg object-cover"
                   />
@@ -230,9 +286,7 @@ export default function CategoriesPage() {
                 <p className="text-sm text-gray-600 line-clamp-2 mb-3">{category.description}</p>
               )}
               <div className="pt-3 border-t">
-                <span className="text-sm text-gray-500">
-                  {category._count?.products || 0} products
-                </span>
+                <span className="text-sm text-gray-500">{category._count?.products || 0} products</span>
               </div>
             </div>
           ))}
@@ -242,8 +296,8 @@ export default function CategoriesPage() {
       {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white">
               <h2 className="text-lg font-semibold text-gray-900">
                 {editingCategory ? "Edit Category" : "New Category"}
               </h2>
@@ -253,9 +307,7 @@ export default function CategoriesPage() {
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Name *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
                 <input
                   type="text"
                   value={formData.name}
@@ -265,9 +317,7 @@ export default function CategoriesPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Slug *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Slug *</label>
                 <input
                   type="text"
                   value={formData.slug}
@@ -278,9 +328,7 @@ export default function CategoriesPage() {
                 <p className="text-xs text-gray-500 mt-1">URL-friendly identifier</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
@@ -288,27 +336,104 @@ export default function CategoriesPage() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
                 />
               </div>
+
+              {/* Image field with tabs */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Image URL
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={formData.imageUrl}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, imageUrl: e.target.value }))}
-                    placeholder="https://..."
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
-                  {formData.imageUrl && (
-                    <img
-                      src={formData.imageUrl}
-                      alt="Preview"
-                      className="w-10 h-10 rounded-lg object-cover"
-                    />
-                  )}
+                <label className="block text-sm font-medium text-gray-700 mb-2">Category Image</label>
+
+                {/* Toggle tabs */}
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setImageMode("file")}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium transition-colors ${
+                      imageMode === "file" ? "bg-primary text-white" : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    <Upload className="w-4 h-4" />Upload File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImageMode("url")}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium transition-colors ${
+                      imageMode === "url" ? "bg-primary text-white" : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    <LinkIcon className="w-4 h-4" />Image URL
+                  </button>
                 </div>
+
+                {imageMode === "file" ? (
+                  <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    {imagePreview ? (
+                      <div className="relative group">
+                        <img
+                          src={imagePreview.startsWith("data:") ? imagePreview : `${API_URL}${imagePreview}`}
+                          alt="Preview"
+                          className="w-full h-40 object-cover rounded-lg border border-gray-200"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 rounded-lg flex items-center justify-center gap-3 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="bg-white text-gray-900 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-100"
+                          >
+                            Change Image
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setImageFile(null); setImagePreview(""); }}
+                            className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-red-700"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full h-40 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-2 text-gray-500 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+                      >
+                        <ImageIcon className="w-8 h-8" />
+                        <span className="text-sm font-medium">Click to upload image</span>
+                        <span className="text-xs">JPEG, PNG, WebP, GIF — max 5MB</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={formData.imageUrl}
+                        onChange={(e) => {
+                          setFormData((prev) => ({ ...prev, imageUrl: e.target.value }));
+                          setImagePreview(e.target.value);
+                        }}
+                        placeholder="https://example.com/image.jpg"
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      />
+                    </div>
+                    {formData.imageUrl && (
+                      <img
+                        src={formData.imageUrl}
+                        alt="Preview"
+                        className="mt-2 w-full h-32 object-cover rounded-lg border border-gray-200"
+                        onError={(e) => (e.currentTarget.style.display = "none")}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
+
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   type="button"
@@ -319,11 +444,10 @@ export default function CategoriesPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || uploading}
                   className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  <Save className="w-4 h-4" />
-                  {saving ? "Saving..." : "Save Category"}
+                  {saving || uploading ? <><Loader2 className="w-4 h-4 animate-spin" />{uploading ? "Uploading..." : "Saving..."}</> : <><Save className="w-4 h-4" />Save Category</>}
                 </button>
               </div>
             </form>
