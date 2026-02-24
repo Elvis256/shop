@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { 
@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Check,
   Loader2,
+  ClipboardPaste,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -21,6 +22,11 @@ interface Category {
   id: string;
   name: string;
   slug: string;
+}
+
+interface ProductImage {
+  id: string;
+  url: string;
 }
 
 interface ProductFormData {
@@ -45,8 +51,9 @@ export default function EditProductPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [images, setImages] = useState<string[]>([]);
+  const [images, setImages] = useState<ProductImage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [formData, setFormData] = useState<ProductFormData>({
@@ -71,7 +78,6 @@ export default function EditProductPage() {
     setLoading(true);
     setError(null);
     try {
-      // Load categories and product in parallel
       const [categoriesData, productData]: [any, any] = await Promise.all([
         api.admin.getCategories(),
         api.admin.getProduct(productId),
@@ -93,7 +99,7 @@ export default function EditProductPage() {
         featured: product.featured || false,
         tags: product.tags?.join(", ") || "",
       });
-      setImages(product.images?.map((img: { url: string }) => img.url) || []);
+      setImages(product.images?.map((img: ProductImage) => ({ id: img.id, url: img.url })) || []);
     } catch (err) {
       console.error("Failed to load data:", err);
       setError("Failed to load product. Please try again.");
@@ -101,6 +107,44 @@ export default function EditProductPage() {
       setLoading(false);
     }
   };
+
+  // Upload files to backend immediately and add to images state
+  const uploadFiles = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    setUploadingImages(true);
+    setError(null);
+    try {
+      const result: any = await api.admin.uploadProductImages(productId, files);
+      const uploaded: ProductImage[] = (result.images || []).map((img: any) => ({
+        id: img.id,
+        url: img.url,
+      }));
+      setImages((prev) => [...prev, ...uploaded]);
+    } catch (err) {
+      console.error("Image upload failed:", err);
+      setError("Failed to upload image(s). Please try again.");
+    } finally {
+      setUploadingImages(false);
+    }
+  }, [productId]);
+
+  // Global paste handler
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files = Array.from(items)
+        .filter((item) => item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter(Boolean) as File[];
+      if (files.length > 0) {
+        e.preventDefault();
+        uploadFiles(files);
+      }
+    };
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [uploadFiles]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,16 +198,21 @@ export default function EditProductPage() {
     }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    // For now, just create preview URLs - actual upload would need backend implementation
-    const newImages = Array.from(files).map((file) => URL.createObjectURL(file));
-    setImages((prev) => [...prev, ...newImages]);
+    uploadFiles(Array.from(files));
+    e.target.value = ""; // reset so same file can be re-selected
   };
 
-  const removeImage = (index: number) => {
-    setImages((prev) => prev.filter((_, i) => i !== index));
+  const removeImage = async (image: ProductImage) => {
+    try {
+      await api.admin.deleteProductImage(productId, image.id);
+      setImages((prev) => prev.filter((img) => img.id !== image.id));
+    } catch (err) {
+      console.error("Failed to delete image:", err);
+      setError("Failed to remove image. Please try again.");
+    }
   };
 
   const generateSlug = () => {
@@ -286,14 +335,40 @@ export default function EditProductPage() {
 
         {/* Images */}
         <div className="bg-white rounded-xl border p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Images</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Images</h2>
+            <span className="flex items-center gap-1.5 text-xs text-gray-400">
+              <ClipboardPaste className="w-3.5 h-3.5" />
+              Ctrl+V to paste
+            </span>
+          </div>
+
+          {uploadingImages && (
+            <div className="flex items-center gap-2 mb-3 text-sm text-primary">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Uploading...
+            </div>
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {images.map((url, index) => (
-              <div key={index} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden group">
-                <img src={url} alt="" className="w-full h-full object-cover" />
+            {images.map((image, index) => (
+              <div key={image.id} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden group">
+                <img
+                  src={image.url.startsWith("/") ? image.url : `/${image.url}`}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    // Try alternative path if first fails
+                    const target = e.currentTarget;
+                    if (!target.dataset.retried) {
+                      target.dataset.retried = "1";
+                      target.src = image.url;
+                    }
+                  }}
+                />
                 <button
                   type="button"
-                  onClick={() => removeImage(index)}
+                  onClick={() => removeImage(image)}
                   className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all"
                 >
                   <X className="w-4 h-4" />
@@ -306,15 +381,16 @@ export default function EditProductPage() {
               </div>
             ))}
 
-            <label className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all">
+            <label className={`aspect-square border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-all ${uploadingImages ? "opacity-50 pointer-events-none border-gray-200" : "border-gray-300 hover:border-primary hover:bg-primary/5"}`}>
               <Upload className="w-8 h-8 text-gray-400 mb-2" />
-              <span className="text-sm text-gray-500">Add Image</span>
+              <span className="text-sm text-gray-500 text-center px-2">Add Image</span>
               <input
                 type="file"
                 accept="image/*"
                 multiple
                 className="hidden"
                 onChange={handleImageUpload}
+                disabled={uploadingImages}
               />
             </label>
           </div>
@@ -445,7 +521,7 @@ export default function EditProductPage() {
           </Link>
           <button 
             type="submit" 
-            disabled={saving}
+            disabled={saving || uploadingImages}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white hover:bg-primary/90 rounded-lg font-medium transition-colors disabled:opacity-50"
           >
             {saving ? (

@@ -92,8 +92,10 @@ export async function apiFetch(
   options: RequestInit = {},
   retry = true
 ): Promise<any> {
+  // Don't set Content-Type for FormData (let browser set it with boundary)
+  const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...((options.headers as Record<string, string>) || {}),
   };
 
@@ -249,6 +251,13 @@ export const api = {
       apiFetch(`/api/admin/products/${id}`, { method: "DELETE" }),
     bulkProductAction: (action: string, ids: string[]): Promise<SuccessMessage> =>
       apiFetch("/api/admin/products/bulk", { method: "POST", body: JSON.stringify({ action, ids }) }),
+    uploadProductImages: (id: string, files: File[]): Promise<any> => {
+      const formData = new FormData();
+      files.forEach((file) => formData.append("images", file));
+      return apiFetch(`/api/admin/products/${id}/images`, { method: "POST", body: formData });
+    },
+    deleteProductImage: (productId: string, imageId: string): Promise<SuccessMessage> =>
+      apiFetch(`/api/admin/products/${productId}/images/${imageId}`, { method: "DELETE" }),
 
     // Orders
     getOrders: (params?: Record<string, string>): Promise<OrdersResponse> => {

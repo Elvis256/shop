@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { 
@@ -13,6 +13,7 @@ import {
   Check,
   Loader2,
   Package,
+  ClipboardPaste,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -41,6 +42,7 @@ export default function NewProductPage() {
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [images, setImages] = useState<string[]>([]);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [formData, setFormData] = useState<ProductFormData>({
@@ -60,6 +62,30 @@ export default function NewProductPage() {
   useEffect(() => {
     loadCategories();
   }, []);
+
+  const addFiles = useCallback((files: File[]) => {
+    const newUrls = files.map((f) => URL.createObjectURL(f));
+    setImages((prev) => [...prev, ...newUrls]);
+    setImageFiles((prev) => [...prev, ...files]);
+  }, []);
+
+  // Global paste handler: captures pasted images from clipboard
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const imageFiles = Array.from(items)
+        .filter((item) => item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter(Boolean) as File[];
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        addFiles(imageFiles);
+      }
+    };
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [addFiles]);
 
   const loadCategories = async () => {
     try {
@@ -110,7 +136,13 @@ export default function NewProductPage() {
           .filter(Boolean),
       };
 
-      await api.admin.createProduct(payload);
+      const product = await api.admin.createProduct(payload);
+
+      // Upload images if any were added
+      if (imageFiles.length > 0) {
+        await api.admin.uploadProductImages(product.id, imageFiles);
+      }
+
       setSuccess(true);
       setTimeout(() => {
         router.push("/admin/products");
@@ -126,12 +158,12 @@ export default function NewProductPage() {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    const newImages = Array.from(files).map((file) => URL.createObjectURL(file));
-    setImages((prev) => [...prev, ...newImages]);
+    addFiles(Array.from(files));
   };
 
   const removeImage = (index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
+    setImageFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -206,7 +238,13 @@ export default function NewProductPage() {
 
         {/* Images */}
         <div className="bg-white rounded-xl border p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Images</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Images</h2>
+            <span className="flex items-center gap-1.5 text-xs text-gray-400">
+              <ClipboardPaste className="w-3.5 h-3.5" />
+              Ctrl+V to paste images anywhere
+            </span>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {images.map((url, index) => (
               <div key={index} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden group">

@@ -93,10 +93,15 @@ export default function CartDrawer() {
                       <span className="w-8 text-center text-sm">{item.quantity}</span>
                       <button
                         onClick={() => updateQuantity(item.productId, item.quantity + 1)}
-                        className="w-7 h-7 flex items-center justify-center border rounded hover:bg-gray-100"
+                        className="w-7 h-7 flex items-center justify-center border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        disabled={item.stock !== undefined && item.quantity >= item.stock}
+                        title={item.stock !== undefined && item.quantity >= item.stock ? `Max ${item.stock} available` : undefined}
                       >
                         +
                       </button>
+                      {item.stock !== undefined && item.stock <= 10 && item.stock > 0 && (
+                        <span className="text-[10px] text-orange-500 ml-1">{item.stock} left</span>
+                      )}
                       <button
                         onClick={() => removeItem(item.productId)}
                         className="ml-auto text-red-500 hover:text-red-700 text-sm"

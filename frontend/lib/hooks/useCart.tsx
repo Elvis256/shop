@@ -12,6 +12,7 @@ export interface CartItem {
   price: number;
   quantity: number;
   imageUrl: string | null;
+  stock?: number; // available stock from product
 }
 
 interface CartContextType {
@@ -109,16 +110,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const addItem = (product: Omit<CartItem, "quantity"> & { quantity?: number }) => {
     const quantity = product.quantity || 1;
+    const stock = product.stock;
     setItems((prev) => {
       const existing = prev.find((item) => item.productId === product.productId);
       if (existing) {
+        const newQty = existing.quantity + quantity;
+        const cappedQty = stock !== undefined ? Math.min(newQty, stock) : newQty;
         return prev.map((item) =>
           item.productId === product.productId
-            ? { ...item, quantity: item.quantity + quantity }
+            ? { ...item, quantity: cappedQty, stock }
             : item
         );
       }
-      return [...prev, { ...product, quantity, id: product.productId }];
+      const cappedQty = stock !== undefined ? Math.min(quantity, stock) : quantity;
+      return [...prev, { ...product, quantity: cappedQty, stock, id: product.productId }];
     });
     setIsOpen(true);
   };
@@ -129,9 +134,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return;
     }
     setItems((prev) =>
-      prev.map((item) =>
-        item.productId === productId ? { ...item, quantity } : item
-      )
+      prev.map((item) => {
+        if (item.productId !== productId) return item;
+        const cappedQty = item.stock !== undefined ? Math.min(quantity, item.stock) : quantity;
+        return { ...item, quantity: cappedQty };
+      })
     );
   };
 

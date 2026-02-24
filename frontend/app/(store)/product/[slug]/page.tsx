@@ -332,8 +332,13 @@ export default function ProductPage() {
         </div>
 
         {/* Tabs */}
-        <div className="mt-8 border rounded-lg p-6">
-          <ProductTabs description={product.description} productId={product.id} />
+        <div className="mt-8 border rounded-xl overflow-hidden bg-white px-6 pb-6">
+          <ProductTabs
+            description={product.description}
+            productId={product.id}
+            reviewCount={product.reviewCount}
+            rating={Number(product.rating)}
+          />
         </div>
       </div>
 

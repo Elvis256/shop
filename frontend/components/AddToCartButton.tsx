@@ -24,6 +24,7 @@ export default function AddToCartButton({ product, showQuantity = false, classNa
   const { showToast } = useToast();
 
   const handleAdd = () => {
+    if (product.stock !== undefined && product.stock <= 0) return;
     setIsAdding(true);
     addItem({
       id: product.id,
@@ -32,6 +33,7 @@ export default function AddToCartButton({ product, showQuantity = false, classNa
       slug: product.slug,
       price: product.price,
       imageUrl: product.imageUrl || null,
+      stock: product.stock,
       quantity,
     });
     showToast(`${product.name} added to cart`, "success");
@@ -39,26 +41,34 @@ export default function AddToCartButton({ product, showQuantity = false, classNa
   };
 
   const inStock = product.stock === undefined || product.stock > 0;
+  const atStockLimit = product.stock !== undefined && quantity >= product.stock;
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
+    <div className={`flex flex-col gap-2 ${className}`}>
       {showQuantity && (
-        <div className="flex items-center border rounded-lg">
-          <button
-            onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-            className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 transition"
-            disabled={quantity <= 1}
-          >
-            −
-          </button>
-          <span className="w-12 text-center font-medium">{quantity}</span>
-          <button
-            onClick={() => setQuantity((q) => q + 1)}
-            className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 transition"
-            disabled={product.stock !== undefined && quantity >= product.stock}
-          >
-            +
-          </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center border rounded-lg">
+            <button
+              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+              className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 transition"
+              disabled={quantity <= 1}
+            >
+              −
+            </button>
+            <span className="w-12 text-center font-medium">{quantity}</span>
+            <button
+              onClick={() => setQuantity((q) => q + 1)}
+              className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={atStockLimit}
+            >
+              +
+            </button>
+          </div>
+          {product.stock !== undefined && product.stock > 0 && product.stock <= 10 && (
+            <span className="text-xs text-orange-600 font-medium">
+              Only {product.stock} left
+            </span>
+          )}
         </div>
       )}
 
