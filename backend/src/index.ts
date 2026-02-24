@@ -57,7 +57,7 @@ const PORT = process.env.PORT || 4000;
 // Security middleware
 setupSecurity(app);
 
-// CORS - Allow multiple origins for development
+// CORS - Allow multiple origins for development and production
 const allowedOrigins = [
   process.env.BASE_URL || "http://localhost:3000",
   "http://localhost:3001",
@@ -65,9 +65,14 @@ const allowedOrigins = [
   "http://localhost:8080",
   "http://127.0.0.1:3000",
   "http://127.0.0.1:5000",
-  `http://100.83.8.43:5000`,
-  `http://192.168.1.250:5000`,
-];
+  "http://100.83.8.43:5000",
+  "http://192.168.1.250:5000",
+  // Production domains
+  "https://ugsex.com",
+  "https://www.ugsex.com",
+  "https://pleasurezone-shop.vercel.app",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
