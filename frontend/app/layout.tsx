@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/lib/hooks/useTheme";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorker";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://pleasurezone.ug";
 
@@ -78,6 +79,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen flex flex-col bg-bg text-text transition-colors" suppressHydrationWarning>
         <GoogleAnalytics />
+        <SpeedInsights />
         <ServiceWorkerRegistration />
         <ThemeProvider>
         <ToastProvider>
