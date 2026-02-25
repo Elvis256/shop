@@ -120,14 +120,16 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
   }
 });
 
+const emptyToUndefined = z.string().transform((v) => v.trim() === "" ? undefined : v);
+
 const ProductSchema = z.object({
   name: z.string().min(2),
-  slug: z.string().min(2).optional(),
-  description: z.string().optional(),
+  slug: emptyToUndefined.pipe(z.string().min(2)).optional(),
+  description: emptyToUndefined.pipe(z.string()).optional(),
   price: z.number().positive(),
   comparePrice: z.number().positive().optional().nullable(),
-  sku: z.string().optional(),
-  barcode: z.string().optional(),
+  sku: emptyToUndefined.pipe(z.string()).optional(),
+  barcode: emptyToUndefined.pipe(z.string()).optional(),
   stock: z.number().int().min(0).default(0),
   lowStockAlert: z.number().int().min(0).default(5),
   trackInventory: z.boolean().default(true),
@@ -163,7 +165,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       data: body as any,
     });
 
-    return res.status(201).json({ message: "Product created", product });
+    return res.status(201).json(product);
   } catch (error) {
     console.error("Admin create product error:", error);
     if (error instanceof z.ZodError) {
