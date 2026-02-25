@@ -120,16 +120,17 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
   }
 });
 
-const emptyToUndefined = z.string().transform((v) => v.trim() === "" ? undefined : v);
+const optStr = (schema = z.string()) =>
+  z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), schema.optional());
 
 const ProductSchema = z.object({
   name: z.string().min(2),
-  slug: emptyToUndefined.pipe(z.string().min(2)).optional(),
-  description: emptyToUndefined.pipe(z.string()).optional(),
+  slug: optStr(z.string().min(2)),
+  description: optStr(),
   price: z.number().positive(),
   comparePrice: z.number().positive().optional().nullable(),
-  sku: emptyToUndefined.pipe(z.string()).optional(),
-  barcode: emptyToUndefined.pipe(z.string()).optional(),
+  sku: optStr(),
+  barcode: optStr(),
   stock: z.number().int().min(0).default(0),
   lowStockAlert: z.number().int().min(0).default(5),
   trackInventory: z.boolean().default(true),
@@ -170,6 +171,10 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     console.error("Admin create product error:", error);
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
+    }
+    if ((error as any)?.code === "P2002") {
+      const field = (error as any)?.meta?.target?.[0] || "field";
+      return res.status(400).json({ error: `A product with this ${field} already exists` });
     }
     return res.status(500).json({ error: "Failed to create product" });
   }
