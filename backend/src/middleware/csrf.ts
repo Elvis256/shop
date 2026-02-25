@@ -42,12 +42,12 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction) {
   }
 
   // Skip for webhooks (they use their own verification)
-  if (req.path.startsWith("/api/webhooks")) {
+  if (req.path.startsWith("/webhooks")) {
     return next();
   }
 
   // Skip for analytics tracking (not sensitive, no auth required)
-  if (req.path === "/api/analytics/track") {
+  if (req.path === "/analytics/track") {
     return next();
   }
 
