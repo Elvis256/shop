@@ -150,6 +150,10 @@ export default function CheckoutPage() {
           phone: shipping.phone,
         },
         discreet: shipping.discreet,
+        // Include affiliate referral code if present
+        ...(typeof window !== "undefined" && localStorage.getItem("affiliate_ref")
+          ? { affiliateCode: localStorage.getItem("affiliate_ref") }
+          : {}),
       };
 
       const csrf = getCsrfToken();

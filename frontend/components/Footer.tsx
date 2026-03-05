@@ -48,6 +48,7 @@ export default function Footer() {
               <Link href="/blog" className="block text-text-muted hover:text-text transition-colors duration-200">Blog</Link>
               <Link href="/policies/privacy" className="block text-text-muted hover:text-text transition-colors duration-200">Privacy</Link>
               <Link href="/policies/terms" className="block text-text-muted hover:text-text transition-colors duration-200">Terms</Link>
+              <Link href="/affiliate/signup" className="block text-text-muted hover:text-text transition-colors duration-200">Affiliate Program</Link>
             </nav>
           </div>
 

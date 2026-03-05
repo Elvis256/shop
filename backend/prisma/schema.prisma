@@ -36,6 +36,7 @@ model User {
   referralCode      ReferralCode?
   referredBy        Referral?        @relation("ReferredUser")
   twoFactorAuth     TwoFactorAuth?
+  affiliate         Affiliate?
 }
 
 model RefreshToken {
@@ -196,6 +197,7 @@ model Category {
   parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children    Category[] @relation("CategoryTree")
   products    Product[]
+  affiliateProducts AffiliateProduct[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 }
@@ -977,4 +979,133 @@ model PageView {
 
   @@index([createdAt])
   @@index([path])
+}
+
+// ─── Affiliate Marketing System ──────────────────────────────────────────────
+
+// External affiliate products (Amazon, AliExpress, etc.) displayed on our site
+model AffiliateProduct {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  description     String?  @db.Text
+  price           Decimal  @db.Decimal(10, 2)
+  originalPrice   Decimal? @db.Decimal(10, 2)
+  currency        String   @default("USD")
+  imageUrl        String?
+  images          String[] // additional image URLs
+  affiliateUrl    String   // the affiliate link to external store
+  source          AffiliateSource
+  sourceProductId String?  // external product ID (ASIN, AliExpress ID)
+  categoryId      String?
+  category        Category? @relation(fields: [categoryId], references: [id])
+  tags            String[]
+  rating          Decimal? @db.Decimal(3, 2)
+  reviewCount     Int      @default(0)
+  commissionRate  Decimal? @db.Decimal(5, 2) // expected commission %
+  isActive        Boolean  @default(true)
+  isFeatured      Boolean  @default(false)
+
+  clicks          AffiliateClick[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([source])
+  @@index([isActive])
+  @@index([categoryId])
+}
+
+// Track clicks on affiliate products
+model AffiliateClick {
+  id                 String   @id @default(cuid())
+  affiliateProductId String
+  affiliateProduct   AffiliateProduct @relation(fields: [affiliateProductId], references: [id], onDelete: Cascade)
+  sessionId          String?
+  ipAddress          String?
+  userAgent          String?
+  referrer           String?
+  createdAt          DateTime @default(now())
+
+  @@index([affiliateProductId])
+  @@index([createdAt])
+}
+
+// Affiliates who promote OUR products (our affiliate program)
+model Affiliate {
+  id              String   @id @default(cuid())
+  userId          String?  @unique
+  user            User?    @relation(fields: [userId], references: [id])
+  name            String
+  email           String   @unique
+  website         String?
+  socialMedia     String?
+  code            String   @unique  // unique affiliate code e.g. "BLOGGER123"
+  commissionRate  Decimal  @default(10) @db.Decimal(5, 2) // percentage
+  status          AffiliateStatus @default(PENDING)
+
+  totalClicks     Int      @default(0)
+  totalOrders     Int      @default(0)
+  totalEarnings   Decimal  @default(0) @db.Decimal(12, 2)
+  pendingPayout   Decimal  @default(0) @db.Decimal(12, 2)
+  totalPaid       Decimal  @default(0) @db.Decimal(12, 2)
+
+  conversions     AffiliateConversion[]
+  payouts         AffiliatePayout[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Track sales attributed to an affiliate
+model AffiliateConversion {
+  id            String   @id @default(cuid())
+  affiliateId   String
+  affiliate     Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  orderId       String
+  orderAmount   Decimal  @db.Decimal(12, 2)
+  commission    Decimal  @db.Decimal(12, 2)
+  status        ConversionStatus @default(PENDING)
+  paidAt        DateTime?
+
+  createdAt     DateTime @default(now())
+
+  @@index([affiliateId])
+  @@index([orderId])
+}
+
+// Payout records
+model AffiliatePayout {
+  id            String   @id @default(cuid())
+  affiliateId   String
+  affiliate     Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  amount        Decimal  @db.Decimal(12, 2)
+  method        String   // "mobile_money", "bank_transfer", etc.
+  reference     String?
+  notes         String?
+
+  createdAt     DateTime @default(now())
+
+  @@index([affiliateId])
+}
+
+enum AffiliateSource {
+  AMAZON
+  ALIEXPRESS
+  ALIBABA
+  MANUAL
+}
+
+enum AffiliateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum ConversionStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
 }

@@ -25,6 +25,7 @@ const CheckoutSchema = z.object({
   }),
   discreet: z.boolean().default(true),
   shippingAddress: z.string().optional(),
+  affiliateCode: z.string().optional(),
 });
 
 // Helper: Check and reserve stock for cart items
@@ -166,6 +167,36 @@ router.post("/create", async (req: Request, res: Response) => {
 
     // Clear cart after order created
     await prisma.cartItem.deleteMany({ where: { cartId: body.cartId } });
+
+    // Track affiliate conversion if referral code provided
+    if (body.affiliateCode) {
+      try {
+        const affiliate = await prisma.affiliate.findUnique({
+          where: { code: body.affiliateCode, status: "APPROVED" },
+        });
+        if (affiliate) {
+          const commissionAmount = body.amount * (Number(affiliate.commissionRate) / 100);
+          await prisma.affiliateConversion.create({
+            data: {
+              affiliateId: affiliate.id,
+              orderId: result.id,
+              orderAmount: body.amount,
+              commission: commissionAmount,
+              status: "PENDING",
+            },
+          });
+          await prisma.affiliate.update({
+            where: { id: affiliate.id },
+            data: {
+              totalOrders: { increment: 1 },
+              totalEarnings: { increment: commissionAmount },
+            },
+          });
+        }
+      } catch (e) {
+        console.error("Affiliate tracking error:", e);
+      }
+    }
 
     return res.json({
       orderId: result.id,

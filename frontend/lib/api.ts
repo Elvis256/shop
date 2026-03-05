@@ -245,6 +245,21 @@ export const api = {
   getViewerCount: (productId: string): Promise<{ viewerCount: number }> =>
     apiFetch(`/api/recommendations/viewers/${productId}`),
 
+  // Affiliate - Browse affiliate products
+  getAffiliateProducts: (params?: Record<string, string>): Promise<any> => {
+    const query = params ? `?${new URLSearchParams(params)}` : "";
+    return apiFetch(`/api/affiliate/products${query}`);
+  },
+  getAffiliateProduct: (slug: string): Promise<any> => apiFetch(`/api/affiliate/products/${slug}`),
+  getFeaturedAffiliateProducts: (): Promise<{ products: any[] }> => apiFetch("/api/affiliate/featured"),
+  trackAffiliateClick: (id: string): Promise<{ affiliateUrl: string }> =>
+    apiFetch(`/api/affiliate/products/${id}/click`, { method: "POST" }),
+  affiliateSignup: (data: { name: string; email: string; website?: string; socialMedia?: string }): Promise<any> =>
+    apiFetch("/api/affiliate/signup", { method: "POST", body: JSON.stringify(data) }),
+  getAffiliateDashboard: (code: string): Promise<any> => apiFetch(`/api/affiliate/dashboard/${code}`),
+  trackAffiliateReferral: (code: string, orderId: string, orderAmount: number): Promise<any> =>
+    apiFetch("/api/affiliate/track-referral", { method: "POST", body: JSON.stringify({ code, orderId, orderAmount }) }),
+
   // Admin
   admin: {
     getDashboard: (): Promise<DashboardStats> => apiFetch("/api/admin/dashboard"),
@@ -341,6 +356,29 @@ export const api = {
     getInventory: () => apiFetch("/api/admin/settings/inventory"),
     updateInventory: (productId: string, data: { stock: number }): Promise<SuccessMessage> =>
       apiFetch(`/api/admin/settings/inventory/${productId}`, { method: "PUT", body: JSON.stringify(data) }),
+
+    // Affiliate Products
+    getAffiliateProducts: (params?: Record<string, string>): Promise<any> => {
+      const query = params ? `?${new URLSearchParams(params)}` : "";
+      return apiFetch(`/api/admin/affiliates/products${query}`);
+    },
+    getAffiliateProduct: (id: string): Promise<any> => apiFetch(`/api/admin/affiliates/products/${id}`),
+    createAffiliateProduct: (data: any): Promise<any> =>
+      apiFetch("/api/admin/affiliates/products", { method: "POST", body: JSON.stringify(data) }),
+    updateAffiliateProduct: (id: string, data: any): Promise<any> =>
+      apiFetch(`/api/admin/affiliates/products/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    deleteAffiliateProduct: (id: string): Promise<any> =>
+      apiFetch(`/api/admin/affiliates/products/${id}`, { method: "DELETE" }),
+    importAffiliateProducts: (data: any[]): Promise<any> =>
+      apiFetch("/api/admin/affiliates/products/import", { method: "POST", body: JSON.stringify({ products: data }) }),
+
+    // Affiliate Program
+    getAffiliates: (): Promise<any> => apiFetch("/api/admin/affiliates"),
+    updateAffiliateStatus: (id: string, status: string): Promise<any> =>
+      apiFetch(`/api/admin/affiliates/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
+    processAffiliatePayout: (affiliateId: string, amount: number, method: string): Promise<any> =>
+      apiFetch("/api/admin/affiliates/payouts", { method: "POST", body: JSON.stringify({ affiliateId, amount, method }) }),
+    getAffiliateStats: (): Promise<any> => apiFetch("/api/admin/affiliates/stats"),
   },
 };
 

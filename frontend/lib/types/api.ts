@@ -261,6 +261,7 @@ export interface CheckoutRequest {
   discreet?: boolean;
   shippingAddress?: string;
   couponCode?: string;
+  affiliateCode?: string;
 }
 
 export interface CheckoutResponse {
