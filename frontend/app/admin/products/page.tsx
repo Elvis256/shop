@@ -30,7 +30,9 @@ import {
   Sparkles,
   DollarSign,
   BarChart3,
+  Upload,
 } from "lucide-react";
+import { useRef } from "react";
 
 interface Product {
   id: string;
@@ -66,6 +68,9 @@ export default function AdminProductsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
   const [stats, setStats] = useState({ total: 0, active: 0, lowStock: 0, outOfStock: 0 });
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState<{ imported: number; failed: number; errors: string[] } | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   const loadProducts = async (params: Record<string, string> = {}) => {
     setLoading(true);
@@ -202,6 +207,24 @@ export default function AdminProductsPage() {
     a.click();
   };
 
+  const handleCsvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvImporting(true);
+    setCsvResult(null);
+    try {
+      const result = await api.admin.importProductsCsv(file);
+      setCsvResult(result);
+      if (result.imported > 0) loadProducts();
+    } catch (err) {
+      console.error(err);
+      setCsvResult({ imported: 0, failed: 1, errors: ["Upload failed"] });
+    } finally {
+      setCsvImporting(false);
+      if (csvInputRef.current) csvInputRef.current.value = "";
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "ACTIVE": return "bg-emerald-100 text-emerald-700 border-emerald-200";
@@ -245,6 +268,15 @@ export default function AdminProductsPage() {
             <Download className="w-4 h-4" />
             Export
           </button>
+          <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvImport} />
+          <button
+            onClick={() => csvInputRef.current?.click()}
+            disabled={csvImporting}
+            className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60"
+          >
+            <Upload className="w-4 h-4" />
+            {csvImporting ? "Importing..." : "Import CSV"}
+          </button>
           <Link 
             href="/admin/products/new" 
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
@@ -254,6 +286,25 @@ export default function AdminProductsPage() {
           </Link>
         </div>
       </div>
+
+      {/* CSV Import Result */}
+      {csvResult && (
+        <div className={`rounded-lg border p-4 flex items-start justify-between ${csvResult.failed > 0 ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"}`}>
+          <div>
+            <p className="font-medium text-sm">
+              Import complete: {csvResult.imported} imported, {csvResult.failed} failed
+            </p>
+            {csvResult.errors.length > 0 && (
+              <ul className="mt-2 text-xs text-red-600 space-y-0.5">
+                {csvResult.errors.map((e, i) => <li key={i}>• {e}</li>)}
+              </ul>
+            )}
+          </div>
+          <button onClick={() => setCsvResult(null)} className="text-gray-400 hover:text-gray-600 ml-4">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

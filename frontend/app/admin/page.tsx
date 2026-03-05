@@ -95,6 +95,14 @@ function getGreeting() {
   return "Good evening";
 }
 
+interface LowStockProduct {
+  id: string;
+  name: string;
+  slug: string;
+  stock: number;
+  price: number;
+}
+
 export default function AdminDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -102,14 +110,19 @@ export default function AdminDashboard() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [lowStockProducts, setLowStockProducts] = useState<LowStockProduct[]>([]);
 
   const loadDashboard = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
     else setLoading(true);
     setError(null);
     try {
-      const result = await api.admin.getDashboard() as unknown as DashboardData;
+      const [result, lowStockRes] = await Promise.all([
+        api.admin.getDashboard() as unknown as DashboardData,
+        fetch("/api/admin/products?stock=low&limit=5").then((r) => r.ok ? r.json() : { products: [] }),
+      ]);
       setData(result);
+      setLowStockProducts(lowStockRes.products || []);
       setLastUpdated(new Date());
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
@@ -513,6 +526,42 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+
+          {/* Low Stock Alert */}
+          {lowStockProducts.length > 0 && (
+            <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b bg-amber-50">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <h2 className="font-semibold text-gray-900">Low Stock Alert</h2>
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                    {lowStockProducts.length}
+                  </span>
+                </div>
+                <Link href="/admin/inventory"
+                  className="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1">
+                  Manage <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {lowStockProducts.map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${p.stock === 0 ? "bg-red-500" : "bg-amber-400"}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{p.name}</p>
+                    </div>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      p.stock === 0
+                        ? "bg-red-100 text-red-700"
+                        : "bg-amber-100 text-amber-700"
+                    }`}>
+                      {p.stock === 0 ? "Out of stock" : `${p.stock} left`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Today's Snapshot */}
           <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl p-5 text-white">

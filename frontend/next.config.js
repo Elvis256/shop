@@ -2,7 +2,7 @@ const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development',
+  disable: true,
 });
 
 /** @type {import('next').NextConfig} */
@@ -26,11 +26,9 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'localhost' },
       { protocol: 'http',  hostname: 'localhost' },
-      { protocol: 'http',  hostname: '192.168.1.250' },
-      { protocol: 'https', hostname: '192.168.1.250' },
-      // Cloud storage — add your Cloudinary/S3 hostname here after setup
+      { protocol: 'https', hostname: 'ugsex.com' },
+      { protocol: 'http',  hostname: '212.47.69.106' },
       { protocol: 'https', hostname: 'res.cloudinary.com' },
-      // Backend on Railway/Render — wildcard covers any subdomain
       { protocol: 'https', hostname: '**.railway.app' },
       { protocol: 'https', hostname: '**.onrender.com' },
     ],

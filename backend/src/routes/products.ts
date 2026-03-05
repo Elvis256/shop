@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
+import { cacheGetOrSet, cacheDel, trackTrending, SHORT_TTL, LONG_TTL } from "../lib/cache";
 
 const router = Router();
 

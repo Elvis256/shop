@@ -146,9 +146,9 @@ router.post("/create", async (req: Request, res: Response) => {
       tx_ref: result.id,
       amount: body.amount,
       currency: body.currency,
-      customer: body.customer,
+      customer: body.customer as any,
       paymentMethod: body.paymentMethod,
-      mobileMoney: body.mobileMoney,
+      mobileMoney: body.mobileMoney as any,
       redirect_url: `${process.env.BASE_URL}/checkout/confirm?orderId=${result.id}`,
     });
 

@@ -78,7 +78,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       data: {
         ...body,
         code: body.code.toUpperCase(),
-      },
+      } as any,
     });
 
     return res.status(201).json({ message: "Coupon created", coupon });

@@ -102,4 +102,27 @@ router.get("/status", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/newsletter/admin/subscribers - Admin list of subscribers
+router.get("/admin/subscribers", async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const skip = (page - 1) * limit;
+
+    const [subscribers, total] = await Promise.all([
+      prisma.newsletter.findMany({
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.newsletter.count(),
+    ]);
+
+    return res.json({ subscribers, total, page, limit });
+  } catch (error) {
+    console.error("Newsletter admin list error:", error);
+    return res.status(500).json({ error: "Failed to fetch subscribers" });
+  }
+});
+
 export default router;

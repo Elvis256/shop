@@ -25,6 +25,7 @@ import {
   Bell,
   Search,
   RefreshCw,
+  Truck,
 } from "lucide-react";
 
 const navItems = [
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/admin/customers", icon: Users, label: "Customers" },
   { href: "/admin/categories", icon: FolderTree, label: "Categories" },
   { href: "/admin/coupons", icon: Tag, label: "Coupons" },
+  { href: "/admin/shipping", icon: Truck, label: "Shipping" },
   { href: "/admin/content", icon: FileText, label: "Content" },
   { href: "/admin/staff", icon: UserCog, label: "Staff" },
   { href: "/admin/activity", icon: Activity, label: "Activity Log" },

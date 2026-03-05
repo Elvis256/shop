@@ -3,7 +3,8 @@ import { MetadataRoute } from 'next';
 export const dynamic = 'force-dynamic';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://pleasurezone.ug';
+const INTERNAL_API_URL = 'http://localhost:4000';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://ugsex.com';
 
 interface Product {
   slug: string;
@@ -86,7 +87,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Fetch products
   let productPages: MetadataRoute.Sitemap = [];
   try {
-    const res = await fetch(`${API_URL}/api/products?limit=1000&status=ACTIVE`, {
+    const res = await fetch(`${INTERNAL_API_URL}/api/products?limit=200&status=ACTIVE`, {
       next: { revalidate: 3600 },
     });
     if (res.ok) {
@@ -105,7 +106,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Fetch categories
   let categoryPages: MetadataRoute.Sitemap = [];
   try {
-    const res = await fetch(`${API_URL}/api/categories`, {
+    const res = await fetch(`${INTERNAL_API_URL}/api/categories`, {
       next: { revalidate: 3600 },
     });
     if (res.ok) {
@@ -124,7 +125,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Fetch blog posts
   let blogPages: MetadataRoute.Sitemap = [];
   try {
-    const res = await fetch(`${API_URL}/api/blog?status=PUBLISHED&limit=100`, {
+    const res = await fetch(`${INTERNAL_API_URL}/api/blog?status=PUBLISHED&limit=100`, {
       next: { revalidate: 3600 },
     });
     if (res.ok) {

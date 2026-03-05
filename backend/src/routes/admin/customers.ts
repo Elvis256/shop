@@ -57,6 +57,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         email: c.email,
         name: c.name,
         phone: c.phone,
+        isBlocked: (c as any).isBlocked || false,
         orderCount: c._count.orders,
         totalSpent: c.orders.reduce((sum: number, o) => sum + Number(o.totalAmount), 0),
         wishlistCount: c._count.wishlist,
@@ -144,6 +145,7 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
         name: z.string().optional(),
         phone: z.string().optional(),
         role: z.enum(["CUSTOMER", "ADMIN", "MANAGER"]).optional(),
+        isBlocked: z.boolean().optional(),
       })
       .parse(req.body);
 
@@ -155,7 +157,7 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     const updated = await prisma.user.update({
       where: { id },
       data: body,
-      select: { id: true, email: true, name: true, phone: true, role: true },
+      select: { id: true, email: true, name: true, phone: true, role: true, isBlocked: true },
     });
 
     return res.json({ message: "Customer updated", customer: updated });

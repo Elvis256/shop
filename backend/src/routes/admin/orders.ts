@@ -2,7 +2,7 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
-import { sendShippingNotification } from "../../lib/email";
+import { sendShippingNotification, sendProcessingNotification, sendDeliveredNotification, sendCancelledNotification } from "../../lib/email";
 import { refundFlutterwaveTransaction } from "../../services/flutterwave";
 
 const router = Router();
@@ -187,8 +187,19 @@ router.put("/:id/status", async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // Send processing notification
+    if (status === "PROCESSING") {
+      sendProcessingNotification(order).catch(console.error);
+    }
+
+    // Send delivered notification
+    if (status === "DELIVERED") {
+      sendDeliveredNotification(order).catch(console.error);
+    }
+
     // Restore inventory if cancelled
     if (status === "CANCELLED" && order.status !== "CANCELLED") {
+      sendCancelledNotification(order, note).catch(console.error);
       for (const item of order.items) {
         await prisma.product.update({
           where: { id: item.productId },

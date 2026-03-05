@@ -1,8 +1,11 @@
 import { Router, Response } from "express";
 import { z } from "zod";
+import multer from "multer";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { uploadMultiple, validateUploadedFiles } from "../../middleware/upload";
+
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -60,7 +63,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         include: {
           category: { select: { name: true } },
           images: { take: 1, orderBy: { position: "asc" } },
-          _count: { select: { orderItems: true, reviews: true } },
+          _count: { select: { orderItems: true, reviews: true, variants: true } },
         },
       }),
       prisma.product.count({ where }),
@@ -81,6 +84,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         imageUrl: p.images[0]?.url || null,
         sales: p._count.orderItems,
         reviews: p._count.reviews,
+        variantCount: p._count.variants,
         createdAt: p.createdAt,
       })),
       pagination: {
@@ -350,6 +354,136 @@ router.post("/bulk", async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Admin bulk action error:", error);
     return res.status(500).json({ error: "Bulk action failed" });
+  }
+});
+
+// PATCH /api/admin/products/bulk-stock
+router.patch("/bulk-stock", async (req: AuthRequest, res: Response) => {
+  try {
+    const { updates } = z
+      .object({
+        updates: z.array(z.object({ id: z.string(), stock: z.number().int().min(0) })),
+      })
+      .parse(req.body);
+
+    await prisma.$transaction(
+      updates.map((u) =>
+        prisma.product.update({ where: { id: u.id }, data: { stock: u.stock } })
+      )
+    );
+
+    return res.json({ message: "Stock updated", count: updates.length });
+  } catch (error) {
+    console.error("Bulk stock update error:", error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: error.errors });
+    }
+    return res.status(500).json({ error: "Failed to update stock" });
+  }
+});
+
+// POST /api/admin/products/import-csv
+router.post("/import-csv", csvUpload.single("file"), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No CSV file uploaded" });
+    }
+
+    const content = req.file.buffer.toString("utf-8");
+    const lines = content.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) {
+      return res.status(400).json({ error: "CSV must have a header row and at least one data row" });
+    }
+
+    // Parse header - expected: name,description,price,stock,category,sku
+    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const getIdx = (name: string) => headers.indexOf(name);
+    const nameIdx = getIdx("name");
+    const priceIdx = getIdx("price");
+
+    if (nameIdx === -1 || priceIdx === -1) {
+      return res.status(400).json({ error: "CSV must have 'name' and 'price' columns" });
+    }
+
+    const descIdx = getIdx("description");
+    const stockIdx = getIdx("stock");
+    const categoryIdx = getIdx("category");
+    const skuIdx = getIdx("sku");
+
+    let imported = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    // Cache category lookups
+    const categoryCache: Record<string, string | null> = {};
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      // Simple CSV parse (handles quoted fields)
+      const cols: string[] = [];
+      let inQuotes = false;
+      let cell = "";
+      for (let ci = 0; ci < line.length; ci++) {
+        const ch = line[ci];
+        if (ch === '"') { inQuotes = !inQuotes; continue; }
+        if (ch === "," && !inQuotes) { cols.push(cell.trim()); cell = ""; continue; }
+        cell += ch;
+      }
+      cols.push(cell.trim());
+
+      const name = cols[nameIdx];
+      const price = parseFloat(cols[priceIdx]);
+
+      if (!name || isNaN(price)) {
+        errors.push(`Row ${i + 1}: invalid name or price`);
+        failed++;
+        continue;
+      }
+
+      try {
+        const categoryName = categoryIdx >= 0 ? cols[categoryIdx]?.trim() : "";
+        let categoryId: string | null = null;
+
+        if (categoryName) {
+          if (categoryCache[categoryName] !== undefined) {
+            categoryId = categoryCache[categoryName];
+          } else {
+            const cat = await prisma.category.findFirst({
+              where: { name: { equals: categoryName, mode: "insensitive" } },
+            });
+            categoryId = cat?.id || null;
+            categoryCache[categoryName] = categoryId;
+          }
+        }
+
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") +
+          "-" + Date.now() + "-" + i;
+
+        await prisma.product.create({
+          data: {
+            name,
+            slug,
+            description: descIdx >= 0 ? (cols[descIdx] || "") : "",
+            price,
+            stock: stockIdx >= 0 ? (parseInt(cols[stockIdx]) || 0) : 0,
+            sku: skuIdx >= 0 ? (cols[skuIdx] || null) : null,
+            categoryId,
+            status: "ACTIVE",
+          },
+        });
+        imported++;
+      } catch (err: any) {
+        errors.push(`Row ${i + 1}: ${err?.message || "unknown error"}`);
+        failed++;
+      }
+    }
+
+    return res.json({ imported, failed, errors: errors.slice(0, 20) });
+  } catch (error) {
+    console.error("CSV import error:", error);
+    return res.status(500).json({ error: "Failed to import CSV" });
   }
 });
 

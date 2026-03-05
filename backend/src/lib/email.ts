@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-type EmailTemplate = "welcome" | "order-confirmation" | "order-shipped" | "password-reset";
+type EmailTemplate = "welcome" | "order-confirmation" | "order-shipped" | "order-processing" | "order-delivered" | "order-cancelled" | "password-reset";
 
 interface SendEmailOptions {
   to: string;
@@ -67,6 +67,56 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
         <p><strong>Estimated Delivery:</strong> ${data.estimatedDelivery}</p>
         <p style="color: #666; font-size: 14px;"><em>Remember: Your package will arrive in plain, unmarked packaging with a neutral sender name.</em></p>
         <a href="${process.env.BASE_URL}/account/orders/${data.orderId}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Track Order</a>
+      </div>
+    `,
+  },
+  "order-processing": {
+    subject: "Your Order #${orderNumber} is Being Processed",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2a2a2a;">Your Order is Being Processed</h1>
+        <p>Hi ${data.customerName},</p>
+        <p>Great news! We've started processing your order #${data.orderNumber}.</p>
+        <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
+          <p><strong>Order Number:</strong> ${data.orderNumber}</p>
+          <p><strong>Total:</strong> KES ${Number(data.total).toLocaleString()}</p>
+        </div>
+        <p>We'll notify you once your order has been shipped.</p>
+        <p style="color: #666; font-size: 14px;"><em>Your order will be shipped in plain, unmarked packaging.</em></p>
+        <a href="${process.env.BASE_URL}/account/orders/${data.orderId}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Track Order</a>
+      </div>
+    `,
+  },
+  "order-delivered": {
+    subject: "Your Order #${orderNumber} Has Been Delivered",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2a2a2a;">Your Order Has Been Delivered!</h1>
+        <p>Hi ${data.customerName},</p>
+        <p>Your order #${data.orderNumber} has been delivered successfully.</p>
+        <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
+          <p><strong>Order Number:</strong> ${data.orderNumber}</p>
+          <p><strong>Total:</strong> KES ${Number(data.total).toLocaleString()}</p>
+        </div>
+        <p>We hope you enjoy your purchase! If you have any issues, please contact our support.</p>
+        <a href="${process.env.BASE_URL}/account/orders/${data.orderId}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">View Order</a>
+      </div>
+    `,
+  },
+  "order-cancelled": {
+    subject: "Your Order #${orderNumber} Has Been Cancelled",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2a2a2a;">Your Order Has Been Cancelled</h1>
+        <p>Hi ${data.customerName},</p>
+        <p>Your order #${data.orderNumber} has been cancelled.</p>
+        <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
+          <p><strong>Order Number:</strong> ${data.orderNumber}</p>
+          <p><strong>Total:</strong> KES ${Number(data.total).toLocaleString()}</p>
+        </div>
+        ${data.reason ? `<p><strong>Reason:</strong> ${data.reason}</p>` : ""}
+        <p>If you believe this is an error or have questions, please contact our support team.</p>
+        <a href="${process.env.BASE_URL}/account/orders" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">View Orders</a>
       </div>
     `,
   },
@@ -158,5 +208,45 @@ export async function sendPasswordResetEmail(user: { email: string; name?: strin
     to: user.email,
     template: "password-reset",
     data: { name: user.name || "there", token },
+  });
+}
+
+export async function sendProcessingNotification(order: any) {
+  return sendEmail({
+    to: order.customerEmail,
+    template: "order-processing",
+    data: {
+      customerName: order.customerName,
+      orderNumber: order.orderNumber,
+      orderId: order.id,
+      total: Number(order.totalAmount),
+    },
+  });
+}
+
+export async function sendDeliveredNotification(order: any) {
+  return sendEmail({
+    to: order.customerEmail,
+    template: "order-delivered",
+    data: {
+      customerName: order.customerName,
+      orderNumber: order.orderNumber,
+      orderId: order.id,
+      total: Number(order.totalAmount),
+    },
+  });
+}
+
+export async function sendCancelledNotification(order: any, reason?: string) {
+  return sendEmail({
+    to: order.customerEmail,
+    template: "order-cancelled",
+    data: {
+      customerName: order.customerName,
+      orderNumber: order.orderNumber,
+      orderId: order.id,
+      total: Number(order.totalAmount),
+      reason,
+    },
   });
 }

@@ -32,6 +32,7 @@ interface InventoryItem {
   imageUrl: string | null;
   category: string | null;
   lastUpdated: string;
+  variantCount: number;
 }
 
 type SortField = "name" | "stock" | "price" | "status";
@@ -69,6 +70,7 @@ export default function InventoryPage() {
         imageUrl: p.imageUrl,
         category: p.category || null,
         lastUpdated: p.updatedAt || new Date().toISOString(),
+        variantCount: p.variantCount || 0,
       }));
       setItems(inventoryItems);
     } catch (error) {
@@ -118,11 +120,8 @@ export default function InventoryPage() {
     if (selectedItems.size === 0) return;
     setSaving(true);
     try {
-      await Promise.all(
-        Array.from(selectedItems).map((id) =>
-          api.admin.updateInventory(id, { stock: bulkStock })
-        )
-      );
+      const updates = Array.from(selectedItems).map((id) => ({ id, stock: bulkStock }));
+      await api.admin.bulkStockUpdate(updates);
       setItems((prev) =>
         prev.map((item) =>
           selectedItems.has(item.id) ? { ...item, stock: bulkStock } : item
@@ -386,6 +385,7 @@ export default function InventoryPage() {
                   )}
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Product</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">SKU</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Variants</th>
                   <th
                     className="px-4 py-3 text-left text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700"
                     onClick={() => handleSort("stock")}
@@ -441,6 +441,11 @@ export default function InventoryPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500">{item.sku || "—"}</td>
+                      <td className="px-4 py-3 text-sm text-gray-500">
+                        {item.variantCount > 0 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">{item.variantCount} variants</span>
+                        ) : "—"}
+                      </td>
                       <td className="px-4 py-3">
                         {editingId === item.id ? (
                           <input

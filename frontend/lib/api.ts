@@ -232,10 +232,23 @@ export const api = {
   createCheckout: (data: CheckoutRequest): Promise<CheckoutResponse> => 
     apiFetch("/api/checkout/create", { method: "POST", body: JSON.stringify(data) }),
 
+  // Recommendations
+  getTrending: (): Promise<{ products: any[] }> => apiFetch("/api/recommendations/trending"),
+  getBoughtTogether: (productId: string): Promise<{ products: any[] }> =>
+    apiFetch(`/api/recommendations/bought-together/${productId}`),
+  getSimilar: (productId: string): Promise<{ products: any[] }> =>
+    apiFetch(`/api/recommendations/similar/${productId}`),
+  getNewArrivals: (): Promise<{ products: any[] }> => apiFetch("/api/recommendations/new-arrivals"),
+  getTopRated: (): Promise<{ products: any[] }> => apiFetch("/api/recommendations/top-rated"),
+  trackProductView: (productId: string, sessionId?: string): Promise<{ viewerCount: number }> =>
+    apiFetch("/api/recommendations/track-view", { method: "POST", body: JSON.stringify({ productId, sessionId }) }),
+  getViewerCount: (productId: string): Promise<{ viewerCount: number }> =>
+    apiFetch(`/api/recommendations/viewers/${productId}`),
+
   // Admin
   admin: {
     getDashboard: (): Promise<DashboardStats> => apiFetch("/api/admin/dashboard"),
-    getAnalytics: (period?: number) => apiFetch(`/api/admin/dashboard/analytics?period=${period || 30}`),
+    getAnalytics: (period?: number) => apiFetch(`/api/analytics?period=${period || 30}`),
     
     // Products
     getProducts: (params?: Record<string, string>): Promise<ProductsResponse> => {
@@ -251,6 +264,8 @@ export const api = {
       apiFetch(`/api/admin/products/${id}`, { method: "DELETE" }),
     bulkProductAction: (action: string, ids: string[]): Promise<SuccessMessage> =>
       apiFetch("/api/admin/products/bulk", { method: "POST", body: JSON.stringify({ action, ids }) }),
+    bulkStockUpdate: (updates: { id: string; stock: number }[]): Promise<SuccessMessage> =>
+      apiFetch("/api/admin/products/bulk-stock", { method: "PATCH", body: JSON.stringify({ updates }) }),
     uploadProductImages: (id: string, files: File[]): Promise<any> => {
       const formData = new FormData();
       files.forEach((file) => formData.append("images", file));
@@ -293,6 +308,22 @@ export const api = {
       apiFetch(`/api/admin/coupons/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     deleteCoupon: (id: string): Promise<SuccessMessage> => 
       apiFetch(`/api/admin/coupons/${id}`, { method: "DELETE" }),
+
+    // Shipping Zones
+    getShippingZones: (): Promise<{ zones: any[] }> => apiFetch("/api/admin/shipping-zones"),
+    createShippingZone: (data: any): Promise<{ zone: any }> =>
+      apiFetch("/api/admin/shipping-zones", { method: "POST", body: JSON.stringify(data) }),
+    updateShippingZone: (id: string, data: any): Promise<{ zone: any }> =>
+      apiFetch(`/api/admin/shipping-zones/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    deleteShippingZone: (id: string): Promise<SuccessMessage> =>
+      apiFetch(`/api/admin/shipping-zones/${id}`, { method: "DELETE" }),
+
+    // Product CSV import
+    importProductsCsv: (file: File): Promise<{ imported: number; failed: number; errors: string[] }> => {
+      const form = new FormData();
+      form.append("file", file);
+      return apiFetch("/api/admin/products/import-csv", { method: "POST", body: form });
+    },
 
     // Categories
     getCategories: (): Promise<Category[]> => apiFetch("/api/admin/categories"),

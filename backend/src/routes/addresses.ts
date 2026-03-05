@@ -54,7 +54,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const address = await prisma.address.create({
-      data: { ...body, userId: req.user!.id },
+      data: { ...body, userId: req.user!.id } as any,
     });
 
     return res.status(201).json({ message: "Address created", address });

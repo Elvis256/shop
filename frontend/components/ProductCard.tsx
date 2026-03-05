@@ -37,6 +37,7 @@ export default function ProductCard({
   inStock = true,
   isNew,
   isBestseller,
+  badgeText,
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false);
   const { addItem } = useCart();
@@ -125,6 +126,11 @@ export default function ProductCard({
             {isBestseller && (
               <span className="text-xs font-medium bg-amber-500 text-white px-3 py-1.5 rounded-full">
                 Popular
+              </span>
+            )}
+            {badgeText && (
+              <span className="text-xs font-medium bg-red-500 text-white px-3 py-1.5 rounded-full">
+                {badgeText}
               </span>
             )}
           </div>

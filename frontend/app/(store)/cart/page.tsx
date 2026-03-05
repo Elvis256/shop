@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Tag, Shield, Package, Lock, Check } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Tag, Shield, Package, Lock, Check, Truck } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -128,6 +128,29 @@ export default function CartPage() {
     return cart.items.reduce((sum, item) => sum + Number(item.product.price) * item.quantity, 0);
   }
 
+  function calculateSavings() {
+    if (!cart?.items) return 0;
+    return cart.items.reduce((sum, item) => {
+      if (item.product.comparePrice && Number(item.product.comparePrice) > Number(item.product.price)) {
+        return sum + (Number(item.product.comparePrice) - Number(item.product.price)) * item.quantity;
+      }
+      return sum;
+    }, 0);
+  }
+
+  async function clearCart() {
+    if (!cart) return;
+    setUpdating("all");
+    try {
+      await fetch(`${API_URL}/api/cart/${cart.id}/items`, { method: "DELETE" });
+      await loadCart();
+    } catch (error) {
+      console.error("Failed to clear cart:", error);
+    } finally {
+      setUpdating(null);
+    }
+  }
+
   function calculateTotal() {
     const subtotal = calculateSubtotal();
     const discount = couponApplied?.discount || 0;
@@ -164,6 +187,7 @@ export default function CartPage() {
   }
 
   const subtotal = calculateSubtotal();
+  const savings = calculateSavings();
   const total = calculateTotal();
   const itemCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -171,10 +195,49 @@ export default function CartPage() {
     <div className="bg-gray-50 min-h-screen">
       <div className="container py-8 sm:py-12">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Shopping Cart</h1>
-          <p className="text-gray-500 mt-1">{itemCount} {itemCount === 1 ? 'item' : 'items'} in your cart</p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Shopping Cart</h1>
+            <p className="text-gray-500 mt-1">{itemCount} {itemCount === 1 ? 'item' : 'items'} in your cart</p>
+          </div>
+          <button
+            onClick={clearCart}
+            disabled={updating === "all"}
+            className="text-sm text-red-500 hover:text-red-700 font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" />
+            Clear Cart
+          </button>
         </div>
+
+        {/* Free Shipping Progress Bar */}
+        {(() => {
+          const FREE_SHIPPING_THRESHOLD = 100000;
+          const remaining = FREE_SHIPPING_THRESHOLD - subtotal;
+          const progress = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
+          return (
+            <div className="mb-8 p-4 bg-white rounded-xl border">
+              {remaining > 0 ? (
+                <>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Truck className="w-4 h-4 text-primary" />
+                    <p className="text-sm text-gray-700">
+                      Add <strong>{formatPrice(remaining)}</strong> more for <strong className="text-green-600">FREE shipping!</strong>
+                    </p>
+                  </div>
+                  <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="p-1 bg-green-100 rounded-full"><Check className="w-4 h-4 text-green-600" /></div>
+                  <p className="text-sm font-medium text-green-700">🎉 You've qualified for FREE shipping!</p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Cart Items */}
@@ -361,6 +424,13 @@ export default function CartPage() {
                   <span className="font-medium">{formatPrice(subtotal)}</span>
                 </div>
                 
+                {savings > 0 && (
+                  <div className="flex justify-between text-green-600">
+                    <span>You Save</span>
+                    <span className="font-medium">-{formatPrice(savings)}</span>
+                  </div>
+                )}
+
                 {couponApplied && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>

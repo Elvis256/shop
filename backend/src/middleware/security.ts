@@ -30,7 +30,8 @@ export const checkoutLimiter = rateLimit({
 });
 
 export function setupSecurity(app: Express) {
-  
+  // Trust nginx reverse proxy
+  app.set("trust proxy", 1);
   // Helmet for security headers with proper CSP
   app.use(
     helmet({

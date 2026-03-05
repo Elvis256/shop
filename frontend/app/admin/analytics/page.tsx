@@ -3,27 +3,8 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  LineChart,
-  Line,
-  ComposedChart,
-} from "recharts";
-import {
   TrendingUp,
   TrendingDown,
-  Calendar,
   Download,
   RefreshCw,
   DollarSign,
@@ -32,7 +13,6 @@ import {
   UserPlus,
   Package,
   ArrowUpRight,
-  ArrowDownRight,
   Eye,
   Target,
   Percent,
@@ -43,6 +23,210 @@ import {
   AlertTriangle,
   Activity,
 } from "lucide-react";
+
+// ─── Pure SVG Chart Components ────────────────────────────────────────────────
+
+function SVGLineChart({
+  data,
+  xKey,
+  yKey,
+  color = "#6366f1",
+  height = 200,
+  formatY,
+  formatX,
+  label,
+}: {
+  data: Record<string, any>[];
+  xKey: string;
+  yKey: string;
+  color?: string;
+  height?: number;
+  formatY?: (v: number) => string;
+  formatX?: (v: string) => string;
+  label?: string;
+}) {
+  const w = 600;
+  const h = height;
+  const pad = { top: 10, right: 10, bottom: 30, left: 50 };
+  const innerW = w - pad.left - pad.right;
+  const innerH = h - pad.top - pad.bottom;
+
+  if (!data.length) return <div className="flex items-center justify-center h-full text-gray-400 text-sm">No data</div>;
+
+  const values = data.map((d) => Number(d[yKey]) || 0);
+  const minVal = 0;
+  const maxVal = Math.max(...values, 1);
+
+  const xScale = (i: number) => pad.left + (i / Math.max(data.length - 1, 1)) * innerW;
+  const yScale = (v: number) => pad.top + innerH - ((v - minVal) / (maxVal - minVal)) * innerH;
+
+  const points = data.map((d, i) => `${xScale(i)},${yScale(Number(d[yKey]) || 0)}`).join(" ");
+  const areaPoints = [
+    `${pad.left},${pad.top + innerH}`,
+    ...data.map((d, i) => `${xScale(i)},${yScale(Number(d[yKey]) || 0)}`),
+    `${pad.left + innerW},${pad.top + innerH}`,
+  ].join(" ");
+
+  const xTicks = data.filter((_, i) => i % Math.max(1, Math.floor(data.length / 6)) === 0);
+  const yTickCount = 4;
+  const yTicks = Array.from({ length: yTickCount + 1 }, (_, i) => minVal + (i * (maxVal - minVal)) / yTickCount);
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }}>
+      <defs>
+        <linearGradient id={`grad-${yKey}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {/* Grid lines */}
+      {yTicks.map((v) => (
+        <line key={v} x1={pad.left} x2={pad.left + innerW} y1={yScale(v)} y2={yScale(v)} stroke="#f0f0f0" strokeWidth="1" />
+      ))}
+      {/* Area fill */}
+      <polygon points={areaPoints} fill={`url(#grad-${yKey})`} />
+      {/* Line */}
+      <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+      {/* Y axis labels */}
+      {yTicks.map((v) => (
+        <text key={v} x={pad.left - 6} y={yScale(v) + 4} textAnchor="end" fontSize="10" fill="#9ca3af">
+          {formatY ? formatY(v) : v.toLocaleString()}
+        </text>
+      ))}
+      {/* X axis labels */}
+      {xTicks.map((d) => {
+        const i = data.indexOf(d);
+        return (
+          <text key={i} x={xScale(i)} y={h - 6} textAnchor="middle" fontSize="10" fill="#9ca3af">
+            {formatX ? formatX(d[xKey]) : d[xKey]}
+          </text>
+        );
+      })}
+      {/* Dots on data points */}
+      {data.map((d, i) => (
+        <circle key={i} cx={xScale(i)} cy={yScale(Number(d[yKey]) || 0)} r="2.5" fill={color} />
+      ))}
+    </svg>
+  );
+}
+
+function SVGBarChart({
+  data,
+  xKey,
+  yKey,
+  color = "#6366f1",
+  height = 200,
+  formatY,
+}: {
+  data: Record<string, any>[];
+  xKey: string;
+  yKey: string;
+  color?: string;
+  height?: number;
+  formatY?: (v: number) => string;
+}) {
+  const w = 600;
+  const h = height;
+  const pad = { top: 10, right: 10, bottom: 30, left: 50 };
+  const innerW = w - pad.left - pad.right;
+  const innerH = h - pad.top - pad.bottom;
+
+  if (!data.length) return <div className="flex items-center justify-center h-full text-gray-400 text-sm">No data</div>;
+
+  const values = data.map((d) => Number(d[yKey]) || 0);
+  const maxVal = Math.max(...values, 1);
+  const barW = Math.max(4, (innerW / data.length) * 0.7);
+  const barGap = innerW / data.length;
+
+  const yTickCount = 4;
+  const yTicks = Array.from({ length: yTickCount + 1 }, (_, i) => (i * maxVal) / yTickCount);
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }}>
+      {/* Grid */}
+      {yTicks.map((v) => {
+        const y = pad.top + innerH - (v / maxVal) * innerH;
+        return <line key={v} x1={pad.left} x2={pad.left + innerW} y1={y} y2={y} stroke="#f0f0f0" strokeWidth="1" />;
+      })}
+      {/* Bars */}
+      {data.map((d, i) => {
+        const val = Number(d[yKey]) || 0;
+        const barH = (val / maxVal) * innerH;
+        const x = pad.left + i * barGap + (barGap - barW) / 2;
+        const y = pad.top + innerH - barH;
+        return (
+          <rect key={i} x={x} y={y} width={barW} height={barH} fill={color} rx="3" ry="3" />
+        );
+      })}
+      {/* Y labels */}
+      {yTicks.map((v) => {
+        const y = pad.top + innerH - (v / maxVal) * innerH + 4;
+        return (
+          <text key={v} x={pad.left - 6} y={y} textAnchor="end" fontSize="10" fill="#9ca3af">
+            {formatY ? formatY(v) : v.toLocaleString()}
+          </text>
+        );
+      })}
+      {/* X labels */}
+      {data.map((d, i) => (
+        <text key={i} x={pad.left + i * barGap + barGap / 2} y={h - 6} textAnchor="middle" fontSize="10" fill="#9ca3af">
+          {String(d[xKey]).length > 5 ? String(d[xKey]).slice(0, 5) : d[xKey]}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+function SVGDonutChart({
+  data,
+  height = 200,
+}: {
+  data: { name: string; value: number; color: string }[];
+  height?: number;
+}) {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (!total) return <div className="flex items-center justify-center h-full text-gray-400 text-sm">No data</div>;
+
+  const cx = 100;
+  const cy = 100;
+  const outerR = 75;
+  const innerR = 48;
+
+  const slices: JSX.Element[] = [];
+  let angle = -Math.PI / 2;
+  data.forEach((d, idx) => {
+    const sweep = (d.value / total) * 2 * Math.PI;
+    const x1 = cx + outerR * Math.cos(angle);
+    const y1 = cy + outerR * Math.sin(angle);
+    const x2 = cx + outerR * Math.cos(angle + sweep);
+    const y2 = cy + outerR * Math.sin(angle + sweep);
+    const ix1 = cx + innerR * Math.cos(angle + sweep);
+    const iy1 = cy + innerR * Math.sin(angle + sweep);
+    const ix2 = cx + innerR * Math.cos(angle);
+    const iy2 = cy + innerR * Math.sin(angle);
+    const large = sweep > Math.PI ? 1 : 0;
+    slices.push(
+      <path
+        key={idx}
+        d={`M${x1},${y1} A${outerR},${outerR} 0 ${large},1 ${x2},${y2} L${ix1},${iy1} A${innerR},${innerR} 0 ${large},0 ${ix2},${iy2} Z`}
+        fill={d.color}
+      />
+    );
+    angle += sweep;
+  });
+
+  return (
+    <svg viewBox="0 0 200 200" className="w-full" style={{ height }}>
+      {slices}
+      <text x={cx} y={cy - 6} textAnchor="middle" fontSize="18" fontWeight="bold" fill="#111827">
+        {total}
+      </text>
+      <text x={cx} y={cy + 12} textAnchor="middle" fontSize="10" fill="#6b7280">
+        orders
+      </text>
+    </svg>
+  );
+}
 
 interface AnalyticsData {
   revenue: {
@@ -408,70 +592,23 @@ export default function AnalyticsPage() {
                 <div className="w-3 h-3 rounded-full bg-indigo-500" />
                 <span className="text-gray-600">Revenue</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                <span className="text-gray-600">Orders</span>
-              </div>
             </div>
           </div>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data.traffic.daily}>
-                <defs>
-                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="left" tickFormatter={(v) => formatCompact(v)} tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                <Tooltip
-                  formatter={(value: any, name: any) => [
-                    name === "revenue" ? formatCurrency(value) : value,
-                    name === "revenue" ? "Revenue" : "Orders",
-                  ]}
-                  labelFormatter={(label: any) => formatDate(label)}
-                  contentStyle={{ borderRadius: 8 }}
-                />
-                <Area
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#6366f1"
-                  strokeWidth={2}
-                  fill="url(#revenueGradient)"
-                />
-                <Bar yAxisId="right" dataKey="orders" fill="#22c55e" radius={[4, 4, 0, 0]} barSize={20} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
+          <SVGLineChart
+            data={data.traffic.daily}
+            xKey="date"
+            yKey="revenue"
+            color="#6366f1"
+            height={240}
+            formatY={(v) => formatCompact(v)}
+            formatX={(v) => formatDate(v)}
+          />
         </div>
 
         {/* Order Status Donut */}
         <div className="bg-white rounded-xl border shadow-sm p-6">
           <h3 className="font-semibold text-gray-900 mb-4">Orders by Status</h3>
-          <div className="h-52">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={statusData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={80}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {statusData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: any) => [`${value} orders`, ""]} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          <SVGDonutChart data={statusData} height={180} />
           <div className="grid grid-cols-2 gap-2 mt-4">
             {statusData.slice(0, 6).map((status) => (
               <div key={status.name} className="flex items-center gap-2">
@@ -536,33 +673,15 @@ export default function AnalyticsPage() {
           {/* Revenue Chart */}
           <div className="bg-white rounded-xl border shadow-sm p-6">
             <h3 className="font-semibold text-gray-900 mb-6">Daily Revenue</h3>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data.revenue.daily}>
-                  <defs>
-                    <linearGradient id="revenueGradientSales" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={(v) => formatCompact(v)} tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    formatter={(value: any) => [formatCurrency(value), "Revenue"]}
-                    labelFormatter={(label: any) => formatDate(label)}
-                    contentStyle={{ borderRadius: 8 }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="amount"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    fill="url(#revenueGradientSales)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <SVGLineChart
+              data={data.revenue.daily}
+              xKey="date"
+              yKey="amount"
+              color="#22c55e"
+              height={240}
+              formatY={(v) => formatCompact(v)}
+              formatX={(v) => formatDate(v)}
+            />
           </div>
 
           {/* Payment Methods & Orders by Hour */}
@@ -572,25 +691,23 @@ export default function AnalyticsPage() {
                 <h3 className="font-semibold text-gray-900">Payment Methods</h3>
                 <CreditCard className="w-5 h-5 text-blue-500" />
               </div>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={data.paymentMethods}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={90}
-                      dataKey="amount"
-                      nameKey="name"
-                      label={({ name, percent }: any) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
-                    >
-                      {data.paymentMethods.map((entry, index) => (
-                        <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: any) => [formatCurrency(value), "Amount"]} />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="space-y-3">
+                {data.paymentMethods.map((pm, i) => {
+                  const total = data.paymentMethods.reduce((s, p) => s + p.amount, 0) || 1;
+                  const pct = Math.round((pm.amount / total) * 100);
+                  const colors = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
+                  return (
+                    <div key={pm.name}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-700 font-medium">{pm.name}</span>
+                        <span className="text-gray-500">{pct}% · {pm.count} orders</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: colors[i % colors.length] }} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -599,17 +716,13 @@ export default function AnalyticsPage() {
                 <h3 className="font-semibold text-gray-900">Orders by Hour</h3>
                 <Clock className="w-5 h-5 text-violet-500" />
               </div>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.hourlyOrders}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={3} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(value: any) => [`${value} orders`, "Orders"]} />
-                    <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <SVGBarChart
+                data={data.hourlyOrders}
+                xKey="hour"
+                yKey="count"
+                color="#8b5cf6"
+                height={200}
+              />
             </div>
           </div>
         </>
@@ -657,45 +770,14 @@ export default function AnalyticsPage() {
                 </div>
               </div>
             </div>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data.traffic.daily}>
-                  <defs>
-                    <linearGradient id="visitorsGradientCust" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="ordersGradientCust" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                  <Tooltip labelFormatter={(label: any) => formatDate(label)} contentStyle={{ borderRadius: 8 }} />
-                  <Area
-                    yAxisId="left"
-                    type="monotone"
-                    dataKey="visitors"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    fill="url(#visitorsGradientCust)"
-                    name="Visitors"
-                  />
-                  <Area
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="orders"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    fill="url(#ordersGradientCust)"
-                    name="Orders"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <SVGLineChart
+              data={data.traffic.daily}
+              xKey="date"
+              yKey="visitors"
+              color="#8b5cf6"
+              height={240}
+              formatX={(v) => formatDate(v)}
+            />
           </div>
 
           {/* Traffic Stats */}
@@ -817,17 +899,14 @@ export default function AnalyticsPage() {
           {data.products.topSelling.length > 0 && (
             <div className="bg-white rounded-xl border shadow-sm p-6">
               <h3 className="font-semibold text-gray-900 mb-4">Product Revenue Breakdown</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.products.topSelling} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-                    <XAxis type="number" tickFormatter={(v) => formatCompact(v)} tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
-                    <Tooltip formatter={(value: any) => [formatCurrency(value), "Revenue"]} />
-                    <Bar dataKey="revenue" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={24} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <SVGBarChart
+                data={data.products.topSelling}
+                xKey="name"
+                yKey="revenue"
+                color="#6366f1"
+                height={200}
+                formatY={(v) => formatCompact(v)}
+              />
             </div>
           )}
         </>

@@ -1,29 +1,28 @@
 import { Router, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../lib/prisma";
+import { cacheGetOrSet, LONG_TTL } from "../lib/cache";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // GET /api/categories
 router.get("/", async (_req: Request, res: Response) => {
   try {
-    const categories = await prisma.category.findMany({
-      include: {
-        _count: { select: { products: true } },
-      },
-      orderBy: { name: "asc" },
-    });
-
-    return res.json({
-      categories: categories.map((c) => ({
+    const data = await cacheGetOrSet("categories:all", async () => {
+      const categories = await prisma.category.findMany({
+        include: { _count: { select: { products: true } } },
+        orderBy: { name: "asc" },
+      });
+      return categories.map((c) => ({
         id: c.id,
         name: c.name,
         slug: c.slug,
         description: c.description,
         imageUrl: c.imageUrl,
         productCount: c._count.products,
-      })),
-    });
+      }));
+    }, LONG_TTL);
+
+    return res.json({ categories: data });
   } catch (error) {
     console.error("Get categories error:", error);
     return res.status(500).json({ error: "Failed to fetch categories" });

@@ -33,6 +33,7 @@ import referralsRoutes from "./routes/referrals";
 import twoFactorRoutes from "./routes/twoFactor";
 import invoicesRoutes from "./routes/invoices";
 import analyticsRoutes from "./routes/analytics";
+import recommendationsRoutes from "./routes/recommendations";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -43,6 +44,7 @@ import adminCoupons from "./routes/admin/coupons";
 import adminCategories from "./routes/admin/categories";
 import adminSettings from "./routes/admin/settings";
 import adminBlog from "./routes/admin/blog";
+import adminShipping from "./routes/admin/shipping";
 import adminStaff from "./routes/adminStaff";
 import adminActivity from "./routes/adminActivity";
 import adminAuthRoutes from "./routes/adminAuth";
@@ -128,6 +130,7 @@ app.use("/api/referrals", referralsRoutes);
 app.use("/api/2fa", twoFactorRoutes);
 app.use("/api/invoices", invoicesRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/recommendations", recommendationsRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);
@@ -138,6 +141,7 @@ app.use("/api/admin/coupons", adminCoupons);
 app.use("/api/admin/categories", adminCategories);
 app.use("/api/admin/settings", adminSettings);
 app.use("/api/admin/blog", adminBlog);
+app.use("/api/admin/shipping-zones", adminShipping);
 app.use("/api/admin/staff", adminStaff);
 app.use("/api/admin/activity", adminActivity);
 app.use("/api/admin/auth", adminAuthRoutes);

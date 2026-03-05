@@ -53,7 +53,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         slug,
         publishedAt: data.status === "PUBLISHED" ? (data.publishedAt ? new Date(data.publishedAt) : new Date()) : null,
         tags: data.tags || [],
-      },
+      } as any,
     });
 
     return res.status(201).json({ post });

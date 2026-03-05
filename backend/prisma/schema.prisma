@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -15,6 +16,7 @@ model User {
   phone         String?
   role          UserRole @default(CUSTOMER)
   emailVerified Boolean  @default(false)
+  isBlocked     Boolean  @default(false)
   wishlistPin   String?  // 4-6 digit PIN for wishlist privacy
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

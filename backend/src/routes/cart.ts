@@ -184,6 +184,18 @@ const SyncCartSchema = z.object({
   })),
 });
 
+// DELETE /api/cart/:cartId/items - Clear all items from cart
+router.delete("/:cartId/items", async (req: Request, res: Response) => {
+  try {
+    const { cartId } = req.params;
+    await prisma.cartItem.deleteMany({ where: { cartId } });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Clear cart error:", error);
+    return res.status(500).json({ error: "Failed to clear cart" });
+  }
+});
+
 // POST /api/cart/sync - Sync localStorage cart items to a new/existing cart
 router.post("/sync", async (req: Request, res: Response) => {
   try {
