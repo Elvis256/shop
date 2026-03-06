@@ -127,28 +127,17 @@ router.post("/create", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Cart ID or items required" });
     }
 
-    // Calculate total from DB prices (source of truth) - log if frontend differs
+    // Calculate total from DB prices (authoritative source of truth)
     const calculatedTotal = cartItems.reduce((sum, item) => {
       return sum + Math.round(Number(item.product.price)) * item.quantity;
     }, 0);
-    const submittedSubtotal = body.amount - (body.shipping || 0);
-
-    // Allow up to 2% tolerance for price sync lag between cart cache and DB
-    const tolerance = Math.max(calculatedTotal * 0.02, 500);
-    if (Math.abs(calculatedTotal - submittedSubtotal) > tolerance) {
-      return res.status(400).json({ 
-        error: "Price has changed since you added items. Please refresh your cart.",
-        calculatedTotal,
-        submittedSubtotal,
-      });
-    }
+    const shippingAmount = body.shipping || 0;
 
     // Create order with stock reservation in a transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create order
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       const subtotal = calculatedTotal;
-      const shippingAmount = body.shipping || 0;
       const order = await tx.order.create({
         data: {
           orderNumber,
