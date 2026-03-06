@@ -146,15 +146,25 @@ model Product {
   // SEO
   metaTitle       String?
   metaDescription String?
-  
+
+  // AliExpress Dropshipping (null = own product, set = dropshipped)
+  aliexpressProductId String?
+  aliexpressUrl       String?
+  aliexpressCost      Decimal?  @db.Decimal(10, 2) // Supplier price in USD
+  markupType          MarkupType? // PERCENTAGE or FIXED
+  markupValue         Decimal?  @db.Decimal(10, 2) // Markup amount or percentage
+  aliexpressAutoSync  Boolean   @default(false)
+  lastSyncedAt        DateTime?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
-  cartItems   CartItem[]
-  orderItems  OrderItem[]
-  wishlist    WishlistItem[]
-  reviews     Review[]
-  stockAlerts StockAlert[]
+  cartItems        CartItem[]
+  orderItems       OrderItem[]
+  wishlist         WishlistItem[]
+  reviews          Review[]
+  stockAlerts      StockAlert[]
+  aliexpressOrders AliExpressOrder[]
 }
 
 model ProductVariant {
@@ -265,6 +275,7 @@ model Order {
   mobileMoneyTxns MobileMoneyTransaction[]
   stockReservations StockReservation[]
   returnRequests  ReturnRequest[]
+  aliexpressOrders AliExpressOrder[]
   
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -1108,4 +1119,45 @@ enum ConversionStatus {
   APPROVED
   PAID
   REJECTED
+}
+
+// AliExpress Dropshipping
+enum MarkupType {
+  PERCENTAGE
+  FIXED
+}
+
+enum AliExpressOrderStatus {
+  PENDING        // Order not yet placed on AliExpress
+  PLACED         // Order placed on AliExpress
+  SHIPPED        // AliExpress supplier shipped
+  DELIVERED      // Delivered to customer
+  CANCELLED      // Cancelled on AliExpress
+  FAILED         // Failed to place on AliExpress
+}
+
+model AliExpressOrder {
+  id                  String               @id @default(cuid())
+  orderId             String
+  order               Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product              @relation(fields: [productId], references: [id])
+  aliexpressOrderId   String?              // AliExpress order number
+  aliexpressProductId String               // AliExpress product ID
+  quantity            Int
+  supplierCost        Decimal              @db.Decimal(10, 2) // Price paid to AliExpress
+  trackingNumber      String?
+  trackingUrl         String?
+  shippingCarrier     String?
+  status              AliExpressOrderStatus @default(PENDING)
+  errorMessage        String?              @db.Text
+  placedAt            DateTime?
+  shippedAt           DateTime?
+  deliveredAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([orderId])
+  @@index([aliexpressOrderId])
+  @@index([status])
 }

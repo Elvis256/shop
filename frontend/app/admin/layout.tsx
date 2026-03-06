@@ -27,6 +27,7 @@ import {
   RefreshCw,
   Truck,
   Globe,
+  ShoppingBag,
 } from "lucide-react";
 
 const navItems = [
@@ -39,6 +40,7 @@ const navItems = [
   { href: "/admin/categories", icon: FolderTree, label: "Categories" },
   { href: "/admin/coupons", icon: Tag, label: "Coupons" },
   { href: "/admin/shipping", icon: Truck, label: "Shipping" },
+  { href: "/admin/aliexpress", icon: ShoppingBag, label: "AliExpress" },
   { href: "/admin/affiliates", icon: Globe, label: "Affiliates" },
   { href: "/admin/content", icon: FileText, label: "Content" },
   { href: "/admin/staff", icon: UserCog, label: "Staff" },

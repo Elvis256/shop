@@ -375,10 +375,33 @@ export const api = {
     // Affiliate Program
     getAffiliates: (): Promise<any> => apiFetch("/api/admin/affiliates"),
     updateAffiliateStatus: (id: string, status: string): Promise<any> =>
-      apiFetch(`/api/admin/affiliates/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
-    processAffiliatePayout: (affiliateId: string, amount: number, method: string): Promise<any> =>
-      apiFetch("/api/admin/affiliates/payouts", { method: "POST", body: JSON.stringify({ affiliateId, amount, method }) }),
-    getAffiliateStats: (): Promise<any> => apiFetch("/api/admin/affiliates/stats"),
+      apiFetch(`/api/admin/affiliates/${id}`, { method: "PUT", body: JSON.stringify({ status }) }),
+    processAffiliatePayout: (affiliateId: string, amount: number, method: string, reference?: string, notes?: string): Promise<any> =>
+      apiFetch(`/api/admin/affiliates/${affiliateId}/payout`, { method: "POST", body: JSON.stringify({ amount, method, reference, notes }) }),
+    getAffiliateStats: (): Promise<any> => apiFetch("/api/admin/affiliates/products/stats"),
+
+    // AliExpress Dropshipping
+    searchAliExpress: (q: string, page = 1): Promise<any> => 
+      apiFetch(`/api/admin/aliexpress/search?q=${encodeURIComponent(q)}&page=${page}`),
+    getAliExpressProduct: (productId: string): Promise<any> =>
+      apiFetch(`/api/admin/aliexpress/product/${productId}`),
+    importAliExpressProduct: (data: any): Promise<any> =>
+      apiFetch("/api/admin/aliexpress/import", { method: "POST", body: JSON.stringify(data) }),
+    getAliExpressProducts: (params?: Record<string, string>): Promise<any> => {
+      const query = params ? `?${new URLSearchParams(params)}` : "";
+      return apiFetch(`/api/admin/aliexpress/products${query}`);
+    },
+    updateAliExpressMarkup: (id: string, data: { markupType: string; markupValue: number }): Promise<any> =>
+      apiFetch(`/api/admin/aliexpress/products/${id}/markup`, { method: "PUT", body: JSON.stringify(data) }),
+    syncAliExpressProducts: (productId?: string): Promise<any> =>
+      apiFetch("/api/admin/aliexpress/sync", { method: "POST", body: JSON.stringify(productId ? { productId } : {}) }),
+    getAliExpressOrders: (params?: Record<string, string>): Promise<any> => {
+      const query = params ? `?${new URLSearchParams(params)}` : "";
+      return apiFetch(`/api/admin/aliexpress/orders${query}`);
+    },
+    getAliExpressSettings: (): Promise<any> => apiFetch("/api/admin/aliexpress/settings"),
+    updateAliExpressSettings: (data: { appKey: string; appSecret: string; accessToken: string }): Promise<any> =>
+      apiFetch("/api/admin/aliexpress/settings", { method: "PUT", body: JSON.stringify(data) }),
   },
 };
 

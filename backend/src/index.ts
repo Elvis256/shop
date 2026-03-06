@@ -47,6 +47,7 @@ import adminSettings from "./routes/admin/settings";
 import adminBlog from "./routes/admin/blog";
 import adminShipping from "./routes/admin/shipping";
 import adminAffiliates from "./routes/admin/affiliates";
+import adminAliexpress from "./routes/admin/aliexpress";
 import adminStaff from "./routes/adminStaff";
 import adminActivity from "./routes/adminActivity";
 import adminAuthRoutes from "./routes/adminAuth";
@@ -146,6 +147,7 @@ app.use("/api/admin/settings", adminSettings);
 app.use("/api/admin/blog", adminBlog);
 app.use("/api/admin/shipping-zones", adminShipping);
 app.use("/api/admin/affiliates", adminAffiliates);
+app.use("/api/admin/aliexpress", adminAliexpress);
 app.use("/api/admin/staff", adminStaff);
 app.use("/api/admin/activity", adminActivity);
 app.use("/api/admin/auth", adminAuthRoutes);
@@ -184,5 +186,15 @@ app.listen(Number(PORT), "0.0.0.0", () => {
   // Start real-time exchange rate refresh job
   import("./services/exchangeRates").then(({ startRateRefreshJob }) => {
     startRateRefreshJob();
+  });
+
+  // Start AliExpress tracking sync job (every 6 hours)
+  import("./services/aliexpressSync").then(({ startTrackingSyncJob }) => {
+    startTrackingSyncJob();
+  });
+
+  // Start AliExpress price/stock sync job (daily)
+  import("./services/aliexpressSync").then(({ startPriceSyncJob }) => {
+    startPriceSyncJob();
   });
 });

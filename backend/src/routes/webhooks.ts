@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { verifyFlutterwaveHash } from "../utils/verifyFlutterwave";
 import prisma from "../lib/prisma";
+import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
 const router = Router();
 
 // POST /api/webhooks/flutterwave
@@ -121,6 +122,13 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
           console.log(`❌ Order ${tx_ref} payment failed`);
         }
       });
+
+      // Auto-place AliExpress dropshipping orders (async, non-blocking)
+      if (status === "successful") {
+        placeAliExpressOrdersForOrder(tx_ref).catch((err) => {
+          console.error(`AliExpress auto-order failed for ${tx_ref}:`, err.message);
+        });
+      }
     }
 
     return res.status(200).json({ received: true });
