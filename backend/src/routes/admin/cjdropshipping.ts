@@ -72,7 +72,11 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
       data: {
         name: body.name || detail.title,
         slug,
-        description: body.description || detail.description,
+        description: body.description || (detail.description || "")
+          .replace(/<img[^>]*>/gi, "")
+          .replace(/<b>Product Image:<\/b>\s*(<br\s*\/?>)*/gi, "")
+          .replace(/(<br\s*\/?>){3,}/gi, "<br><br>")
+          .trim(),
         price: sellingPrice,
         currency: "UGX",
         cjProductId: body.cjProductId,
