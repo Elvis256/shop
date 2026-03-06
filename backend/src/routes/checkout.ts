@@ -97,34 +97,39 @@ router.post("/create", async (req: Request, res: Response) => {
   try {
     const body = CheckoutSchema.parse(req.body);
 
-    // Fetch cart items - either from cartId or build from items array
-    let cartItems: Array<{ productId: string; quantity: number; product: any }>;
+    // Fetch cart items - try cartId first, fall back to items array
+    let cartItems: Array<{ productId: string; quantity: number; product: any }> = [];
 
+    let cartFound = false;
     if (body.cartId) {
       const cart = await prisma.cart.findUnique({
         where: { id: body.cartId },
         include: { items: { include: { product: true } } },
       });
-      if (!cart || cart.items.length === 0) {
-        return res.status(400).json({ error: "Cart is empty or not found" });
+      if (cart && cart.items.length > 0) {
+        cartItems = cart.items;
+        cartFound = true;
       }
-      cartItems = cart.items;
-    } else if (body.items && body.items.length > 0) {
-      // Build cart items from the submitted items array (guest checkout)
-      const products = await prisma.product.findMany({
-        where: { id: { in: body.items.map((i) => i.productId) } },
-      });
-      const productMap = new Map(products.map((p) => [p.id, p]));
-      cartItems = body.items.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        product: productMap.get(item.productId),
-      })).filter((item) => item.product);
-      if (cartItems.length === 0) {
-        return res.status(400).json({ error: "No valid products found" });
+    }
+
+    if (!cartFound) {
+      if (body.items && body.items.length > 0) {
+        // Build cart items from the submitted items array
+        const products = await prisma.product.findMany({
+          where: { id: { in: body.items.map((i) => i.productId) } },
+        });
+        const productMap = new Map(products.map((p) => [p.id, p]));
+        cartItems = body.items.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          product: productMap.get(item.productId),
+        })).filter((item) => item.product);
+        if (cartItems.length === 0) {
+          return res.status(400).json({ error: "No valid products found" });
+        }
+      } else {
+        return res.status(400).json({ error: "Cart is empty" });
       }
-    } else {
-      return res.status(400).json({ error: "Cart ID or items required" });
     }
 
     // Calculate total from DB prices (authoritative source of truth)
