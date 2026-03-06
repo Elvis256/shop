@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { verifyFlutterwaveHash } from "../utils/verifyFlutterwave";
 import prisma from "../lib/prisma";
 import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
+import { placeCJOrdersForOrder } from "../services/cjOrder";
 const router = Router();
 
 // POST /api/webhooks/flutterwave
@@ -127,6 +128,9 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
       if (status === "successful") {
         placeAliExpressOrdersForOrder(tx_ref).catch((err) => {
           console.error(`AliExpress auto-order failed for ${tx_ref}:`, err.message);
+        });
+        placeCJOrdersForOrder(tx_ref).catch((err) => {
+          console.error(`CJ auto-order failed for ${tx_ref}:`, err.message);
         });
       }
     }

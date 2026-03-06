@@ -48,6 +48,7 @@ import adminBlog from "./routes/admin/blog";
 import adminShipping from "./routes/admin/shipping";
 import adminAffiliates from "./routes/admin/affiliates";
 import adminAliexpress from "./routes/admin/aliexpress";
+import adminCJ from "./routes/admin/cjdropshipping";
 import adminStaff from "./routes/adminStaff";
 import adminActivity from "./routes/adminActivity";
 import adminAuthRoutes from "./routes/adminAuth";
@@ -148,6 +149,7 @@ app.use("/api/admin/blog", adminBlog);
 app.use("/api/admin/shipping-zones", adminShipping);
 app.use("/api/admin/affiliates", adminAffiliates);
 app.use("/api/admin/aliexpress", adminAliexpress);
+app.use("/api/admin/cj", adminCJ);
 app.use("/api/admin/staff", adminStaff);
 app.use("/api/admin/activity", adminActivity);
 app.use("/api/admin/auth", adminAuthRoutes);
@@ -196,5 +198,15 @@ app.listen(Number(PORT), "0.0.0.0", () => {
   // Start AliExpress price/stock sync job (daily)
   import("./services/aliexpressSync").then(({ startPriceSyncJob }) => {
     startPriceSyncJob();
+  });
+
+  // Start CJ Dropshipping tracking sync job (every 6 hours)
+  import("./services/cjSync").then(({ startCJTrackingSyncJob }) => {
+    startCJTrackingSyncJob();
+  });
+
+  // Start CJ Dropshipping price/stock sync job (daily)
+  import("./services/cjSync").then(({ startCJPriceSyncJob }) => {
+    startCJPriceSyncJob();
   });
 });

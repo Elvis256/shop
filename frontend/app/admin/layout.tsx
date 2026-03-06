@@ -41,6 +41,7 @@ const navItems = [
   { href: "/admin/coupons", icon: Tag, label: "Coupons" },
   { href: "/admin/shipping", icon: Truck, label: "Shipping" },
   { href: "/admin/aliexpress", icon: ShoppingBag, label: "AliExpress" },
+  { href: "/admin/cjdropshipping", icon: Truck, label: "CJ Dropshipping" },
   { href: "/admin/affiliates", icon: Globe, label: "Affiliates" },
   { href: "/admin/content", icon: FileText, label: "Content" },
   { href: "/admin/staff", icon: UserCog, label: "Staff" },

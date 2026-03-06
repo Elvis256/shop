@@ -156,6 +156,12 @@ model Product {
   aliexpressAutoSync  Boolean   @default(false)
   lastSyncedAt        DateTime?
 
+  // CJ Dropshipping (null = not from CJ)
+  cjProductId   String?
+  cjUrl         String?
+  cjCost        Decimal?  @db.Decimal(10, 2) // CJ supplier price in USD
+  cjAutoSync    Boolean   @default(false)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
@@ -165,6 +171,7 @@ model Product {
   reviews          Review[]
   stockAlerts      StockAlert[]
   aliexpressOrders AliExpressOrder[]
+  cjOrders         CJOrder[]
 }
 
 model ProductVariant {
@@ -276,6 +283,7 @@ model Order {
   stockReservations StockReservation[]
   returnRequests  ReturnRequest[]
   aliexpressOrders AliExpressOrder[]
+  cjOrders         CJOrder[]
   
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -1159,5 +1167,41 @@ model AliExpressOrder {
 
   @@index([orderId])
   @@index([aliexpressOrderId])
+  @@index([status])
+}
+
+// CJ Dropshipping
+enum CJOrderStatus {
+  PENDING
+  PLACED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  FAILED
+}
+
+model CJOrder {
+  id              String        @id @default(cuid())
+  orderId         String
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  cjOrderId       String?       // CJ Dropshipping order ID
+  cjProductId     String        // CJ product ID
+  quantity        Int
+  supplierCost    Decimal       @db.Decimal(10, 2)
+  trackingNumber  String?
+  trackingUrl     String?
+  shippingCarrier String?
+  status          CJOrderStatus @default(PENDING)
+  errorMessage    String?       @db.Text
+  placedAt        DateTime?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([orderId])
+  @@index([cjOrderId])
   @@index([status])
 }

@@ -402,6 +402,29 @@ export const api = {
     getAliExpressSettings: (): Promise<any> => apiFetch("/api/admin/aliexpress/settings"),
     updateAliExpressSettings: (data: { appKey: string; appSecret: string; accessToken: string }): Promise<any> =>
       apiFetch("/api/admin/aliexpress/settings", { method: "PUT", body: JSON.stringify(data) }),
+
+    // CJ Dropshipping
+    searchCJ: (q: string, page = 1): Promise<any> =>
+      apiFetch(`/api/admin/cj/search?q=${encodeURIComponent(q)}&page=${page}`),
+    getCJProduct: (productId: string): Promise<any> =>
+      apiFetch(`/api/admin/cj/product/${productId}`),
+    importCJProduct: (data: any): Promise<any> =>
+      apiFetch("/api/admin/cj/import", { method: "POST", body: JSON.stringify(data) }),
+    getCJProducts: (params?: Record<string, string>): Promise<any> => {
+      const query = params ? `?${new URLSearchParams(params)}` : "";
+      return apiFetch(`/api/admin/cj/products${query}`);
+    },
+    updateCJMarkup: (id: string, data: { markupType: string; markupValue: number }): Promise<any> =>
+      apiFetch(`/api/admin/cj/products/${id}/markup`, { method: "PUT", body: JSON.stringify(data) }),
+    syncCJProducts: (productId?: string): Promise<any> =>
+      apiFetch("/api/admin/cj/sync", { method: "POST", body: JSON.stringify(productId ? { productId } : {}) }),
+    getCJOrders: (params?: Record<string, string>): Promise<any> => {
+      const query = params ? `?${new URLSearchParams(params)}` : "";
+      return apiFetch(`/api/admin/cj/orders${query}`);
+    },
+    getCJSettings: (): Promise<any> => apiFetch("/api/admin/cj/settings"),
+    updateCJSettings: (data: { accessToken: string }): Promise<any> =>
+      apiFetch("/api/admin/cj/settings", { method: "PUT", body: JSON.stringify(data) }),
   },
 };
 
