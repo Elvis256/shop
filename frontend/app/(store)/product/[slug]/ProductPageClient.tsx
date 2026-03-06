@@ -190,6 +190,7 @@ export default function ProductPageClient() {
       imageUrl: product.imageUrl || null,
       stock: effectiveStock,
       quantity: 1,
+      shippingBadge: product.shippingBadge,
     });
     router.push("/checkout");
   };
@@ -627,6 +628,7 @@ export default function ProductPageClient() {
                   imageUrl: product.imageUrl || null,
                   stock: effectiveStock,
                   quantity: 1,
+                  shippingBadge: product.shippingBadge,
                 });
                 showToast(`${product.name} added to cart`, "success");
               }}

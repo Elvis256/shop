@@ -9,7 +9,7 @@ import { useCart } from "@/lib/hooks/useCart";
 import { useToast } from "@/lib/hooks/useToast";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
-import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package } from "lucide-react";
+import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -60,6 +60,9 @@ export default function CheckoutPage() {
     postalCode: "",
     discreet: true,
   });
+
+  const hasInternational = items.some((i) => i.shippingBadge === "From Abroad");
+  const hasLocal = items.some((i) => i.shippingBadge !== "From Abroad");
 
   // Auto-fill from logged-in user
   useEffect(() => {
@@ -382,20 +385,47 @@ export default function CheckoutPage() {
               </div>
 
               {/* Discreet Option */}
-              <label className="flex items-start gap-3 p-4 border border-border rounded-8 cursor-pointer hover:border-accent">
+              <label className="flex items-start gap-3 p-4 border border-border rounded-8 cursor-pointer hover:border-accent transition-colors">
                 <input
                   type="checkbox"
-                  className="mt-1"
+                  className="mt-1 accent-accent"
                   checked={shipping.discreet}
                   onChange={(e) => updateShipping("discreet", e.target.checked)}
                 />
                 <div>
-                  <span className="font-medium">Discreet Shipping</span>
+                  <span className="font-medium flex items-center gap-2">
+                    <Eye className="w-4 h-4 text-accent" />Discreet Shipping
+                  </span>
                   <p className="text-small text-text-muted">
                     Plain packaging with neutral sender name. No product info on the label.
                   </p>
                 </div>
               </label>
+
+              {/* Delivery Estimates */}
+              {items.length > 0 && (
+                <div className="p-4 bg-gray-50 rounded-8 space-y-3">
+                  <h4 className="text-small font-medium flex items-center gap-2">
+                    <Truck className="w-4 h-4 text-accent" />Estimated Delivery
+                  </h4>
+                  {hasLocal && (
+                    <div className="flex items-center gap-2 text-small">
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                        <Zap className="w-3 h-3" />Express
+                      </span>
+                      <span className="text-text-muted">1–3 business days (Kampala &amp; nearby)</span>
+                    </div>
+                  )}
+                  {hasInternational && (
+                    <div className="flex items-center gap-2 text-small">
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+                        <Plane className="w-3 h-3" />From Abroad
+                      </span>
+                      <span className="text-text-muted">7–21 business days (international shipping)</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={() => validateShipping() && setStep(2)}
@@ -481,10 +511,14 @@ export default function CheckoutPage() {
 
               {/* Card Info */}
               {paymentMethod === "card" && (
-                <div className="p-4 bg-gray-50 rounded-8">
-                  <p className="text-sm text-gray-600">
-                    You'll be redirected to Flutterwave's secure payment page to complete your card payment.
-                  </p>
+                <div className="p-4 bg-gray-50 rounded-8 flex items-start gap-3">
+                  <Lock className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Secure Card Payment</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      You'll be redirected to Flutterwave's secure (256-bit SSL) payment page. Your card details are never stored on our servers.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -506,25 +540,68 @@ export default function CheckoutPage() {
             <div className="card space-y-6">
               <h3 className="flex items-center gap-2"><Check className="w-5 h-5 text-accent" />Review & Confirm</h3>
 
-              <div className="space-y-4">
+              {/* Items Review */}
+              <div className="space-y-3 p-4 bg-gray-50 rounded-8">
+                <h4 className="font-medium text-small flex items-center gap-2">
+                  <Package className="w-4 h-4" />Items ({items.length})
+                </h4>
+                {items.map((item) => (
+                  <div key={item.productId} className="flex items-center gap-3 text-small">
+                    <span className="flex-1 line-clamp-1">{item.name}</span>
+                    {item.shippingBadge === "From Abroad" ? (
+                      <span className="text-[10px] font-medium text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded">✈️ Intl</span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">⚡ Express</span>
+                    )}
+                    <span className="text-text-muted">×{item.quantity}</span>
+                    <span className="font-medium">{formatPrice(item.price * item.quantity)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
                 <div className="p-4 bg-gray-50 rounded-8">
-                  <h4 className="font-medium mb-2">Shipping</h4>
+                  <h4 className="font-medium mb-2 flex items-center gap-2 text-small">
+                    <Truck className="w-4 h-4 text-accent" />Shipping To
+                  </h4>
                   <p className="text-small text-text-muted">
                     {shipping.firstName} {shipping.lastName}<br />
                     {shipping.address}<br />
-                    {shipping.city}, {shipping.county} {shipping.postalCode}<br />
-                    {shipping.email} | {shipping.phone}
+                    {shipping.city}{shipping.county ? `, ${shipping.county}` : ""} {shipping.postalCode}<br />
+                    {shipping.phone}
                   </p>
                 </div>
 
                 <div className="p-4 bg-gray-50 rounded-8">
-                  <h4 className="font-medium mb-2">Payment</h4>
+                  <h4 className="font-medium mb-2 flex items-center gap-2 text-small">
+                    <CreditCard className="w-4 h-4 text-accent" />Payment
+                  </h4>
                   <p className="text-small text-text-muted">
                     {paymentMethod === "mobile_money"
-                      ? `${mobileNetwork} - ${mobilePhone}`
-                      : "Credit/Debit Card (via Flutterwave)"}
+                      ? `${mobileNetwork} Mobile Money`
+                      : "Credit/Debit Card"}
+                  </p>
+                  <p className="text-small text-text-muted mt-1">
+                    {paymentMethod === "mobile_money" ? mobilePhone : "Via Flutterwave secure checkout"}
                   </p>
                 </div>
+              </div>
+
+              {/* Delivery Estimates */}
+              <div className="p-4 bg-blue-50 border border-blue-100 rounded-8 space-y-2">
+                <h4 className="font-medium text-small text-blue-900 flex items-center gap-2">
+                  <Truck className="w-4 h-4" />Estimated Delivery
+                </h4>
+                {hasLocal && (
+                  <p className="text-small text-blue-800">
+                    ⚡ Express items: <strong>1–3 business days</strong>
+                  </p>
+                )}
+                {hasInternational && (
+                  <p className="text-small text-blue-800">
+                    ✈️ International items: <strong>7–21 business days</strong>
+                  </p>
+                )}
               </div>
 
               {shipping.discreet && (
@@ -532,9 +609,9 @@ export default function CheckoutPage() {
                   <div className="flex items-start gap-3">
                     <Check className="w-5 h-5 text-green-600 mt-0.5" />
                     <div>
-                      <span className="font-medium text-green-800">Discreet Order</span>
+                      <span className="font-medium text-green-800">Discreet Order Confirmed</span>
                       <p className="text-small text-green-700">
-                        Your order will be shipped in plain packaging with no product details.
+                        Plain packaging • Neutral sender name • Anonymous billing
                       </p>
                     </div>
                   </div>
@@ -560,7 +637,10 @@ export default function CheckoutPage() {
                       Processing...
                     </>
                   ) : (
-                    `Place Order · ${formatPrice(cartTotal)}`
+                    <>
+                      <Lock className="w-4 h-4" />
+                      {`Pay ${formatPrice(cartTotal)}`}
+                    </>
                   )}
                 </button>
               </div>
@@ -571,9 +651,9 @@ export default function CheckoutPage() {
                 <Link href="/policies/privacy" className="underline hover:text-text">Privacy Policy</Link>.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4 pt-2 text-xs text-text-muted border-t border-border">
-                <span className="flex items-center gap-1"><Shield className="w-3.5 h-3.5 text-green-600" />Secure Checkout</span>
+                <span className="flex items-center gap-1"><Shield className="w-3.5 h-3.5 text-green-600" />256-bit SSL</span>
                 <span className="flex items-center gap-1"><Package className="w-3.5 h-3.5 text-green-600" />Discreet Packaging</span>
-                <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5 text-green-600" />Plain Shipping</span>
+                <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5 text-green-600" />Anonymous Billing</span>
               </div>
             </div>
           )}

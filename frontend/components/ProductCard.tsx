@@ -63,6 +63,7 @@ export default function ProductCard({
       slug,
       price: Number(price),
       imageUrl: imageUrl || null,
+      shippingBadge,
     });
     showToast(`Added to cart`, "success");
     setTimeout(() => setIsAdding(false), 800);

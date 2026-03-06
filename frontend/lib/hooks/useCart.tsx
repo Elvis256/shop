@@ -12,7 +12,8 @@ export interface CartItem {
   price: number;
   quantity: number;
   imageUrl: string | null;
-  stock?: number; // available stock from product
+  stock?: number;
+  shippingBadge?: "From Abroad" | "Express";
 }
 
 interface CartContextType {
