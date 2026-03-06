@@ -72,11 +72,20 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
       data: {
         name: body.name || detail.title,
         slug,
-        description: body.description || (detail.description || "")
-          .replace(/<img[^>]*>/gi, "")
-          .replace(/<b>Product Image:<\/b>\s*(<br\s*\/?>)*/gi, "")
-          .replace(/(<br\s*\/?>){3,}/gi, "<br><br>")
-          .trim(),
+        description: body.description || (() => {
+          const raw = detail.description || "";
+          return raw
+            .replace(/<img[^>]*>/gi, "")
+            .replace(/<b>Product Image:<\/b>\s*(<br\s*\/?>)*/gi, "")
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(/<\/?(b|strong|i|em|u|p|div|span|a|ul|ol|li|h[1-6])[^>]*>/gi, "")
+            .replace(/&nbsp;/gi, " ")
+            .replace(/&amp;/gi, "&")
+            .replace(/&lt;/gi, "<")
+            .replace(/&gt;/gi, ">")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
+        })(),
         price: sellingPrice,
         currency: "UGX",
         cjProductId: body.cjProductId,
@@ -213,6 +222,22 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
           where: { id: product.id },
           data: { cjCost: newCostUgx, price: newSellingPrice, currency: "UGX", stock: newStock, lastSyncedAt: new Date() },
         });
+
+        // Update variant prices too
+        if (detail.variants.length > 0) {
+          const existingVariants = await prisma.productVariant.findMany({ where: { productId: product.id } });
+          for (const ev of existingVariants) {
+            const matchingDetail = detail.variants.find((v) => (v.variantName || "Default") === ev.name);
+            if (matchingDetail) {
+              const variantPriceUgx = calculateSellingPrice(
+                Math.round(matchingDetail.variantPrice * usdToUgx),
+                product.markupType as "PERCENTAGE" | "FIXED",
+                Number(product.markupValue),
+              );
+              await prisma.productVariant.update({ where: { id: ev.id }, data: { price: variantPriceUgx, stock: matchingDetail.variantStock } });
+            }
+          }
+        }
 
         results.push({
           id: product.id,

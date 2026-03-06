@@ -472,7 +472,7 @@ export default function ProductPageClient() {
 
             {/* Description */}
             {product.description && (
-              <p className="text-gray-600 text-sm mb-5 leading-relaxed">{product.description}</p>
+              <p className="text-gray-600 text-sm mb-5 leading-relaxed whitespace-pre-line">{product.description}</p>
             )}
 
             {/* Tags */}
