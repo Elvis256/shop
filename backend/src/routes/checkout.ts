@@ -1,6 +1,9 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { createFlutterwavePayment } from "../services/flutterwave";
+import { createPayPalCheckout, getPayPalCheckoutDetails, executePayPalPayment } from "../services/paypal";
+import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
+import { placeCJOrdersForOrder } from "../services/cjOrder";
 import prisma from "../lib/prisma";
 const router = Router();
 
@@ -9,10 +12,16 @@ const RESERVATION_TIMEOUT_MS = 15 * 60 * 1000;
 
 // Validation schema
 const CheckoutSchema = z.object({
-  cartId: z.string(),
-  currency: z.string().default("KES"),
+  cartId: z.string().optional(),
+  items: z.array(z.object({
+    productId: z.string(),
+    quantity: z.number().int().positive(),
+    price: z.number().positive(),
+  })).optional(),
+  currency: z.string().default("UGX"),
   amount: z.number().positive(),
-  paymentMethod: z.enum(["card", "mobile_money"]),
+  shipping: z.number().default(0),
+  paymentMethod: z.enum(["card", "mobile_money", "paypal"]),
   mobileMoney: z
     .object({
       network: z.enum(["MPESA", "AIRTEL", "MTN"]),
@@ -24,7 +33,7 @@ const CheckoutSchema = z.object({
     email: z.string().email(),
   }),
   discreet: z.boolean().default(true),
-  shippingAddress: z.string().optional(),
+  shippingAddress: z.any().optional(),
   affiliateCode: z.string().optional(),
 });
 
@@ -98,12 +107,13 @@ router.post("/create", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Cart is empty or not found" });
     }
 
-    // Calculate total from cart (verify against submitted amount)
+    // Calculate total from cart (verify against submitted amount — allow shipping margin)
     const calculatedTotal = cart.items.reduce((sum, item) => {
       return sum + Number(item.product.price) * item.quantity;
     }, 0);
+    const submittedSubtotal = body.amount - (body.shipping || 0);
 
-    if (Math.abs(calculatedTotal - body.amount) > 0.01) {
+    if (Math.abs(calculatedTotal - submittedSubtotal) > 1) {
       return res.status(400).json({ error: "Amount mismatch" });
     }
 
@@ -142,26 +152,52 @@ router.post("/create", async (req: Request, res: Response) => {
       return order;
     });
 
-    // Create Flutterwave payment
-    const paymentResponse = await createFlutterwavePayment({
-      tx_ref: result.id,
-      amount: body.amount,
-      currency: body.currency,
-      customer: body.customer as any,
-      paymentMethod: body.paymentMethod,
-      mobileMoney: body.mobileMoney as any,
-      redirect_url: `${process.env.BASE_URL}/checkout/confirm?orderId=${result.id}`,
-    });
+    let paymentLink: string | undefined;
+    let paymentRef: string | undefined;
+    let paymentStatus = "PENDING";
+
+    if (body.paymentMethod === "paypal") {
+      // PayPal Express Checkout
+      const ppResult = await createPayPalCheckout({
+        orderId: result.id,
+        amountUgx: body.amount,
+        customerEmail: body.customer.email,
+        description: `Order ${result.orderNumber}`,
+      });
+      paymentLink = ppResult.redirectUrl;
+      paymentRef = ppResult.token;
+    } else {
+      // Flutterwave (card or mobile money)
+      const paymentResponse = await createFlutterwavePayment({
+        tx_ref: result.id,
+        amount: body.amount,
+        currency: body.currency,
+        customer: body.customer as any,
+        paymentMethod: body.paymentMethod,
+        mobileMoney: body.mobileMoney as any,
+        redirect_url: `${process.env.BASE_URL}/checkout/confirm?orderId=${result.id}`,
+      });
+      paymentLink = paymentResponse.data?.link;
+      paymentRef = paymentResponse.data?.flw_ref;
+      paymentStatus = paymentResponse.status || "PENDING";
+    }
 
     // Save payment record
+    const methodMap: Record<string, "CARD" | "MOBILE_MONEY" | "PAYPAL"> = {
+      card: "CARD",
+      mobile_money: "MOBILE_MONEY",
+      paypal: "PAYPAL",
+    };
+
     const payment = await prisma.payment.create({
       data: {
         orderId: result.id,
-        method: body.paymentMethod === "card" ? "CARD" : "MOBILE_MONEY",
+        provider: body.paymentMethod === "paypal" ? "paypal" : "flutterwave",
+        method: methodMap[body.paymentMethod] || "CARD",
         status: "PENDING",
         amount: body.amount,
         currency: body.currency,
-        flwRef: paymentResponse.data?.flw_ref,
+        flwRef: paymentRef,
       },
     });
 
@@ -201,8 +237,9 @@ router.post("/create", async (req: Request, res: Response) => {
     return res.json({
       orderId: result.id,
       paymentId: payment.id,
-      paymentLink: paymentResponse.data?.link,
-      status: paymentResponse.status,
+      paymentLink,
+      paymentMethod: body.paymentMethod,
+      status: paymentStatus,
     });
   } catch (error) {
     console.error("Checkout error:", error);
@@ -214,6 +251,123 @@ router.post("/create", async (req: Request, res: Response) => {
     }
     return res.status(500).json({ error: "Checkout failed" });
   }
+});
+
+// GET /api/checkout/paypal-return — called after user approves on PayPal
+router.get("/paypal-return", async (req: Request, res: Response) => {
+  try {
+    const token = req.query.token as string;
+    const payerId = req.query.PayerID as string;
+    const orderId = req.query.orderId as string;
+
+    if (!token || !payerId || !orderId) {
+      return res.status(400).json({ error: "Missing PayPal return parameters" });
+    }
+
+    // Get payment details from PayPal
+    const details = await getPayPalCheckoutDetails(token);
+
+    // Execute the payment
+    const result = await executePayPalPayment(token, payerId, details.amount);
+
+    if (result.status === "Completed") {
+      // Update payment and order
+      await prisma.$transaction(async (tx) => {
+        await tx.payment.updateMany({
+          where: { orderId },
+          data: {
+            status: "SUCCESSFUL",
+            flwTxId: result.transactionId,
+          },
+        });
+
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: "CONFIRMED", paymentStatus: "SUCCESSFUL" },
+        });
+
+        // Finalize stock
+        const reservations = await tx.stockReservation.findMany({
+          where: { orderId, released: false },
+        });
+        for (const reservation of reservations) {
+          await tx.product.update({
+            where: { id: reservation.productId },
+            data: {
+              stock: { decrement: reservation.quantity },
+              reservedStock: { decrement: reservation.quantity },
+            },
+          });
+          await tx.stockReservation.update({
+            where: { id: reservation.id },
+            data: { released: true },
+          });
+        }
+      });
+
+      // Auto-place dropshipping orders
+      placeAliExpressOrdersForOrder(orderId).catch((err) =>
+        console.error(`AliExpress auto-order failed for ${orderId}:`, err.message)
+      );
+      placeCJOrdersForOrder(orderId).catch((err) =>
+        console.error(`CJ auto-order failed for ${orderId}:`, err.message)
+      );
+
+      // Redirect to success page
+      return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/orders/${orderId}?success=true`);
+    } else {
+      // Payment not completed
+      await prisma.payment.updateMany({
+        where: { orderId },
+        data: { status: "FAILED" },
+      });
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { status: "CANCELLED", paymentStatus: "FAILED" },
+      });
+
+      return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=payment_failed`);
+    }
+  } catch (error: any) {
+    console.error("PayPal return error:", error.message);
+    const orderId = req.query.orderId as string;
+    return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=paypal_error`);
+  }
+});
+
+// GET /api/checkout/paypal-cancel — user cancelled on PayPal
+router.get("/paypal-cancel", async (req: Request, res: Response) => {
+  const orderId = req.query.orderId as string;
+
+  if (orderId) {
+    try {
+      // Release stock reservations
+      await prisma.$transaction(async (tx) => {
+        const reservations = await tx.stockReservation.findMany({
+          where: { orderId, released: false },
+        });
+        for (const reservation of reservations) {
+          await tx.product.update({
+            where: { id: reservation.productId },
+            data: { reservedStock: { decrement: reservation.quantity } },
+          });
+          await tx.stockReservation.update({
+            where: { id: reservation.id },
+            data: { released: true },
+          });
+        }
+
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: "CANCELLED" },
+        });
+      });
+    } catch (e) {
+      console.error("PayPal cancel cleanup error:", e);
+    }
+  }
+
+  return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=payment_cancelled`);
 });
 
 export default router;

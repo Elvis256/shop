@@ -41,7 +41,7 @@ export default function CheckoutPage() {
   const { formatPrice } = useCurrency();
   
   const [step, setStep] = useState<Step>(1);
-  const [paymentMethod, setPaymentMethod] = useState<"card" | "mobile_money">("mobile_money");
+  const [paymentMethod, setPaymentMethod] = useState<"card" | "mobile_money" | "paypal">("mobile_money");
   const [mobileNetwork, setMobileNetwork] = useState<"MPESA" | "AIRTEL" | "MTN">("MTN");
   const [mobilePhone, setMobilePhone] = useState("");
   const [loading, setLoading] = useState(false);
@@ -211,10 +211,10 @@ export default function CheckoutPage() {
 
       setOrderId(data.orderId);
 
-      if (paymentMethod === "card" && data.paymentLink) {
-        // Redirect to Flutterwave for card payment
+      if (data.paymentLink) {
+        // Redirect to PayPal or Flutterwave
         window.location.href = data.paymentLink;
-      } else {
+      } else if (paymentMethod === "mobile_money") {
         // Mobile money - show pending screen
         setPaymentPending(true);
         showToast("Please approve the payment on your phone", "info");
@@ -509,6 +509,27 @@ export default function CheckoutPage() {
                     <p className="text-small text-text-muted">Visa, Mastercard - Secure checkout via Flutterwave</p>
                   </div>
                 </label>
+
+                <label
+                  className={`flex items-center gap-4 p-4 border rounded-8 cursor-pointer ${
+                    paymentMethod === "paypal" ? "border-accent bg-accent/5" : "border-border"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="payment"
+                    checked={paymentMethod === "paypal"}
+                    onChange={() => setPaymentMethod("paypal")}
+                  />
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+                    <path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944 3.72a.77.77 0 0 1 .757-.645h6.613c2.188 0 3.834.562 4.77 1.524.42.432.715.92.876 1.456.17.563.208 1.238.116 2.01-.006.051-.013.103-.02.154a6.52 6.52 0 0 1-.248 1.12 5.74 5.74 0 0 1-.491 1.077 4.37 4.37 0 0 1-.743.896c-.321.309-.7.562-1.126.76-.418.194-.894.34-1.417.434-.512.093-1.08.14-1.687.14H9.44a.96.96 0 0 0-.946.806l-.858 5.438a.64.64 0 0 1-.633.538l.073-.095z" fill="#003087"/>
+                    <path d="M19.152 8.024c-.006.051-.013.103-.02.154-.726 3.718-3.214 5.002-6.39 5.002H11.13a.77.77 0 0 0-.757.645l-.823 5.218-.234 1.48a.405.405 0 0 0 .4.467h2.807a.674.674 0 0 0 .665-.567l.027-.142.528-3.343.034-.185a.674.674 0 0 1 .665-.567h.418c2.714 0 4.838-1.1 5.461-4.286.26-1.332.126-2.444-.563-3.226a2.68 2.68 0 0 0-.77-.555l.164.105z" fill="#0070E0"/>
+                  </svg>
+                  <div>
+                    <span className="font-medium">PayPal</span>
+                    <p className="text-small text-text-muted">Pay securely with your PayPal account (charged in USD)</p>
+                  </div>
+                </label>
               </div>
 
               {/* Mobile Money Form */}
@@ -549,6 +570,19 @@ export default function CheckoutPage() {
                     <p className="text-sm font-medium">Secure Card Payment</p>
                     <p className="text-xs text-gray-500 mt-1">
                       You'll be redirected to Flutterwave's secure (256-bit SSL) payment page. Your card details are never stored on our servers.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* PayPal Info */}
+              {paymentMethod === "paypal" && (
+                <div className="p-4 bg-blue-50 rounded-8 flex items-start gap-3">
+                  <Lock className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-900">PayPal Secure Checkout</p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      You'll be redirected to PayPal to complete payment. Amount will be converted from UGX to USD at the current exchange rate.
                     </p>
                   </div>
                 </div>
@@ -611,10 +645,16 @@ export default function CheckoutPage() {
                   <p className="text-small text-text-muted">
                     {paymentMethod === "mobile_money"
                       ? `${mobileNetwork} Mobile Money`
+                      : paymentMethod === "paypal"
+                      ? "PayPal"
                       : "Credit/Debit Card"}
                   </p>
                   <p className="text-small text-text-muted mt-1">
-                    {paymentMethod === "mobile_money" ? mobilePhone : "Via Flutterwave secure checkout"}
+                    {paymentMethod === "mobile_money"
+                      ? mobilePhone
+                      : paymentMethod === "paypal"
+                      ? "Secure checkout via PayPal (charged in USD)"
+                      : "Via Flutterwave secure checkout"}
                   </p>
                 </div>
               </div>
