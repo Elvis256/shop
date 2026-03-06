@@ -4,13 +4,13 @@ import { useState } from "react";
 import { useCart } from "@/lib/hooks/useCart";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import Image from "next/image";
-import { Plane, Zap, Truck, Tag } from "lucide-react";
+import { Plane, Zap, Truck, Tag, Minus, Plus, Trash2 } from "lucide-react";
 
 const FREE_SHIPPING_THRESHOLD = 100000;
 const LOCAL_SHIPPING_FEE = 5000;
 
 export default function OrderSummary() {
-  const { items, total } = useCart();
+  const { items, total, updateQuantity, removeItem } = useCart();
   const { formatPrice } = useCurrency();
   const [promoCode, setPromoCode] = useState("");
   const [discount, setDiscount] = useState(0);
@@ -69,7 +69,7 @@ export default function OrderSummary() {
       <h3 className="font-semibold mb-4">Order Summary</h3>
 
       {/* Items */}
-      <div className="space-y-4 mb-6 max-h-72 overflow-y-auto pr-1">
+      <div className="space-y-4 mb-6 max-h-80 overflow-y-auto pr-1">
         {items.map((item) => (
           <div key={item.productId} className="flex gap-3">
             <div className="w-16 h-16 bg-gray-100 rounded flex-shrink-0 overflow-hidden relative">
@@ -90,8 +90,7 @@ export default function OrderSummary() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-small font-medium line-clamp-1">{item.name}</p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-small text-text-muted">Qty: {item.quantity}</span>
+              <div className="flex items-center gap-2 mt-1">
                 {item.shippingBadge === "From Abroad" ? (
                   <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
                     <Plane className="w-2.5 h-2.5" />Intl
@@ -101,6 +100,30 @@ export default function OrderSummary() {
                     <Zap className="w-2.5 h-2.5" />Express
                   </span>
                 )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <button
+                  onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                  className="w-6 h-6 flex items-center justify-center rounded border border-border hover:bg-gray-100 transition-colors"
+                  aria-label="Decrease quantity"
+                >
+                  <Minus className="w-3 h-3" />
+                </button>
+                <span className="text-small font-medium w-6 text-center">{item.quantity}</span>
+                <button
+                  onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                  className="w-6 h-6 flex items-center justify-center rounded border border-border hover:bg-gray-100 transition-colors"
+                  aria-label="Increase quantity"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => removeItem(item.productId)}
+                  className="w-6 h-6 flex items-center justify-center rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors ml-1"
+                  aria-label="Remove item"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
               </div>
             </div>
             <p className="font-medium text-small whitespace-nowrap">
