@@ -56,7 +56,12 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
     const body = ImportSchema.parse(req.body);
     const detail = await getProductDetail(body.cjProductId);
 
-    const sellingPrice = calculateSellingPrice(detail.price, body.markupType, body.markupValue);
+    // Convert USD prices to UGX (store base currency)
+    const usdCurrency = await prisma.currency.findUnique({ where: { code: "USD" } });
+    const usdToUgx = usdCurrency ? Math.round(1 / Number(usdCurrency.exchangeRate)) : 3700;
+    const costUgx = Math.round(detail.price * usdToUgx);
+
+    const sellingPrice = calculateSellingPrice(costUgx, body.markupType, body.markupValue);
     const slug = (body.name || detail.title)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -69,10 +74,10 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
         slug,
         description: body.description || detail.description,
         price: sellingPrice,
-        currency: "USD",
+        currency: "UGX",
         cjProductId: body.cjProductId,
         cjUrl: detail.productUrl,
-        cjCost: detail.price,
+        cjCost: costUgx,
         markupType: body.markupType,
         markupValue: body.markupValue,
         cjAutoSync: true,
@@ -95,7 +100,7 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
           ? {
               create: detail.variants.map((v) => ({
                 name: v.variantName || "Default",
-                price: calculateSellingPrice(v.variantPrice, body.markupType, body.markupValue),
+                price: calculateSellingPrice(Math.round(v.variantPrice * usdToUgx), body.markupType, body.markupValue),
                 stock: v.variantStock,
                 sku: `CJ-${body.cjProductId}-${v.vid}`,
               })),
@@ -175,6 +180,10 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
     const where: any = { cjProductId: { not: null }, cjAutoSync: true };
     if (productId) where.id = productId;
 
+    // Get USD→UGX rate for price conversion
+    const usdCurrency = await prisma.currency.findUnique({ where: { code: "USD" } });
+    const usdToUgx = usdCurrency ? Math.round(1 / Number(usdCurrency.exchangeRate)) : 3700;
+
     const products = await prisma.product.findMany({ where, take: 50 });
     const results: Array<{ id: string; name: string; status: string; changes?: any }> = [];
 
@@ -182,13 +191,13 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
       try {
         const detail = await getProductDetail(product.cjProductId!);
         const oldCost = Number(product.cjCost);
-        const newCost = detail.price;
+        const newCostUgx = Math.round(detail.price * usdToUgx);
         const changes: any = {};
 
-        if (Math.abs(oldCost - newCost) > 0.01) changes.price = { old: oldCost, new: newCost };
+        if (Math.abs(oldCost - newCostUgx) > 1) changes.price = { old: oldCost, new: newCostUgx };
 
         const newSellingPrice = calculateSellingPrice(
-          newCost,
+          newCostUgx,
           product.markupType as "PERCENTAGE" | "FIXED",
           Number(product.markupValue),
         );
@@ -198,7 +207,7 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
 
         await prisma.product.update({
           where: { id: product.id },
-          data: { cjCost: newCost, price: newSellingPrice, stock: newStock, lastSyncedAt: new Date() },
+          data: { cjCost: newCostUgx, price: newSellingPrice, currency: "UGX", stock: newStock, lastSyncedAt: new Date() },
         });
 
         results.push({

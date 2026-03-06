@@ -1,7 +1,7 @@
 /**
  * CJ Dropshipping API Service
  * https://developers.cjdropshipping.com/api2.0/v1/
- * Auth: API key via CJ-Access-Token header
+ * Auth: Exchange email + API key for an access token, then use token in header
  */
 
 import axios from "axios";
@@ -18,21 +18,64 @@ const CJ_RETRY_OPTIONS = {
       return true;
     }
     const status = error?.response?.status;
-    return status && (status >= 500 || status === 429);
+    // Don't retry 401 — need to refresh token
+    return status && status >= 500;
   },
 };
 
-function getAccessToken(): string {
-  const token = process.env.CJ_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error("CJ Dropshipping API token not configured. Set CJ_ACCESS_TOKEN in .env");
+// In-memory cached access token
+let cachedAccessToken: string | null = null;
+let tokenExpiresAt = 0;
+
+/**
+ * Get a valid access token, refreshing if needed.
+ * CJ requires: POST /authentication/getAccessToken with {email, password(=apiKey)}
+ */
+async function getAccessToken(): Promise<string> {
+  // Use cached token if still valid (with 5min buffer)
+  if (cachedAccessToken && Date.now() < tokenExpiresAt - 300000) {
+    return cachedAccessToken;
   }
-  return token;
+
+  // Check if we already have a direct access token set
+  if (process.env.CJ_ACCESS_TOKEN && !process.env.CJ_API_KEY) {
+    return process.env.CJ_ACCESS_TOKEN;
+  }
+
+  const email = process.env.CJ_EMAIL;
+  const apiKey = process.env.CJ_API_KEY;
+
+  if (!email || !apiKey) {
+    throw new Error("CJ Dropshipping credentials not configured. Set CJ_EMAIL and CJ_API_KEY in .env");
+  }
+
+  try {
+    const response = await axios.post(`${CJ_BASE_URL}/authentication/getAccessToken`, {
+      email,
+      password: apiKey,
+    }, { timeout: 30000 });
+
+    const body = response.data;
+    if (!body.data?.accessToken) {
+      throw new Error(`CJ auth failed: ${body.message || "No token returned"}`);
+    }
+
+    cachedAccessToken = body.data.accessToken;
+    // Token typically lasts ~30 days, cache for 24h to be safe
+    tokenExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+    console.log("[CJ] Access token refreshed successfully");
+    return cachedAccessToken!;
+  } catch (error: any) {
+    const msg = error.response?.data?.message || error.message;
+    throw new Error(`CJ authentication failed: ${msg}`);
+  }
 }
 
-function headers() {
+async function headers() {
+  const token = await getAccessToken();
   return {
-    "CJ-Access-Token": getAccessToken(),
+    "CJ-Access-Token": token,
     "Content-Type": "application/json",
   };
 }
@@ -44,10 +87,11 @@ async function apiCall<T = any>(method: "GET" | "POST" | "PATCH", path: string, 
   return withRetryAndCircuitBreaker<T>(
     `cj-${path}`,
     async () => {
+      const hdrs = await headers();
       const response = await axios({
         method,
         url: `${CJ_BASE_URL}${path}`,
-        headers: headers(),
+        headers: hdrs,
         data: method !== "GET" ? data : undefined,
         params: method === "GET" ? data : undefined,
         timeout: 30000,
@@ -140,8 +184,19 @@ export async function getProductDetail(productId: string): Promise<CJProductDeta
   }
 
   const images: string[] = (data.productImageSet || []).map((img: any) => img.imageUrl || img).filter(Boolean);
-  if (data.productImage && !images.includes(data.productImage)) {
-    images.unshift(data.productImage);
+  // productImage can sometimes be a JSON array string or actual array — normalize it
+  if (data.productImage) {
+    let mainImages: string[] = [];
+    if (Array.isArray(data.productImage)) {
+      mainImages = data.productImage.filter((u: any) => typeof u === "string");
+    } else if (typeof data.productImage === "string" && data.productImage.startsWith("[")) {
+      try { mainImages = JSON.parse(data.productImage); } catch { mainImages = [data.productImage]; }
+    } else if (typeof data.productImage === "string") {
+      mainImages = [data.productImage];
+    }
+    for (const url of mainImages) {
+      if (!images.includes(url)) images.unshift(url);
+    }
   }
 
   const variants = (data.variants || []).map((v: any) => ({
