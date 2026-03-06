@@ -12,6 +12,33 @@ import {
 const router = Router();
 router.use(authenticate, requireAdmin);
 
+// Auto-detect product category from name keywords
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  toys: ["vibrat", "masturbat", "octopus", "dildo", "toy", "stimulat", "suction", "suctoria", "bullet", "wand"],
+  bdsm: ["bondage", "handcuff", "restraint", "whip", "collar", "bdsm", "fetish", "paddle"],
+  lingerie: ["lingerie", "babydoll", "bodysuit", "lace", "robe", "corset", "thong", "stockings"],
+  wellness: ["cream", "serum", "moisturiz", "wellness", "candle", "health", "hygiene", "eye cream", "collagen", "firming"],
+  couples: ["couples", "partner", "game set", "kama sutra", "position", "guide"],
+  lubricants: ["lubricant", "lube"],
+  condoms: ["condom", "protection"],
+  accessories: ["necklace", "jewelry", "accessori", "tickler", "storage", "case", "feather", "ring"],
+  gifts: ["gift", "bundle", "set"],
+};
+
+async function autoDetectCategory(productName: string): Promise<string | null> {
+  const nameLower = productName.toLowerCase();
+  let matchedSlug: string | null = null;
+  for (const [slug, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some((kw) => nameLower.includes(kw))) {
+      matchedSlug = slug;
+      break;
+    }
+  }
+  if (!matchedSlug) return null;
+  const category = await prisma.category.findUnique({ where: { slug: matchedSlug } });
+  return category?.id || null;
+}
+
 // ── Search AliExpress products ──
 
 // GET /api/admin/aliexpress/search?q=keyword&page=1
@@ -69,7 +96,7 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
     const usdToUgx = usdCurrency ? Math.round(1 / Number(usdCurrency.exchangeRate)) : 3700;
     const costUgx = Math.round(detail.price * usdToUgx);
 
-    const sellingPrice = calculateSellingPrice(costUgx, body.markupType, body.markupValue);
+    const sellingPrice = Math.round(calculateSellingPrice(costUgx, body.markupType, body.markupValue));
     const slug = (body.name || detail.title)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -87,8 +114,18 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
       .trim();
 
     const originalPriceUgx = detail.originalPrice > detail.price
-      ? calculateSellingPrice(Math.round(detail.originalPrice * usdToUgx), body.markupType, body.markupValue)
+      ? Math.round(calculateSellingPrice(Math.round(detail.originalPrice * usdToUgx), body.markupType, body.markupValue))
       : null;
+
+    // Auto-detect category if not provided
+    let categoryId = body.categoryId || null;
+    if (!categoryId) {
+      categoryId = await autoDetectCategory(body.name || detail.title);
+    }
+
+    // Cap stock for dropship products
+    const rawStock = detail.variants.reduce((sum, v) => sum + v.stock, 0) || 100;
+    const cappedStock = Math.min(rawStock, 100);
 
     const product = await prisma.product.create({
       data: {
@@ -105,10 +142,10 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
         markupValue: body.markupValue,
         aliexpressAutoSync: true,
         lastSyncedAt: new Date(),
-        stock: detail.variants.reduce((sum, v) => sum + v.stock, 0) || 100,
+        stock: cappedStock,
         trackInventory: false,
         allowBackorder: true,
-        categoryId: body.categoryId || null,
+        categoryId,
         tags: body.tags || [],
         status: "ACTIVE",
         images: {
@@ -123,8 +160,8 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
           ? {
               create: detail.variants.map((v) => ({
                 name: v.skuAttr || "Default",
-                price: calculateSellingPrice(Math.round(v.price * usdToUgx), body.markupType, body.markupValue),
-                stock: v.stock,
+                price: Math.round(calculateSellingPrice(Math.round(v.price * usdToUgx), body.markupType, body.markupValue)),
+                stock: Math.min(v.stock, 100),
                 sku: `AE-${body.aliexpressProductId}-${v.skuId}`,
               })),
             }
@@ -166,7 +203,7 @@ router.post("/import-from-url", async (req: AuthRequest, res: Response) => {
     const usdCurrency = await prisma.currency.findUnique({ where: { code: "USD" } });
     const usdToUgx = usdCurrency ? Math.round(1 / Number(usdCurrency.exchangeRate)) : 3700;
     const costUgx = Math.round(detail.price * usdToUgx);
-    const sellingPrice = calculateSellingPrice(costUgx, markupType, markupValue);
+    const sellingPrice = Math.round(calculateSellingPrice(costUgx, markupType, markupValue));
 
     const slug = (name || detail.title)
       .toLowerCase()
@@ -182,6 +219,10 @@ router.post("/import-from-url", async (req: AuthRequest, res: Response) => {
       .replace(/\n{3,}/g, "\n\n")
       .trim();
 
+    // Auto-detect category if not provided
+    const resolvedCategoryId = categoryId || await autoDetectCategory(name || detail.title);
+    const rawStock = detail.variants.reduce((sum: number, v: any) => sum + v.stock, 0) || 100;
+
     const product = await prisma.product.create({
       data: {
         name: name || detail.title,
@@ -196,10 +237,10 @@ router.post("/import-from-url", async (req: AuthRequest, res: Response) => {
         markupValue,
         aliexpressAutoSync: true,
         lastSyncedAt: new Date(),
-        stock: detail.variants.reduce((sum: number, v: any) => sum + v.stock, 0) || 100,
+        stock: Math.min(rawStock, 100),
         trackInventory: false,
         allowBackorder: true,
-        categoryId: categoryId || null,
+        categoryId: resolvedCategoryId,
         tags: tags || [],
         status: "ACTIVE",
         images: {
@@ -214,8 +255,8 @@ router.post("/import-from-url", async (req: AuthRequest, res: Response) => {
           ? {
               create: detail.variants.map((v: any) => ({
                 name: v.skuAttr || "Default",
-                price: calculateSellingPrice(Math.round(v.price * usdToUgx), markupType, markupValue),
-                stock: v.stock,
+                price: Math.round(calculateSellingPrice(Math.round(v.price * usdToUgx), markupType, markupValue)),
+                stock: Math.min(v.stock, 100),
                 sku: `AE-${aliexpressProductId}-${v.skuId}`,
               })),
             }

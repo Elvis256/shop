@@ -121,6 +121,33 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       };
     });
 
+    // Dropshipping stats
+    const [cjProducts, aeProducts, localProducts, productsByCategory] = await Promise.all([
+      prisma.product.count({ where: { cjProductId: { not: null }, status: "ACTIVE" } }),
+      prisma.product.count({ where: { aliexpressProductId: { not: null }, status: "ACTIVE" } }),
+      prisma.product.count({
+        where: { cjProductId: null, aliexpressProductId: null, status: "ACTIVE" },
+      }),
+      prisma.product.groupBy({
+        by: ["categoryId"],
+        where: { status: "ACTIVE" },
+        _count: { id: true },
+      }),
+    ]);
+
+    // Get category names for the breakdown
+    const catIds = productsByCategory.map((p) => p.categoryId).filter(Boolean) as string[];
+    const categories = await prisma.category.findMany({
+      where: { id: { in: catIds } },
+      select: { id: true, name: true },
+    });
+    const catMap = new Map(categories.map((c) => [c.id, c.name]));
+
+    const categoryBreakdown = productsByCategory.map((p) => ({
+      category: p.categoryId ? catMap.get(p.categoryId) || "Unknown" : "Uncategorized",
+      count: p._count.id,
+    })).sort((a, b) => b.count - a.count);
+
     // Calculate growth percentages
     const orderGrowth = lastMonthOrders > 0
       ? ((monthOrders - lastMonthOrders) / lastMonthOrders) * 100
@@ -150,6 +177,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         products: {
           total: totalProducts,
           lowStock: lowStockProducts,
+          cjDropshipping: cjProducts,
+          aliexpress: aeProducts,
+          local: localProducts,
+          categoryBreakdown,
         },
       },
       ordersByStatus: ordersByStatus.reduce((acc, item) => {

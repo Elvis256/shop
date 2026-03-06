@@ -37,7 +37,14 @@ interface DashboardData {
     orders: { total: number; thisMonth: number; growth: number };
     revenue: { total: number; thisMonth: number; growth: number; currency: string };
     customers: { total: number; newThisMonth: number };
-    products: { total: number; lowStock: number };
+    products: {
+      total: number;
+      lowStock: number;
+      cjDropshipping: number;
+      aliexpress: number;
+      local: number;
+      categoryBreakdown: Array<{ category: string; count: number }>;
+    };
   };
   recentOrders: Array<{
     id: string;
@@ -350,11 +357,21 @@ export default function AdminDashboard() {
           </div>
           <p className="text-2xl font-bold text-gray-900">{data.stats.products.total.toLocaleString()}</p>
           <p className="text-xs text-gray-500 mt-1">Active Products</p>
-          <div className="mt-3 pt-3 border-t border-amber-100 flex items-center justify-between">
-            <span className="text-xs text-gray-500">Stock health</span>
-            <span className={`text-xs font-semibold ${data.stats.products.lowStock > 0 ? "text-amber-700" : "text-emerald-600"}`}>
-              {data.stats.products.lowStock > 0 ? `${data.stats.products.lowStock} need restock` : "All stocked ✓"}
-            </span>
+          <div className="mt-3 pt-3 border-t border-amber-100 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-500">🏠 Local</span>
+              <span className="font-semibold text-gray-700">{data.stats.products.local}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-500">🏭 CJ Dropship</span>
+              <span className="font-semibold text-gray-700">{data.stats.products.cjDropshipping}</span>
+            </div>
+            {data.stats.products.aliexpress > 0 && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">📦 AliExpress</span>
+                <span className="font-semibold text-gray-700">{data.stats.products.aliexpress}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -559,6 +576,38 @@ export default function AdminDashboard() {
                     </span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Product Sources & Categories */}
+          {data.stats.products.categoryBreakdown?.length > 0 && (
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-indigo-600" />
+                  <h2 className="font-semibold text-gray-900">Products by Category</h2>
+                </div>
+                <Link href="/admin/categories"
+                  className="text-sm text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1">
+                  Manage <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+              <div className="p-5 space-y-3">
+                {data.stats.products.categoryBreakdown.map((cat) => {
+                  const pct = Math.round((cat.count / data.stats.products.total) * 100);
+                  return (
+                    <div key={cat.category}>
+                      <div className="flex items-center justify-between text-sm mb-1">
+                        <span className="text-gray-700">{cat.category}</span>
+                        <span className="text-gray-500 text-xs">{cat.count} ({pct}%)</span>
+                      </div>
+                      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

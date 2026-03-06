@@ -12,6 +12,36 @@ import {
 const router = Router();
 router.use(authenticate, requireAdmin);
 
+// Auto-detect product category from name keywords
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  toys: ["vibrat", "masturbat", "octopus", "dildo", "toy", "stimulat", "suction", "suctoria", "bullet", "wand"],
+  bdsm: ["bondage", "handcuff", "restraint", "whip", "collar", "bdsm", "fetish", "paddle"],
+  lingerie: ["lingerie", "babydoll", "bodysuit", "lace", "robe", "corset", "thong", "stockings"],
+  wellness: ["cream", "serum", "moisturiz", "wellness", "candle", "health", "hygiene", "eye cream", "eye shadow", "collagen", "firming"],
+  couples: ["couples", "partner", "game set", "kama sutra", "position", "guide"],
+  lubricants: ["lubricant", "lube"],
+  condoms: ["condom", "protection"],
+  accessories: ["necklace", "jewelry", "accessori", "tickler", "storage", "case", "feather", "ring"],
+  gifts: ["gift", "bundle", "set"],
+};
+
+async function autoDetectCategory(productName: string): Promise<string | null> {
+  const nameLower = productName.toLowerCase();
+  let matchedSlug: string | null = null;
+
+  for (const [slug, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some((kw) => nameLower.includes(kw))) {
+      matchedSlug = slug;
+      break;
+    }
+  }
+
+  if (!matchedSlug) return null;
+
+  const category = await prisma.category.findUnique({ where: { slug: matchedSlug } });
+  return category?.id || null;
+}
+
 // GET /api/admin/cj/search?q=keyword&page=1
 router.get("/search", async (req: AuthRequest, res: Response) => {
   try {
@@ -61,12 +91,22 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
     const usdToUgx = usdCurrency ? Math.round(1 / Number(usdCurrency.exchangeRate)) : 3700;
     const costUgx = Math.round(detail.price * usdToUgx);
 
-    const sellingPrice = calculateSellingPrice(costUgx, body.markupType, body.markupValue);
+    const sellingPrice = Math.round(calculateSellingPrice(costUgx, body.markupType, body.markupValue));
     const slug = (body.name || detail.title)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
       .substring(0, 80) + `-${Date.now().toString(36)}`;
+
+    // Auto-detect category from product name if not provided
+    let categoryId = body.categoryId || null;
+    if (!categoryId) {
+      categoryId = await autoDetectCategory(body.name || detail.title);
+    }
+
+    // Cap stock at 100 for dropship products (supplier has unlimited)
+    const rawStock = detail.variants.reduce((sum, v) => sum + v.variantStock, 0) || 100;
+    const cappedStock = Math.min(rawStock, 100);
 
     const product = await prisma.product.create({
       data: {
@@ -95,10 +135,10 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
         markupValue: body.markupValue,
         cjAutoSync: true,
         lastSyncedAt: new Date(),
-        stock: detail.variants.reduce((sum, v) => sum + v.variantStock, 0) || 100,
+        stock: cappedStock,
         trackInventory: false,
         allowBackorder: true,
-        categoryId: body.categoryId || null,
+        categoryId,
         tags: body.tags || [],
         status: "ACTIVE",
         images: {
@@ -113,8 +153,8 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
           ? {
               create: detail.variants.map((v) => ({
                 name: v.variantName || "Default",
-                price: calculateSellingPrice(Math.round(v.variantPrice * usdToUgx), body.markupType, body.markupValue),
-                stock: v.variantStock,
+                price: Math.round(calculateSellingPrice(Math.round(v.variantPrice * usdToUgx), body.markupType, body.markupValue)),
+                stock: Math.min(v.variantStock, 100),
                 sku: `CJ-${body.cjProductId}-${v.vid}`,
               })),
             }
