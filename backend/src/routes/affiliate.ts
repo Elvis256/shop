@@ -8,38 +8,51 @@ const router = Router();
 
 // ─── Public: Browse Affiliate Products ───────────────────────────────────────
 
-// GET /api/affiliate/products - Browse all affiliate products
+// GET /api/affiliate/products - Browse all affiliate products + imported dropship products
 router.get("/products", async (req: Request, res: Response) => {
   try {
     const { source, category, search, featured, sort, page = "1", limit = "20" } = req.query;
     const take = Math.min(parseInt(limit as string) || 20, 50);
     const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
 
-    const where: any = { isActive: true };
-    if (source) where.source = source;
-    if (category) where.category = { slug: category };
-    if (featured === "true") where.isFeatured = true;
-    if (search) where.OR = [
-      { name: { contains: search, mode: "insensitive" } },
-      { description: { contains: search, mode: "insensitive" } },
-      { tags: { hasSome: [(search as string).toLowerCase()] } },
-    ];
+    // Build filter for imported products (CJ + AliExpress from main Product table)
+    const importedWhere: any = {
+      status: "ACTIVE",
+      OR: [
+        { cjProductId: { not: null } },
+        { aliexpressProductId: { not: null } },
+      ],
+    };
+    if (source === "CJ") importedWhere.cjProductId = { not: null };
+    else if (source === "ALIEXPRESS") importedWhere.aliexpressProductId = { not: null };
+    if (category) importedWhere.category = { slug: category };
+    if (search) {
+      importedWhere.AND = [{
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { description: { contains: search, mode: "insensitive" } },
+          { tags: { hasSome: [(search as string).toLowerCase()] } },
+        ],
+      }];
+    }
 
     let orderBy: any = { createdAt: "desc" };
     if (sort === "price_asc") orderBy = { price: "asc" };
     else if (sort === "price_desc") orderBy = { price: "desc" };
-    else if (sort === "rating") orderBy = { rating: "desc" };
-    else if (sort === "popular") orderBy = { clicks: { _count: "desc" } };
+    else if (sort === "popular") orderBy = { viewCount: "desc" };
 
     const [products, total] = await Promise.all([
-      prisma.affiliateProduct.findMany({
-        where,
-        include: { category: { select: { name: true, slug: true } } },
+      prisma.product.findMany({
+        where: importedWhere,
+        include: {
+          category: { select: { name: true, slug: true } },
+          images: { orderBy: { position: "asc" }, take: 1 },
+        },
         orderBy,
         take,
         skip,
       }),
-      prisma.affiliateProduct.count({ where }),
+      prisma.product.count({ where: importedWhere }),
     ]);
 
     return res.json({
@@ -49,18 +62,16 @@ router.get("/products", async (req: Request, res: Response) => {
         slug: p.slug,
         description: p.description,
         price: Number(p.price),
-        originalPrice: p.originalPrice ? Number(p.originalPrice) : null,
-        currency: p.currency,
-        imageUrl: p.imageUrl,
-        images: p.images,
-        source: p.source,
-        affiliateUrl: p.affiliateUrl,
+        originalPrice: p.comparePrice ? Number(p.comparePrice) : null,
+        currency: p.currency || "UGX",
+        imageUrl: p.images[0]?.url || null,
+        source: p.cjProductId ? "CJ" : "ALIEXPRESS",
         category: p.category,
         tags: p.tags,
         rating: p.rating ? Number(p.rating) : null,
-        reviewCount: p.reviewCount,
-        isFeatured: p.isFeatured,
-        isAffiliate: true,
+        reviewCount: p.reviewCount || 0,
+        shippingBadge: "From Abroad",
+        isImported: true,
       })),
       pagination: { total, page: Math.floor(skip / take) + 1, limit: take, totalPages: Math.ceil(total / take) },
     });
@@ -115,13 +126,22 @@ router.post("/products/:id/click", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/affiliate/featured - Featured affiliate products for homepage
+// GET /api/affiliate/featured - Featured imported products
 router.get("/featured", async (_req: Request, res: Response) => {
   try {
     const data = await cacheGetOrSet("affiliate:featured", async () => {
-      const products = await prisma.affiliateProduct.findMany({
-        where: { isActive: true, isFeatured: true },
-        include: { category: { select: { name: true } } },
+      const products = await prisma.product.findMany({
+        where: {
+          status: "ACTIVE",
+          OR: [
+            { cjProductId: { not: null } },
+            { aliexpressProductId: { not: null } },
+          ],
+        },
+        include: {
+          category: { select: { name: true } },
+          images: { orderBy: { position: "asc" }, take: 1 },
+        },
         orderBy: { createdAt: "desc" },
         take: 8,
       });
@@ -130,14 +150,14 @@ router.get("/featured", async (_req: Request, res: Response) => {
         name: p.name,
         slug: p.slug,
         price: Number(p.price),
-        originalPrice: p.originalPrice ? Number(p.originalPrice) : null,
-        imageUrl: p.imageUrl,
-        source: p.source,
-        affiliateUrl: p.affiliateUrl,
+        originalPrice: p.comparePrice ? Number(p.comparePrice) : null,
+        imageUrl: p.images[0]?.url || null,
+        source: p.cjProductId ? "CJ" : "ALIEXPRESS",
         rating: p.rating ? Number(p.rating) : null,
-        reviewCount: p.reviewCount,
+        reviewCount: p.reviewCount || 0,
         category: p.category?.name || null,
-        isAffiliate: true,
+        shippingBadge: "From Abroad",
+        isImported: true,
       }));
     }, SHORT_TTL);
 

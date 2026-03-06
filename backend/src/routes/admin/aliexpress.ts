@@ -64,34 +64,53 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
     const body = ImportSchema.parse(req.body);
     const detail = await getProductDetail(body.aliexpressProductId);
 
-    const sellingPrice = calculateSellingPrice(detail.price, body.markupType, body.markupValue);
+    // Convert USD prices to UGX
+    const usdCurrency = await prisma.currency.findUnique({ where: { code: "USD" } });
+    const usdToUgx = usdCurrency ? Math.round(1 / Number(usdCurrency.exchangeRate)) : 3700;
+    const costUgx = Math.round(detail.price * usdToUgx);
+
+    const sellingPrice = calculateSellingPrice(costUgx, body.markupType, body.markupValue);
     const slug = (body.name || detail.title)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
       .substring(0, 80) + `-${Date.now().toString(36)}`;
 
+    // Clean description
+    const cleanDesc = (detail.description || "")
+      .replace(/<img[^>]*>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/?(b|strong|i|em|u|p|div|span|a|ul|ol|li|h[1-6])[^>]*>/gi, "")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    const originalPriceUgx = detail.originalPrice > detail.price
+      ? calculateSellingPrice(Math.round(detail.originalPrice * usdToUgx), body.markupType, body.markupValue)
+      : null;
+
     const product = await prisma.product.create({
       data: {
         name: body.name || detail.title,
         slug,
-        description: body.description || detail.description,
+        description: body.description || cleanDesc,
         price: sellingPrice,
-        comparePrice: detail.originalPrice > detail.price ? calculateSellingPrice(detail.originalPrice, body.markupType, body.markupValue) : null,
-        currency: "USD",
+        comparePrice: originalPriceUgx,
+        currency: "UGX",
         aliexpressProductId: body.aliexpressProductId,
         aliexpressUrl: detail.productUrl,
-        aliexpressCost: detail.price,
+        aliexpressCost: costUgx,
         markupType: body.markupType,
         markupValue: body.markupValue,
         aliexpressAutoSync: true,
         lastSyncedAt: new Date(),
         stock: detail.variants.reduce((sum, v) => sum + v.stock, 0) || 100,
-        trackInventory: false, // AliExpress manages stock
+        trackInventory: false,
         allowBackorder: true,
         categoryId: body.categoryId || null,
         tags: body.tags || [],
-        status: "DRAFT",
+        status: "ACTIVE",
         images: {
           create: detail.images.slice(0, 10).map((url, i) => ({
             url,
@@ -104,7 +123,7 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
           ? {
               create: detail.variants.map((v) => ({
                 name: v.skuAttr || "Default",
-                price: calculateSellingPrice(v.price, body.markupType, body.markupValue),
+                price: calculateSellingPrice(Math.round(v.price * usdToUgx), body.markupType, body.markupValue),
                 stock: v.stock,
                 sku: `AE-${body.aliexpressProductId}-${v.skuId}`,
               })),
@@ -121,6 +140,94 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: error.message || "Import failed" });
+  }
+});
+
+// POST /api/admin/aliexpress/import-from-url - Import by AliExpress URL
+router.post("/import-from-url", async (req: AuthRequest, res: Response) => {
+  try {
+    const { url, markupType = "PERCENTAGE", markupValue = 80, categoryId, name, tags } = req.body;
+    if (!url) return res.status(400).json({ error: "URL is required" });
+
+    // Extract product ID from various AliExpress URL formats
+    const match = (url as string).match(/(?:\/item\/|\/i\/)(\d+)/);
+    if (!match) return res.status(400).json({ error: "Invalid AliExpress URL. Expected format: aliexpress.com/item/12345.html" });
+
+    const aliexpressProductId = match[1];
+
+    // Check if already imported
+    const existing = await prisma.product.findFirst({ where: { aliexpressProductId } });
+    if (existing) return res.status(409).json({ error: "Product already imported", product: { id: existing.id, name: existing.name, slug: existing.slug } });
+
+    // Forward to the import handler with the extracted product ID
+    req.body = { aliexpressProductId, markupType, markupValue, categoryId, name, tags };
+    // Re-parse and import (reuse import logic above by calling the endpoint internally isn't clean — inline it)
+    const detail = await getProductDetail(aliexpressProductId);
+    const usdCurrency = await prisma.currency.findUnique({ where: { code: "USD" } });
+    const usdToUgx = usdCurrency ? Math.round(1 / Number(usdCurrency.exchangeRate)) : 3700;
+    const costUgx = Math.round(detail.price * usdToUgx);
+    const sellingPrice = calculateSellingPrice(costUgx, markupType, markupValue);
+
+    const slug = (name || detail.title)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .substring(0, 80) + `-${Date.now().toString(36)}`;
+
+    const cleanDesc = (detail.description || "")
+      .replace(/<img[^>]*>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/?(b|strong|i|em|u|p|div|span|a|ul|ol|li|h[1-6])[^>]*>/gi, "")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    const product = await prisma.product.create({
+      data: {
+        name: name || detail.title,
+        slug,
+        description: cleanDesc,
+        price: sellingPrice,
+        currency: "UGX",
+        aliexpressProductId,
+        aliexpressUrl: detail.productUrl,
+        aliexpressCost: costUgx,
+        markupType,
+        markupValue,
+        aliexpressAutoSync: true,
+        lastSyncedAt: new Date(),
+        stock: detail.variants.reduce((sum: number, v: any) => sum + v.stock, 0) || 100,
+        trackInventory: false,
+        allowBackorder: true,
+        categoryId: categoryId || null,
+        tags: tags || [],
+        status: "ACTIVE",
+        images: {
+          create: detail.images.slice(0, 10).map((url: string, i: number) => ({
+            url,
+            alt: `${name || detail.title} - Image ${i + 1}`,
+            position: i,
+          })),
+        },
+        hasVariants: detail.variants.length > 1,
+        variants: detail.variants.length > 1
+          ? {
+              create: detail.variants.map((v: any) => ({
+                name: v.skuAttr || "Default",
+                price: calculateSellingPrice(Math.round(v.price * usdToUgx), markupType, markupValue),
+                stock: v.stock,
+                sku: `AE-${aliexpressProductId}-${v.skuId}`,
+              })),
+            }
+          : undefined,
+      },
+      include: { images: true, variants: true },
+    });
+
+    return res.json({ message: "Product imported from URL successfully", product });
+  } catch (error: any) {
+    console.error("AliExpress URL import error:", error.message);
+    return res.status(500).json({ error: error.message || "URL import failed" });
   }
 });
 
