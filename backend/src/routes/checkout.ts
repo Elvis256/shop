@@ -127,14 +127,20 @@ router.post("/create", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Cart ID or items required" });
     }
 
-    // Calculate total from cart (verify against submitted amount — allow shipping margin)
+    // Calculate total from DB prices (source of truth) - log if frontend differs
     const calculatedTotal = cartItems.reduce((sum, item) => {
-      return sum + Number(item.product.price) * item.quantity;
+      return sum + Math.round(Number(item.product.price)) * item.quantity;
     }, 0);
     const submittedSubtotal = body.amount - (body.shipping || 0);
 
-    if (Math.abs(calculatedTotal - submittedSubtotal) > 1) {
-      return res.status(400).json({ error: "Amount mismatch" });
+    // Allow up to 2% tolerance for price sync lag between cart cache and DB
+    const tolerance = Math.max(calculatedTotal * 0.02, 500);
+    if (Math.abs(calculatedTotal - submittedSubtotal) > tolerance) {
+      return res.status(400).json({ 
+        error: "Price has changed since you added items. Please refresh your cart.",
+        calculatedTotal,
+        submittedSubtotal,
+      });
     }
 
     // Create order with stock reservation in a transaction
