@@ -329,15 +329,11 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
           changes.stock = { old: product.stock, new: newStock };
         }
 
-        await prisma.product.update({
-          where: { id: product.id },
-          data: {
-            aliexpressCost: newCost,
-            price: newSellingPrice,
-            stock: newStock,
-            lastSyncedAt: new Date(),
-          },
-        });
+        // Use raw SQL for Decimal fields to avoid Prisma persistence issues
+        await prisma.$executeRawUnsafe(
+          `UPDATE "Product" SET "aliexpressCost" = $1, price = $2, stock = $3, "lastSyncedAt" = NOW() WHERE id = $4`,
+          newCost, newSellingPrice, newStock, product.id,
+        );
 
         results.push({
           id: product.id,

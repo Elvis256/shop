@@ -218,10 +218,11 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
         const newStock = detail.variants.reduce((sum, v) => sum + v.variantStock, 0) || 100;
         if (product.stock !== newStock) changes.stock = { old: product.stock, new: newStock };
 
-        await prisma.product.update({
-          where: { id: product.id },
-          data: { cjCost: newCostUgx, price: newSellingPrice, currency: "UGX", stock: newStock, lastSyncedAt: new Date() },
-        });
+        // Use raw SQL for Decimal price fields to avoid Prisma Decimal persistence issues
+        await prisma.$executeRawUnsafe(
+          `UPDATE "Product" SET "cjCost" = $1, price = $2, currency = 'UGX', stock = $3, "lastSyncedAt" = NOW() WHERE id = $4`,
+          newCostUgx, newSellingPrice, newStock, product.id,
+        );
 
         // Update variant prices too
         if (detail.variants.length > 0) {
@@ -234,7 +235,10 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
                 product.markupType as "PERCENTAGE" | "FIXED",
                 Number(product.markupValue),
               );
-              await prisma.productVariant.update({ where: { id: ev.id }, data: { price: variantPriceUgx, stock: matchingDetail.variantStock } });
+              await prisma.$executeRawUnsafe(
+                `UPDATE "ProductVariant" SET price = $1, stock = $2 WHERE id = $3`,
+                variantPriceUgx, matchingDetail.variantStock, ev.id,
+              );
             }
           }
         }
