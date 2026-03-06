@@ -107,11 +107,16 @@ const settingDefinitions: Record<string, SettingDef> = {
   payment_flutterwave_enabled: { label: "Enable Flutterwave", type: "toggle", description: "Accept card, mobile money & bank payments via Flutterwave", section: "Payment Methods" },
   payment_mobile_money_enabled: { label: "Enable Mobile Money", type: "toggle", description: "Direct MTN/Airtel Money payments", section: "Payment Methods" },
   payment_card_enabled: { label: "Enable Card Payments", type: "toggle", description: "Visa, Mastercard & other cards", section: "Payment Methods" },
+  payment_paypal_enabled: { label: "Enable PayPal", type: "toggle", description: "Accept PayPal payments (amounts converted to USD)", section: "Payment Methods" },
   payment_cod_enabled: { label: "Cash on Delivery", type: "toggle", description: "Customers pay when they receive the order", section: "Payment Methods" },
   payment_min_order: { label: "Minimum Order Amount", type: "number", description: "Customers must spend at least this much to checkout", section: "Order Rules", placeholder: "5000" },
-  payment_flutterwave_public_key: { label: "Flutterwave Public Key", type: "text", description: "Your Flutterwave public API key", section: "API Keys", placeholder: "FLWPUBK-xxxx" },
-  payment_flutterwave_secret_key: { label: "Flutterwave Secret Key", type: "password", description: "Keep this secret — never share it", section: "API Keys", placeholder: "FLWSECK-xxxx" },
   payment_instructions: { label: "Payment Instructions", type: "textarea", description: "Additional instructions shown at checkout", section: "Order Rules", placeholder: "Please complete your payment within 30 minutes." },
+  payment_flutterwave_public_key: { label: "Flutterwave Public Key", type: "text", description: "Your Flutterwave public API key", section: "Flutterwave API", placeholder: "FLWPUBK-xxxx" },
+  payment_flutterwave_secret_key: { label: "Flutterwave Secret Key", type: "password", description: "Keep this secret — never share it", section: "Flutterwave API", placeholder: "FLWSECK-xxxx" },
+  payment_paypal_api_username: { label: "PayPal API Username", type: "text", description: "NVP/SOAP API username from PayPal", section: "PayPal API", placeholder: "seller_api1.gmail.com" },
+  payment_paypal_api_password: { label: "PayPal API Password", type: "password", description: "NVP/SOAP API password", section: "PayPal API", placeholder: "••••••••" },
+  payment_paypal_api_signature: { label: "PayPal API Signature", type: "password", description: "NVP/SOAP API signature", section: "PayPal API", placeholder: "••••••••" },
+  payment_paypal_mode: { label: "PayPal Mode", type: "select", description: "Use sandbox for testing, live for real payments", section: "PayPal API", options: ["live", "sandbox"] },
 
   // ── Shipping ──
   shipping_enabled: { label: "Enable Shipping", type: "toggle", description: "Toggle all shipping functionality", section: "General" },
