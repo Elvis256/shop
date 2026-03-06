@@ -121,11 +121,14 @@ router.post("/create", async (req: Request, res: Response) => {
     const result = await prisma.$transaction(async (tx) => {
       // Create order
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      const subtotal = calculatedTotal;
+      const shippingAmount = body.shipping || 0;
       const order = await tx.order.create({
         data: {
           orderNumber,
-          subtotal: body.amount,
-          totalAmount: body.amount,
+          subtotal,
+          totalAmount: subtotal + shippingAmount,
+          shippingCost: shippingAmount,
           currency: body.currency,
           status: "PENDING",
           discreet: body.discreet,

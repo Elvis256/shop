@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Tag, Shield, Package, Lock, Check, Truck } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -35,6 +36,7 @@ export default function CartPage() {
   const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number } | null>(null);
   const [couponError, setCouponError] = useState("");
   const { formatPrice } = useCurrency();
+  const { config: shippingCfg } = useShippingConfig();
 
   useEffect(() => {
     loadCart();
@@ -212,7 +214,7 @@ export default function CartPage() {
 
         {/* Free Shipping Progress Bar */}
         {(() => {
-          const FREE_SHIPPING_THRESHOLD = 100000;
+          const FREE_SHIPPING_THRESHOLD = shippingCfg.freeThreshold;
           const remaining = FREE_SHIPPING_THRESHOLD - subtotal;
           const progress = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
           return (

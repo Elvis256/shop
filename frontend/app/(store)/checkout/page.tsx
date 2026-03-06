@@ -6,6 +6,7 @@ import Link from "next/link";
 import Section from "@/components/Section";
 import OrderSummary from "@/components/OrderSummary";
 import { useCart } from "@/lib/hooks/useCart";
+import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
 import { useToast } from "@/lib/hooks/useToast";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
@@ -39,6 +40,7 @@ export default function CheckoutPage() {
   const { showToast } = useToast();
   const { user } = useAuth();
   const { formatPrice } = useCurrency();
+  const { config: shippingConfig, calculateShipping } = useShippingConfig();
   
   const [step, setStep] = useState<Step>(1);
   const [paymentMethod, setPaymentMethod] = useState<"card" | "mobile_money" | "paypal">("mobile_money");
@@ -86,13 +88,9 @@ export default function CheckoutPage() {
   const hasInternational = items.some((i) => i.shippingBadge === "From Abroad");
   const hasLocal = items.some((i) => i.shippingBadge !== "From Abroad");
 
-  // Calculate shipping (must match OrderSummary logic)
-  const FREE_SHIPPING_THRESHOLD = 100000;
-  const LOCAL_SHIPPING_FEE = 5000;
-  const localTotal = items
-    .filter((i) => i.shippingBadge !== "From Abroad")
-    .reduce((s, i) => s + i.price * i.quantity, 0);
-  const shippingCost = localTotal >= FREE_SHIPPING_THRESHOLD || !hasLocal ? 0 : LOCAL_SHIPPING_FEE;
+  // Dynamic shipping calculation from admin settings
+  const shippingCalc = calculateShipping(items, shipping.city || "Kampala");
+  const shippingCost = shippingCalc.total;
   const orderTotal = cartTotal + shippingCost;
 
   // Auto-fill from logged-in user
@@ -445,7 +443,7 @@ export default function CheckoutPage() {
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
                         <Zap className="w-3 h-3" />Express
                       </span>
-                      <span className="text-text-muted">1–3 business days (Kampala &amp; nearby)</span>
+                      <span className="text-text-muted">{shippingConfig.standardDays} (Kampala &amp; nearby)</span>
                     </div>
                   )}
                   {hasInternational && (
@@ -453,7 +451,7 @@ export default function CheckoutPage() {
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
                         <Plane className="w-3 h-3" />From Abroad
                       </span>
-                      <span className="text-text-muted">7–21 business days (international shipping)</span>
+                      <span className="text-text-muted">{shippingConfig.intlDays} (international shipping)</span>
                     </div>
                   )}
                 </div>
@@ -666,12 +664,12 @@ export default function CheckoutPage() {
                 </h4>
                 {hasLocal && (
                   <p className="text-small text-blue-800">
-                    ⚡ Express items: <strong>1–3 business days</strong>
+                    ⚡ Local items: <strong>{shippingConfig.standardDays}</strong>
                   </p>
                 )}
                 {hasInternational && (
                   <p className="text-small text-blue-800">
-                    ✈️ International items: <strong>7–21 business days</strong>
+                    ✈️ International items: <strong>{shippingConfig.intlDays}</strong>
                   </p>
                 )}
               </div>
@@ -733,7 +731,7 @@ export default function CheckoutPage() {
 
         {/* Order Summary */}
         <div>
-          <OrderSummary />
+          <OrderSummary city={shipping.city} />
         </div>
       </div>
     </Section>

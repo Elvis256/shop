@@ -2,15 +2,14 @@
 
 import { useState } from "react";
 import { useCart } from "@/lib/hooks/useCart";
+import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import Image from "next/image";
 import { Plane, Zap, Truck, Tag, Minus, Plus, Trash2 } from "lucide-react";
 
-const FREE_SHIPPING_THRESHOLD = 100000;
-const LOCAL_SHIPPING_FEE = 5000;
-
-export default function OrderSummary() {
+export default function OrderSummary({ city }: { city?: string }) {
   const { items, total, updateQuantity, removeItem } = useCart();
+  const { config, calculateShipping } = useShippingConfig();
   const { formatPrice } = useCurrency();
   const [promoCode, setPromoCode] = useState("");
   const [discount, setDiscount] = useState(0);
@@ -19,13 +18,9 @@ export default function OrderSummary() {
 
   const hasInternational = items.some((i) => i.shippingBadge === "From Abroad");
   const hasLocal = items.some((i) => i.shippingBadge !== "From Abroad");
-  const localTotal = items
-    .filter((i) => i.shippingBadge !== "From Abroad")
-    .reduce((s, i) => s + i.price * i.quantity, 0);
 
-  const localShipping = localTotal >= FREE_SHIPPING_THRESHOLD || !hasLocal ? 0 : LOCAL_SHIPPING_FEE;
-  const internationalShipping = 0; // Included in product price for dropship items
-  const shipping = localShipping + internationalShipping;
+  const shippingCalc = calculateShipping(items, city);
+  const shipping = shippingCalc.total;
   const finalTotal = total - discount + shipping;
 
   const applyPromo = async () => {
@@ -138,13 +133,13 @@ export default function OrderSummary() {
         {hasLocal && (
           <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg">
             <Zap className="w-3.5 h-3.5 flex-shrink-0" />
-            <span><strong>Express items:</strong> 1–3 days in Kampala</span>
+            <span><strong>Local items:</strong> {config.standardDays}</span>
           </div>
         )}
         {hasInternational && (
           <div className="flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 px-3 py-2 rounded-lg">
             <Plane className="w-3.5 h-3.5 flex-shrink-0" />
-            <span><strong>International items:</strong> 7–21 days shipping</span>
+            <span><strong>International items:</strong> {config.intlDays}</span>
           </div>
         )}
       </div>
@@ -171,12 +166,12 @@ export default function OrderSummary() {
             <span>{formatPrice(shipping)}</span>
           )}
         </div>
-        {hasLocal && localShipping === 0 && (
+        {hasLocal && shippingCalc.qualifiesForFree && (
           <p className="text-xs text-green-600">
-            ✓ Free local shipping on orders over {formatPrice(FREE_SHIPPING_THRESHOLD)}
+            ✓ Free local shipping on orders over {formatPrice(config.freeThreshold)}
           </p>
         )}
-        {hasInternational && (
+        {hasInternational && config.intlIncluded && (
           <p className="text-xs text-indigo-600">
             ✓ International shipping included in price
           </p>

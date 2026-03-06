@@ -51,6 +51,11 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction) {
     return next();
   }
 
+  // Skip for public shipping calculation (read-only, no auth)
+  if (req.path.startsWith("/settings/shipping")) {
+    return next();
+  }
+
   const cookieToken = req.cookies[CSRF_COOKIE_NAME];
   const headerToken = req.headers[CSRF_HEADER_NAME] as string;
 

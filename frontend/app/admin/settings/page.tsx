@@ -120,12 +120,22 @@ const settingDefinitions: Record<string, SettingDef> = {
 
   // ── Shipping ──
   shipping_enabled: { label: "Enable Shipping", type: "toggle", description: "Toggle all shipping functionality", section: "General" },
-  shipping_free_threshold: { label: "Free Shipping Threshold", type: "number", description: "Orders above this amount get free shipping (0 = disabled)", section: "Rates", placeholder: "50000" },
-  shipping_default_rate: { label: "Standard Shipping Rate", type: "number", description: "Default cost for standard delivery", section: "Rates", placeholder: "5000" },
-  shipping_express_rate: { label: "Express Shipping Rate", type: "number", description: "Cost for faster delivery", section: "Rates", placeholder: "15000" },
-  shipping_processing_days: { label: "Processing Days", type: "number", description: "Business days to prepare order before shipping", section: "Delivery Estimates", placeholder: "2" },
-  shipping_standard_days: { label: "Standard Delivery Days", type: "text", description: "Estimated delivery time shown to customers", section: "Delivery Estimates", placeholder: "3-5 business days" },
-  shipping_express_days: { label: "Express Delivery Days", type: "text", description: "Estimated express delivery time", section: "Delivery Estimates", placeholder: "1-2 business days" },
+  shipping_allow_pickup: { label: "Allow Store Pickup", type: "toggle", description: "Let customers pick up orders from your location", section: "General" },
+  shipping_pickup_address: { label: "Pickup Location", type: "text", description: "Address shown to customers for store pickup", section: "General", placeholder: "Shop 12, Kampala Road, Kampala" },
+  shipping_free_threshold: { label: "Free Shipping Threshold (UGX)", type: "number", description: "Local orders above this amount get free shipping (0 = always free)", section: "Local Rates", placeholder: "100000" },
+  shipping_default_rate: { label: "Standard Shipping Rate (UGX)", type: "number", description: "Default cost for standard local delivery", section: "Local Rates", placeholder: "5000" },
+  shipping_express_rate: { label: "Express Shipping Rate (UGX)", type: "number", description: "Cost for same-day/next-day delivery (Kampala only)", section: "Local Rates", placeholder: "15000" },
+  shipping_upcountry_rate: { label: "Upcountry Rate (UGX)", type: "number", description: "Shipping to areas outside Kampala", section: "Local Rates", placeholder: "10000" },
+  shipping_intl_included: { label: "International Shipping Included", type: "toggle", description: "International (dropship) items have shipping included in price", section: "International" },
+  shipping_intl_rate: { label: "International Flat Rate (UGX)", type: "number", description: "Additional shipping fee for international items (if not included)", section: "International", placeholder: "0" },
+  shipping_processing_days: { label: "Processing Days", type: "number", description: "Business days to prepare order before shipping", section: "Delivery Estimates", placeholder: "1" },
+  shipping_standard_days: { label: "Standard Delivery", type: "text", description: "Estimated local delivery time", section: "Delivery Estimates", placeholder: "2-4 business days" },
+  shipping_express_days: { label: "Express Delivery", type: "text", description: "Estimated express delivery time (Kampala)", section: "Delivery Estimates", placeholder: "Same day - 1 day" },
+  shipping_upcountry_days: { label: "Upcountry Delivery", type: "text", description: "Estimated delivery outside Kampala", section: "Delivery Estimates", placeholder: "3-7 business days" },
+  shipping_intl_days: { label: "International Delivery", type: "text", description: "Estimated delivery for imported/dropship items", section: "Delivery Estimates", placeholder: "7-21 business days" },
+  shipping_restricted_areas: { label: "Restricted Areas", type: "textarea", description: "Areas you don't ship to (one per line)", section: "Restrictions", placeholder: "Karamoja\nKotido" },
+  shipping_discreet_default: { label: "Discreet Packaging by Default", type: "toggle", description: "Always use plain packaging (recommended for adult products)", section: "Packaging" },
+  shipping_discreet_note: { label: "Discreet Packaging Note", type: "text", description: "Message shown about discreet shipping", section: "Packaging", placeholder: "Plain packaging with neutral sender name" },
 
   // ── Email ──
   email_order_confirmation: { label: "Order Confirmations", type: "toggle", description: "Send email when order is placed", section: "Automated Emails" },
