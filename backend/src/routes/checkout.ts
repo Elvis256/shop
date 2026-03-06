@@ -149,7 +149,7 @@ router.post("/create", async (req: Request, res: Response) => {
           discreet: body.discreet,
           customerName: body.customer.name,
           customerEmail: body.customer.email,
-          shippingAddress: body.shippingAddress || "",
+          shippingAddress: typeof body.shippingAddress === 'object' ? JSON.stringify(body.shippingAddress) : (body.shippingAddress || ""),
           items: {
             create: cartItems.map((item) => ({
               productId: item.productId,
