@@ -97,18 +97,38 @@ router.post("/create", async (req: Request, res: Response) => {
   try {
     const body = CheckoutSchema.parse(req.body);
 
-    // Fetch cart items
-    const cart = await prisma.cart.findUnique({
-      where: { id: body.cartId },
-      include: { items: { include: { product: true } } },
-    });
+    // Fetch cart items - either from cartId or build from items array
+    let cartItems: Array<{ productId: string; quantity: number; product: any }>;
 
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({ error: "Cart is empty or not found" });
+    if (body.cartId) {
+      const cart = await prisma.cart.findUnique({
+        where: { id: body.cartId },
+        include: { items: { include: { product: true } } },
+      });
+      if (!cart || cart.items.length === 0) {
+        return res.status(400).json({ error: "Cart is empty or not found" });
+      }
+      cartItems = cart.items;
+    } else if (body.items && body.items.length > 0) {
+      // Build cart items from the submitted items array (guest checkout)
+      const products = await prisma.product.findMany({
+        where: { id: { in: body.items.map((i) => i.productId) } },
+      });
+      const productMap = new Map(products.map((p) => [p.id, p]));
+      cartItems = body.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        product: productMap.get(item.productId),
+      })).filter((item) => item.product);
+      if (cartItems.length === 0) {
+        return res.status(400).json({ error: "No valid products found" });
+      }
+    } else {
+      return res.status(400).json({ error: "Cart ID or items required" });
     }
 
     // Calculate total from cart (verify against submitted amount — allow shipping margin)
-    const calculatedTotal = cart.items.reduce((sum, item) => {
+    const calculatedTotal = cartItems.reduce((sum, item) => {
       return sum + Number(item.product.price) * item.quantity;
     }, 0);
     const submittedSubtotal = body.amount - (body.shipping || 0);
@@ -136,7 +156,7 @@ router.post("/create", async (req: Request, res: Response) => {
           customerEmail: body.customer.email,
           shippingAddress: body.shippingAddress || "",
           items: {
-            create: cart.items.map((item) => ({
+            create: cartItems.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
               price: item.product.price,
@@ -147,7 +167,7 @@ router.post("/create", async (req: Request, res: Response) => {
       });
 
       // Reserve stock
-      const stockResult = await reserveStock(tx, cart.items, order.id);
+      const stockResult = await reserveStock(tx, cartItems, order.id);
       if (!stockResult.success) {
         throw new Error(stockResult.error);
       }

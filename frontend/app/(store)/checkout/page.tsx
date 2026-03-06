@@ -36,7 +36,7 @@ interface ShippingData {
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, total: cartTotal, clearCart, updateItemBadge } = useCart();
+  const { items, total: cartTotal, clearCart, updateItemBadge, cartId } = useCart();
   const { showToast } = useToast();
   const { user } = useAuth();
   const { formatPrice } = useCurrency();
@@ -154,6 +154,7 @@ export default function CheckoutPage() {
       const token = localStorage.getItem("token");
       
       const payload = {
+        cartId: cartId || undefined,
         items: items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
