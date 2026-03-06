@@ -87,7 +87,7 @@ export default function AdminCJPage() {
   const [orderTotal, setOrderTotal] = useState(0);
   const [orderFilter, setOrderFilter] = useState("");
 
-  const [settings, setSettings] = useState({ accessToken: "" });
+  const [settings, setSettings] = useState({ email: "", apiKey: "" });
   const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
@@ -184,7 +184,7 @@ export default function AdminCJPage() {
   const loadSettings = async () => {
     try {
       const data = await api.admin.getCJSettings();
-      setSettings({ accessToken: data.cj_access_token || "" });
+      setSettings({ email: data.cj_email || "", apiKey: data.cj_api_key || "" });
     } catch {}
   };
 
@@ -509,14 +509,18 @@ export default function AdminCJPage() {
       {tab === "settings" && (
         <div className="max-w-xl space-y-6">
           <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-bold">CJ Dropshipping API Key</h2>
+            <h2 className="text-lg font-bold">CJ Dropshipping API Credentials</h2>
             <p className="text-sm text-gray-500">
-              Get your API access token from{" "}
+              Get your API key from{" "}
               <a href="https://developers.cjdropshipping.com" target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline">developers.cjdropshipping.com</a>
             </p>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Access Token</label>
-              <input type="password" value={settings.accessToken} onChange={(e) => setSettings({ accessToken: e.target.value })} placeholder="Your CJ Dropshipping API access token" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">CJ Account Email</label>
+              <input type="email" value={settings.email} onChange={(e) => setSettings({ ...settings, email: e.target.value })} placeholder="Your CJ Dropshipping account email" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+              <input type="password" value={settings.apiKey} onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })} placeholder="Your CJ Dropshipping API key" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
             </div>
             <button onClick={handleSaveSettings} disabled={savingSettings} className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2">
               {savingSettings ? <RefreshCw size={14} className="animate-spin" /> : <Settings size={14} />} Save Settings

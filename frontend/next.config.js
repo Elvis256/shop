@@ -31,6 +31,11 @@ const nextConfig = {
       { protocol: 'https', hostname: 'res.cloudinary.com' },
       { protocol: 'https', hostname: '**.railway.app' },
       { protocol: 'https', hostname: '**.onrender.com' },
+      { protocol: 'https', hostname: 'cf.cjdropshipping.com' },
+      { protocol: 'https', hostname: 'oss-cf.cjdropshipping.com' },
+      { protocol: 'https', hostname: '**.cjdropshipping.com' },
+      { protocol: 'https', hostname: '**.aliexpress.com' },
+      { protocol: 'https', hostname: 'ae01.alicdn.com' },
     ],
   },
 };

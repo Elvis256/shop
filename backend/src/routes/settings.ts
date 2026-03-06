@@ -16,6 +16,21 @@ const PUBLIC_KEYS = [
   "contact_whatsapp",
   "contact_hours",
   "faq_items",
+  "appearance_logo_url",
+  "appearance_favicon_url",
+  "appearance_primary_color",
+  "appearance_accent_color",
+  "appearance_banner_text",
+  "appearance_footer_text",
+  "store_social_facebook",
+  "store_social_instagram",
+  "store_social_twitter",
+  "store_social_tiktok",
+  "store_seo_title",
+  "store_seo_description",
+  "store_seo_keywords",
+  "security_maintenance_mode",
+  "security_maintenance_message",
 ];
 
 // GET /api/settings/public - Return safe public settings

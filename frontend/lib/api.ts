@@ -423,7 +423,7 @@ export const api = {
       return apiFetch(`/api/admin/cj/orders${query}`);
     },
     getCJSettings: (): Promise<any> => apiFetch("/api/admin/cj/settings"),
-    updateCJSettings: (data: { accessToken: string }): Promise<any> =>
+    updateCJSettings: (data: { email: string; apiKey: string }): Promise<any> =>
       apiFetch("/api/admin/cj/settings", { method: "PUT", body: JSON.stringify(data) }),
   },
 };
