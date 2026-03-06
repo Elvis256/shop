@@ -4,18 +4,18 @@ import { Express } from "express";
 
 const isProduction = process.env.NODE_ENV === "production";
 
-// Rate limiters - more permissive in development
+// Rate limiters
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isProduction ? 100 : 1000, // 1000 requests in dev, 100 in prod
+  max: isProduction ? 500 : 1000,
   message: { error: "Too many requests, please try again later" },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 export const authLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: isProduction ? 10 : 100, // 100 attempts in dev, 10 in prod
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isProduction ? 20 : 100,
   message: { error: "Too many login attempts, please try again later" },
   standardHeaders: true,
   legacyHeaders: false,

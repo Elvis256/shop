@@ -162,10 +162,52 @@ async function clearLoginAttempts(email: string): Promise<void> {
   }
 }
 
+// Also track by IP to prevent trying many different emails
+async function checkIpLockout(ip: string): Promise<{ locked: boolean; remainingTime?: number }> {
+  try {
+    const key = `lockout:ip:${ip}`;
+    const data = await redis.get(key);
+    if (!data) return { locked: false };
+    const { count, lockedUntil } = JSON.parse(data);
+    if (lockedUntil && Date.now() < lockedUntil) {
+      return { locked: true, remainingTime: Math.ceil((lockedUntil - Date.now()) / 1000 / 60) };
+    }
+    return { locked: false };
+  } catch {
+    return { locked: false };
+  }
+}
+
+async function recordFailedIpAttempt(ip: string): Promise<void> {
+  try {
+    const key = `lockout:ip:${ip}`;
+    const data = await redis.get(key);
+    const attempts = data ? JSON.parse(data) : { count: 0, lockedUntil: null };
+    attempts.count += 1;
+    if (attempts.count >= 15) {
+      attempts.lockedUntil = Date.now() + 30 * 60 * 1000; // 30 min lockout after 15 failed attempts
+    }
+    await redis.set(key, JSON.stringify(attempts), "EX", 3600);
+  } catch {}
+}
+
+async function clearIpAttempts(ip: string): Promise<void> {
+  try { await redis.del(`lockout:ip:${ip}`); } catch {}
+}
+
 // POST /api/auth/login
 router.post("/login", async (req, res: Response) => {
   try {
     const body = LoginSchema.parse(req.body);
+    const clientIp = req.ip || "unknown";
+
+    // Check IP-based lockout first (blocks brute-force across emails)
+    const ipLockout = await checkIpLockout(clientIp);
+    if (ipLockout.locked) {
+      return res.status(429).json({
+        error: `Too many failed attempts. Try again in ${ipLockout.remainingTime} minutes.`
+      });
+    }
 
     // Check for account lockout (Redis-backed)
     const lockoutStatus = await checkAccountLockout(body.email);
@@ -183,6 +225,7 @@ router.post("/login", async (req, res: Response) => {
 
     if (!user) {
       await recordFailedLogin(body.email);
+      await recordFailedIpAttempt(clientIp);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
@@ -190,11 +233,13 @@ router.post("/login", async (req, res: Response) => {
     const validPassword = await bcrypt.compare(body.password, user.password);
     if (!validPassword) {
       await recordFailedLogin(body.email);
+      await recordFailedIpAttempt(clientIp);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
     // Clear failed attempts on successful login
     await clearLoginAttempts(body.email);
+    await clearIpAttempts(clientIp);
 
     // For admin/manager: check if 2FA is enabled — require TOTP code if so
     if (user.role === "ADMIN" || user.role === "MANAGER") {
