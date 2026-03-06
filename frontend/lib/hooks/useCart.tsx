@@ -24,6 +24,7 @@ interface CartContextType {
   cartId: string | null;
   addItem: (product: Omit<CartItem, "quantity"> & { quantity?: number }) => void;
   updateQuantity: (productId: string, quantity: number) => void;
+  updateItemBadge: (productId: string, badge: "From Abroad" | "Express") => void;
   removeItem: (productId: string) => void;
   clearCart: () => void;
   openCart: () => void;
@@ -91,6 +92,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           price: Number(item.product.price),
           quantity: item.quantity,
           imageUrl: item.product.imageUrl,
+          shippingBadge: item.product.shippingBadge || undefined,
         }));
         setItems(newItems);
       }
@@ -143,6 +145,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const updateItemBadge = (productId: string, badge: "From Abroad" | "Express") => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.productId === productId ? { ...item, shippingBadge: badge } : item
+      )
+    );
+  };
+
   const removeItem = (productId: string) => {
     setItems((prev) => prev.filter((item) => item.productId !== productId));
   };
@@ -167,6 +177,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         cartId,
         addItem,
         updateQuantity,
+        updateItemBadge,
         removeItem,
         clearCart,
         openCart,

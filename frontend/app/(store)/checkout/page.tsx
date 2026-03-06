@@ -35,7 +35,7 @@ interface ShippingData {
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, total: cartTotal, clearCart } = useCart();
+  const { items, total: cartTotal, clearCart, updateItemBadge } = useCart();
   const { showToast } = useToast();
   const { user } = useAuth();
   const { formatPrice } = useCurrency();
@@ -61,8 +61,39 @@ export default function CheckoutPage() {
     discreet: true,
   });
 
+  // Enrich cart items missing shippingBadge
+  useEffect(() => {
+    const missingBadge = items.filter((i) => !i.shippingBadge);
+    if (missingBadge.length === 0) return;
+
+    Promise.all(
+      missingBadge.map((item) =>
+        fetch(`${API_URL}/api/products/${item.slug}`)
+          .then((r) => r.json())
+          .then((data) => ({
+            productId: item.productId,
+            badge: data.shippingBadge || "Express",
+          }))
+          .catch(() => ({ productId: item.productId, badge: "Express" as const }))
+      )
+    ).then((results) => {
+      results.forEach(({ productId, badge }) => {
+        updateItemBadge(productId, badge as "From Abroad" | "Express");
+      });
+    });
+  }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const hasInternational = items.some((i) => i.shippingBadge === "From Abroad");
   const hasLocal = items.some((i) => i.shippingBadge !== "From Abroad");
+
+  // Calculate shipping (must match OrderSummary logic)
+  const FREE_SHIPPING_THRESHOLD = 100000;
+  const LOCAL_SHIPPING_FEE = 5000;
+  const localTotal = items
+    .filter((i) => i.shippingBadge !== "From Abroad")
+    .reduce((s, i) => s + i.price * i.quantity, 0);
+  const shippingCost = localTotal >= FREE_SHIPPING_THRESHOLD || !hasLocal ? 0 : LOCAL_SHIPPING_FEE;
+  const orderTotal = cartTotal + shippingCost;
 
   // Auto-fill from logged-in user
   useEffect(() => {
@@ -131,7 +162,8 @@ export default function CheckoutPage() {
           price: item.price,
         })),
         currency: "UGX",
-        amount: cartTotal,
+        amount: orderTotal,
+        shipping: shippingCost,
         paymentMethod,
         ...(paymentMethod === "mobile_money" && {
           mobileMoney: {
@@ -639,7 +671,7 @@ export default function CheckoutPage() {
                   ) : (
                     <>
                       <Lock className="w-4 h-4" />
-                      {`Pay ${formatPrice(cartTotal)}`}
+                      {`Pay ${formatPrice(orderTotal)}`}
                     </>
                   )}
                 </button>
