@@ -106,7 +106,7 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       include: {
         items: {
           include: {
-            product: { select: { id: true, name: true, slug: true, images: { take: 1 } } },
+            product: { select: { id: true, name: true, slug: true, images: { take: 1, orderBy: { position: "asc" } } } },
           },
         },
         payments: true,

@@ -18,6 +18,7 @@ interface Product {
   imageUrl?: string | null;
   inStock?: boolean;
   category?: string | null;
+  shippingBadge?: "From Abroad" | "Express";
 }
 
 interface Category {
@@ -272,6 +273,7 @@ function SearchContent() {
                   imageUrl={product.imageUrl}
                   category={product.category || undefined}
                   inStock={product.inStock !== false}
+                  shippingBadge={product.shippingBadge}
                 />
               ))}
             </div>

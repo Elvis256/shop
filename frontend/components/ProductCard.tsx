@@ -23,6 +23,7 @@ type ProductCardProps = {
   isNew?: boolean;
   isBestseller?: boolean;
   badgeText?: string;
+  shippingBadge?: "From Abroad" | "Express";
 };
 
 export default function ProductCard({
@@ -38,6 +39,7 @@ export default function ProductCard({
   isNew,
   isBestseller,
   badgeText,
+  shippingBadge,
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false);
   const { addItem } = useCart();
@@ -131,6 +133,16 @@ export default function ProductCard({
             {badgeText && (
               <span className="text-xs font-medium bg-red-500 text-white px-3 py-1.5 rounded-full">
                 {badgeText}
+              </span>
+            )}
+            {shippingBadge === "From Abroad" && (
+              <span className="text-xs font-medium bg-indigo-500 text-white px-3 py-1.5 rounded-full flex items-center gap-1">
+                ✈️ From Abroad
+              </span>
+            )}
+            {shippingBadge === "Express" && (
+              <span className="text-xs font-medium bg-emerald-500 text-white px-3 py-1.5 rounded-full flex items-center gap-1">
+                ⚡ Express
               </span>
             )}
           </div>

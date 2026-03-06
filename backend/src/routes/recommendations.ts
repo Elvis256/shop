@@ -205,6 +205,7 @@ function formatProduct(p: any) {
     reviewCount: p.reviewCount || 0,
     stock: p.stock,
     isNew: p.createdAt > new Date(Date.now() - 14 * 86400000),
+    shippingBadge: (p.cjProductId || p.aliexpressProductId) ? "From Abroad" : "Express",
   };
 }
 

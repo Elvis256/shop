@@ -20,6 +20,7 @@ interface Product {
   stock?: number;
   isNew?: boolean;
   isBestseller?: boolean;
+  shippingBadge?: "From Abroad" | "Express";
 }
 
 interface Category {
@@ -278,6 +279,7 @@ function CategoryContent() {
                     stock={product.stock}
                     isNew={product.isNew}
                     isBestseller={product.isBestseller}
+                    shippingBadge={product.shippingBadge}
                   />
                 ))}
               </div>

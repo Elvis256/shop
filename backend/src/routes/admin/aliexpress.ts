@@ -267,7 +267,7 @@ router.get("/orders", async (req: AuthRequest, res: Response) => {
         where,
         include: {
           order: { select: { orderNumber: true, customerName: true, customerEmail: true, totalAmount: true, currency: true } },
-          product: { select: { name: true, images: { take: 1 } } },
+          product: { select: { name: true, images: { take: 1, orderBy: { position: "asc" } } } },
         },
         orderBy: { createdAt: "desc" },
         skip,

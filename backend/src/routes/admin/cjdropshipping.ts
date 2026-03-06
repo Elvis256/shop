@@ -82,7 +82,7 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
         allowBackorder: true,
         categoryId: body.categoryId || null,
         tags: body.tags || [],
-        status: "DRAFT",
+        status: "ACTIVE",
         images: {
           create: detail.images.slice(0, 10).map((url, i) => ({
             url,
@@ -234,7 +234,7 @@ router.get("/orders", async (req: AuthRequest, res: Response) => {
         where,
         include: {
           order: { select: { orderNumber: true, customerName: true, customerEmail: true, totalAmount: true, currency: true } },
-          product: { select: { name: true, images: { take: 1 } } },
+          product: { select: { name: true, images: { take: 1, orderBy: { position: "asc" } } } },
         },
         orderBy: { createdAt: "desc" },
         skip,
@@ -251,17 +251,24 @@ router.get("/orders", async (req: AuthRequest, res: Response) => {
 
 // PUT /api/admin/cj/settings
 const SettingsSchema = z.object({
-  accessToken: z.string().min(1),
+  email: z.string().email(),
+  apiKey: z.string().min(1),
 });
 
 router.put("/settings", async (req: AuthRequest, res: Response) => {
   try {
     const body = SettingsSchema.parse(req.body);
-    await prisma.setting.upsert({
-      where: { key: "cj_access_token" },
-      create: { key: "cj_access_token", value: body.accessToken },
-      update: { value: body.accessToken },
-    });
+    const keys = [
+      { key: "cj_email", value: body.email },
+      { key: "cj_api_key", value: body.apiKey },
+    ];
+    for (const { key, value } of keys) {
+      await prisma.setting.upsert({
+        where: { key },
+        create: { key, value },
+        update: { value },
+      });
+    }
     return res.json({ message: "CJ Dropshipping settings saved" });
   } catch (error: any) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
@@ -272,10 +279,18 @@ router.put("/settings", async (req: AuthRequest, res: Response) => {
 // GET /api/admin/cj/settings
 router.get("/settings", async (req: AuthRequest, res: Response) => {
   try {
-    const setting = await prisma.setting.findUnique({ where: { key: "cj_access_token" } });
-    return res.json({
-      cj_access_token: setting?.value ? `${setting.value.substring(0, 6)}...${setting.value.slice(-4)}` : "",
+    const settings = await prisma.setting.findMany({
+      where: { key: { in: ["cj_email", "cj_api_key"] } },
     });
+    const result: any = {};
+    for (const s of settings) {
+      if (s.key === "cj_api_key") {
+        result[s.key] = s.value ? `${s.value.substring(0, 6)}...${s.value.slice(-4)}` : "";
+      } else {
+        result[s.key] = s.value;
+      }
+    }
+    return res.json(result);
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
   }

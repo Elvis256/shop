@@ -89,6 +89,7 @@ router.get("/", async (req: Request, res: Response) => {
         isNew: p.isNew,
         isBestseller: p.isBestseller,
         badgeText: p.badgeText,
+        shippingBadge: (p.cjProductId || p.aliexpressProductId) ? "From Abroad" : "Express",
       })),
       pagination: {
         total,
@@ -140,6 +141,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
       isNew: product.isNew,
       isBestseller: product.isBestseller,
       badgeText: product.badgeText,
+      shippingBadge: (product.cjProductId || product.aliexpressProductId) ? "From Abroad" : "Express",
       hasVariants: product.hasVariants,
       variants: product.variants,
       tags: product.tags,
@@ -198,6 +200,7 @@ router.get("/:slug/related", async (req: Request, res: Response) => {
         rating: p.rating,
         imageUrl: p.images[0]?.url || null,
         category: p.category?.name,
+        shippingBadge: (p.cjProductId || p.aliexpressProductId) ? "From Abroad" : "Express",
       })),
     });
   } catch (error) {

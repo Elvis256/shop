@@ -34,6 +34,7 @@ interface Product {
   stock?: number;
   soldRecently?: number;
   createdAt?: string;
+  shippingBadge?: "From Abroad" | "Express";
 }
 
 interface Category {
@@ -188,6 +189,7 @@ export default function Home() {
                     category={p.category || undefined}
                     inStock={p.inStock}
                     badgeText="🔥 SALE"
+                    shippingBadge={p.shippingBadge}
                   />
                 ))}
           </div>
@@ -223,6 +225,7 @@ export default function Home() {
                     category={product.category || undefined}
                     inStock={product.stock !== 0}
                     badgeText={product.soldRecently ? `${product.soldRecently} sold` : undefined}
+                    shippingBadge={product.shippingBadge}
                   />
                 ))}
           </div>
@@ -286,6 +289,7 @@ export default function Home() {
                 inStock={product.inStock}
                 isNew={true}
                 isBestseller={product.isBestseller}
+                shippingBadge={product.shippingBadge}
               />
             ))
           ) : (
@@ -317,6 +321,7 @@ export default function Home() {
                     imageUrl={product.imageUrl}
                     category={product.category || undefined}
                     inStock={product.stock !== 0}
+                    shippingBadge={product.shippingBadge}
                   />
                 ))}
           </div>
@@ -352,6 +357,7 @@ export default function Home() {
                 inStock={product.inStock}
                 isNew={product.isNew}
                 isBestseller={true}
+                shippingBadge={product.shippingBadge}
               />
             ))
           ) : (
