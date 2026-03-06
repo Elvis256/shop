@@ -183,7 +183,7 @@ router.post("/create", async (req: Request, res: Response) => {
       // PayPal Express Checkout
       const ppResult = await createPayPalCheckout({
         orderId: result.id,
-        amountUgx: body.amount,
+        amountUgx: calculatedTotal + shippingAmount,
         customerEmail: body.customer.email,
         description: `Order ${result.orderNumber}`,
       });
@@ -191,18 +191,27 @@ router.post("/create", async (req: Request, res: Response) => {
       paymentRef = ppResult.token;
     } else {
       // Flutterwave (card or mobile money)
-      const paymentResponse = await createFlutterwavePayment({
-        tx_ref: result.id,
-        amount: body.amount,
-        currency: body.currency,
-        customer: body.customer as any,
-        paymentMethod: body.paymentMethod,
-        mobileMoney: body.mobileMoney as any,
-        redirect_url: `${process.env.BASE_URL}/checkout/confirm?orderId=${result.id}`,
-      });
-      paymentLink = paymentResponse.data?.link;
-      paymentRef = paymentResponse.data?.flw_ref;
-      paymentStatus = paymentResponse.status || "PENDING";
+      try {
+        const paymentResponse = await createFlutterwavePayment({
+          tx_ref: result.id,
+          amount: calculatedTotal + shippingAmount,
+          currency: body.currency,
+          customer: body.customer as any,
+          paymentMethod: body.paymentMethod,
+          mobileMoney: body.mobileMoney as any,
+          redirect_url: `${process.env.BASE_URL}/checkout/confirm?orderId=${result.id}`,
+        });
+        paymentLink = paymentResponse.data?.link;
+        paymentRef = paymentResponse.data?.flw_ref;
+        paymentStatus = paymentResponse.status || "PENDING";
+      } catch (flwErr: any) {
+        // Clean up the order if payment initiation fails
+        await prisma.order.update({ where: { id: result.id }, data: { status: "CANCELLED" } });
+        const msg = flwErr.message?.includes("authorization key")
+          ? "Payment gateway not configured. Please contact support or try PayPal."
+          : "Payment initiation failed. Please try again or use a different method.";
+        return res.status(400).json({ error: msg });
+      }
     }
 
     // Save payment record
@@ -218,14 +227,16 @@ router.post("/create", async (req: Request, res: Response) => {
         provider: body.paymentMethod === "paypal" ? "paypal" : "flutterwave",
         method: methodMap[body.paymentMethod] || "CARD",
         status: "PENDING",
-        amount: body.amount,
+        amount: calculatedTotal + shippingAmount,
         currency: body.currency,
         flwRef: paymentRef,
       },
     });
 
     // Clear cart after order created
-    await prisma.cartItem.deleteMany({ where: { cartId: body.cartId } });
+    if (body.cartId) {
+      await prisma.cartItem.deleteMany({ where: { cartId: body.cartId } }).catch(() => {});
+    }
 
     // Track affiliate conversion if referral code provided
     if (body.affiliateCode) {
