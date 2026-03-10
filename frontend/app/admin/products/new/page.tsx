@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { 
@@ -16,6 +16,7 @@ import {
   ClipboardPaste,
 } from "lucide-react";
 import Link from "next/link";
+const RichTextEditor = lazy(() => import("@/components/RichTextEditor"));
 
 interface Category {
   id: string;
@@ -226,12 +227,13 @@ export default function NewProductPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary min-h-[120px]"
-                value={formData.description}
-                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                placeholder="Describe your product..."
-              />
+              <Suspense fallback={<div className="w-full min-h-[200px] border border-gray-200 rounded-lg animate-pulse bg-gray-50" />}>
+                <RichTextEditor
+                  value={formData.description}
+                  onChange={(html) => setFormData((prev) => ({ ...prev, description: html }))}
+                  placeholder="Describe your product... Paste images with Ctrl+V"
+                />
+              </Suspense>
             </div>
           </div>
         </div>

@@ -106,7 +106,7 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
         {activeTab === "details" && (
           <div className="prose prose-sm max-w-none text-gray-700">
             {description ? (
-              <p className="leading-relaxed whitespace-pre-line">{description}</p>
+              <div className="leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: description }} />
             ) : (
               <p className="text-gray-400 italic">No description provided for this product.</p>
             )}

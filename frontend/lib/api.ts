@@ -288,6 +288,11 @@ export const api = {
     },
     deleteProductImage: (productId: string, imageId: string): Promise<SuccessMessage> =>
       apiFetch(`/api/admin/products/${productId}/images/${imageId}`, { method: "DELETE" }),
+    uploadImage: (file: File): Promise<{ url: string }> => {
+      const formData = new FormData();
+      formData.append("image", file);
+      return apiFetch("/api/admin/upload", { method: "POST", body: formData });
+    },
 
     // Orders
     getOrders: (params?: Record<string, string>): Promise<OrdersResponse> => {
