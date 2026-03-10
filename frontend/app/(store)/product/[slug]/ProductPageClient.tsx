@@ -6,6 +6,7 @@ import Link from "next/link";
 import ProductGallery from "@/components/ProductGallery";
 import ProductTabs from "@/components/ProductTabs";
 import AddToCartButton from "@/components/AddToCartButton";
+import { ProductSchema, BreadcrumbSchema } from "@/components/StructuredData";
 import VariantSelector from "@/components/VariantSelector";
 import RecentlyViewed, { useRecentlyViewed } from "@/components/RecentlyViewed";
 import RelatedProducts from "@/components/RelatedProducts";
@@ -242,8 +243,35 @@ export default function ProductPageClient() {
     : 0;
   const savingsAmount = discountPercent > 0 ? Number(product.comparePrice) - Number(effectivePrice) : 0;
 
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://pleasurezone.ug";
+  const breadcrumbItems = [
+    { name: "Home", url: siteUrl },
+    { name: "Shop", url: `${siteUrl}/category` },
+    ...(product.category ? [{ name: product.category.name, url: `${siteUrl}/category?cat=${product.category.slug}` }] : []),
+    { name: product.name, url: `${siteUrl}/product/${product.slug}` },
+  ];
+
   return (
     <div className="min-h-screen bg-white pb-20 lg:pb-8">
+      <ProductSchema
+        product={{
+          id: product.id,
+          name: product.name,
+          slug: product.slug,
+          description: product.description || undefined,
+          price: effectivePrice,
+          comparePrice: product.comparePrice,
+          currency: product.currency || "UGX",
+          rating: product.rating,
+          reviewCount: product.reviewCount,
+          imageUrl: product.imageUrl || product.images?.[0],
+          inStock: product.inStock,
+          sku: product.id,
+          category: product.category?.name,
+        }}
+      />
+      <BreadcrumbSchema items={breadcrumbItems} />
+
       {/* Breadcrumb */}
       <div className="container pt-4 pb-2">
         <nav className="flex items-center gap-2 text-sm text-gray-400">

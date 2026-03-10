@@ -5,6 +5,7 @@ import CartDrawer from "@/components/CartDrawer";
 import MobileNav from "@/components/MobileNav";
 import PageTracker from "@/components/PageTracker";
 import AffiliateTracker from "@/components/AffiliateTracker";
+import { OrganizationSchema, WebsiteSchema } from "@/components/StructuredData";
 
 export default function StoreLayout({
   children,
@@ -13,6 +14,8 @@ export default function StoreLayout({
 }) {
   return (
     <div className="min-h-screen flex flex-col pb-16 lg:pb-0">
+      <OrganizationSchema />
+      <WebsiteSchema />
       <PageTracker />
       <AffiliateTracker />
       <AgeGate />

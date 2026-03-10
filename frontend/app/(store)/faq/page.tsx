@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, Search } from "lucide-react";
 import Link from "next/link";
+import { FAQSchema } from "@/components/StructuredData";
 
 interface FAQItem {
   question: string;
@@ -191,8 +192,13 @@ export default function FAQPage() {
     }))
     .filter((category) => category.items.length > 0);
 
+  const allFaqItems = faqData.flatMap((category) =>
+    category.items.map((item) => ({ question: item.question, answer: item.answer }))
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
+      <FAQSchema items={allFaqItems} />
       {/* Hero */}
       <section className="bg-accent text-white py-16">
         <div className="max-w-4xl mx-auto px-4 text-center">
