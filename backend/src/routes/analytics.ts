@@ -5,7 +5,7 @@ import geoip from "geoip-lite";
 
 const router = Router();
 
-// GET /api/analytics - Admin analytics
+// GET /api/analytics - Admin analytics (enhanced)
 router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { period = "30" } = req.query;
@@ -21,7 +21,7 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
-    // Build daily map
+    // ─── Build daily map ──────────────────────────────────────────────────
     const dailyMap = new Map<string, { revenue: number; orders: number }>();
     for (let i = 0; i < days; i++) {
       const d = new Date(startDate);
@@ -45,31 +45,103 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, s]) => ({ date, revenue: s.revenue, orders: s.orders, visitors: 0 }));
 
-    // Page views for visitors
+    // ─── Page views / visitors / country / referrer / top pages ───────────
     const pageViews = await prisma.pageView.findMany({
       where: { createdAt: { gte: startDate } },
-      select: { createdAt: true, sessionId: true, country: true },
+      select: { createdAt: true, sessionId: true, country: true, referrer: true, path: true },
     });
     const visitorMap = new Map<string, Set<string>>();
     const countryVisitorMap = new Map<string, Set<string>>();
+    const referrerMap = new Map<string, number>();
+    const pageVisitMap = new Map<string, number>();
+    const uniqueSessions = new Set<string>();
+
     pageViews.forEach((pv) => {
       const key = pv.createdAt.toISOString().split("T")[0];
       const visitorId = pv.sessionId || pv.createdAt.toISOString();
+      uniqueSessions.add(visitorId);
+
       if (!visitorMap.has(key)) visitorMap.set(key, new Set());
       visitorMap.get(key)!.add(visitorId);
 
-      // Aggregate by country
+      // Country
       const country = pv.country || "Unknown";
       if (!countryVisitorMap.has(country)) countryVisitorMap.set(country, new Set());
       countryVisitorMap.get(country)!.add(visitorId);
+
+      // Referrer source analysis
+      if (pv.referrer) {
+        let source = "Direct";
+        try {
+          const url = new URL(pv.referrer);
+          const host = url.hostname.replace("www.", "");
+          if (host.includes("ugsex.com")) {
+            source = "Internal";
+          } else if (host.includes("google")) {
+            source = "Google";
+          } else if (host.includes("facebook") || host.includes("fb.com")) {
+            source = "Facebook";
+          } else if (host.includes("instagram")) {
+            source = "Instagram";
+          } else if (host.includes("twitter") || host.includes("x.com")) {
+            source = "X / Twitter";
+          } else if (host.includes("tiktok")) {
+            source = "TikTok";
+          } else if (host.includes("youtube")) {
+            source = "YouTube";
+          } else if (host.includes("whatsapp")) {
+            source = "WhatsApp";
+          } else {
+            source = host;
+          }
+        } catch {
+          source = "Other";
+        }
+        if (source !== "Internal") {
+          referrerMap.set(source, (referrerMap.get(source) || 0) + 1);
+        }
+      } else {
+        referrerMap.set("Direct", (referrerMap.get("Direct") || 0) + 1);
+      }
+
+      // Top pages (only storefront paths)
+      if (pv.path && !pv.path.startsWith("/admin")) {
+        pageVisitMap.set(pv.path, (pageVisitMap.get(pv.path) || 0) + 1);
+      }
     });
+
     dailyData.forEach((d) => { d.visitors = visitorMap.get(d.date)?.size || 0; });
 
-    // Build visitors-by-country array sorted by count descending
     const visitorsByCountry = Array.from(countryVisitorMap.entries())
       .map(([country, sessions]) => ({ country, visitors: sessions.size }))
       .sort((a, b) => b.visitors - a.visitors);
 
+    const trafficSources = Array.from(referrerMap.entries())
+      .map(([source, count]) => ({ source, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const topPages = Array.from(pageVisitMap.entries())
+      .map(([path, views]) => ({ path, views }))
+      .sort((a, b) => b.views - a.views)
+      .slice(0, 10);
+
+    // Bounce rate: sessions with only 1 page view
+    const sessionPageCounts = new Map<string, number>();
+    pageViews.forEach((pv) => {
+      const sid = pv.sessionId || pv.createdAt.toISOString();
+      sessionPageCounts.set(sid, (sessionPageCounts.get(sid) || 0) + 1);
+    });
+    const totalSessions = sessionPageCounts.size;
+    const bounceSessions = Array.from(sessionPageCounts.values()).filter(c => c === 1).length;
+    const bounceRate = totalSessions > 0 ? (bounceSessions / totalSessions) * 100 : 0;
+
+    // Avg pages per session
+    const avgPagesPerSession = totalSessions > 0
+      ? pageViews.length / totalSessions
+      : 0;
+
+    // ─── Revenue calculations ─────────────────────────────────────────────
     const currentRevenue = dailyData.reduce((s, d) => s + d.revenue, 0);
     const currentOrders = dailyData.reduce((s, d) => s + d.orders, 0);
 
@@ -80,7 +152,7 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
     const previousRevenue = prevPaid.reduce((s, o) => s + Number(o.totalAmount), 0);
     const previousOrderCount = prevPaid.length;
 
-    // Monthly stats for cards
+    // ─── Monthly stats ────────────────────────────────────────────────────
     const [monthRevAgg, lastMonthRevAgg, monthOrderCount, lastMonthOrderCount,
       newCustomersMonth, newCustomersLastMonth, totalCustomers] = await Promise.all([
       prisma.order.aggregate({ where: { paymentStatus: "SUCCESSFUL", createdAt: { gte: startOfMonth } }, _sum: { totalAmount: true } }),
@@ -97,7 +169,7 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
     const revenueGrowth = previousRevenue > 0 ? ((currentRevenue - previousRevenue) / previousRevenue) * 100 : 0;
     const ordersGrowth = previousOrderCount > 0 ? ((currentOrders - previousOrderCount) / previousOrderCount) * 100 : 0;
 
-    // Orders by status
+    // ─── Orders by status ─────────────────────────────────────────────────
     const statusGroups = await prisma.order.groupBy({
       by: ["status"],
       where: { createdAt: { gte: startDate } },
@@ -106,29 +178,155 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
     const byStatus: Record<string, number> = {};
     statusGroups.forEach((s) => { byStatus[s.status] = s._count.id; });
 
-    // Top products
+    // ─── Top selling products ─────────────────────────────────────────────
     const topItems = await prisma.orderItem.groupBy({
       by: ["productId"],
       where: { order: { paymentStatus: "SUCCESSFUL", createdAt: { gte: startDate } } },
       _sum: { quantity: true, price: true },
       orderBy: { _sum: { quantity: "desc" } },
-      take: 5,
+      take: 10,
     });
+    const topProductIds = topItems.map((p) => p.productId);
     const productDetails = await prisma.product.findMany({
-      where: { id: { in: topItems.map((p) => p.productId) } },
-      select: { id: true, name: true },
+      where: { id: { in: topProductIds } },
+      select: { id: true, name: true, slug: true },
     });
     const topSelling = topItems.map((p) => ({
       name: productDetails.find((pd) => pd.id === p.productId)?.name || "Unknown",
+      slug: productDetails.find((pd) => pd.id === p.productId)?.slug || "",
       sold: p._sum.quantity || 0,
       revenue: Number(p._sum.price) || 0,
     }));
 
-    const [lowStockCount, totalActiveProducts] = await Promise.all([
-      prisma.product.count({ where: { stock: { lte: 10 }, status: "ACTIVE" } }),
-      prisma.product.count({ where: { status: "ACTIVE" } }),
-    ]);
+    // ─── Product & Inventory analytics ────────────────────────────────────
+    const allProducts = await prisma.product.findMany({
+      where: { status: "ACTIVE" },
+      select: {
+        id: true, name: true, slug: true, price: true, stock: true, categoryId: true,
+        cjCost: true, aliexpressCost: true, cjProductId: true, aliexpressProductId: true,
+        featured: true, isBestseller: true, isNew: true, createdAt: true,
+        _count: { select: { orderItems: true, wishlist: true } },
+      },
+    });
 
+    const categories = await prisma.category.findMany({
+      select: { id: true, name: true, slug: true },
+    });
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    // Category breakdown
+    const categoryBreakdown = new Map<string, { name: string; count: number; totalValue: number; totalStock: number }>();
+    allProducts.forEach((p) => {
+      const catId = p.categoryId || "uncategorized";
+      const cat = categoryMap.get(catId);
+      const catName = cat?.name || "Uncategorized";
+      if (!categoryBreakdown.has(catId)) {
+        categoryBreakdown.set(catId, { name: catName, count: 0, totalValue: 0, totalStock: 0 });
+      }
+      const entry = categoryBreakdown.get(catId)!;
+      entry.count += 1;
+      entry.totalValue += Number(p.price) * p.stock;
+      entry.totalStock += p.stock;
+    });
+
+    const categoryStats = Array.from(categoryBreakdown.values())
+      .sort((a, b) => b.count - a.count);
+
+    // Inventory health
+    const totalInventoryValue = allProducts.reduce((s, p) => s + Number(p.price) * p.stock, 0);
+    const outOfStock = allProducts.filter(p => p.stock === 0);
+    const lowStock = allProducts.filter(p => p.stock > 0 && p.stock <= 10);
+    const healthyStock = allProducts.filter(p => p.stock > 10);
+    const overstocked = allProducts.filter(p => p.stock > 100);
+
+    // Product margin analysis (for dropship products)
+    const dropshipProducts = allProducts
+      .filter(p => p.cjCost || p.aliexpressCost)
+      .map(p => {
+        const cost = Number(p.cjCost || p.aliexpressCost || 0);
+        const costUGX = cost * 3700; // approximate USD to UGX
+        const price = Number(p.price);
+        const margin = price > 0 ? ((price - costUGX) / price) * 100 : 0;
+        return {
+          name: p.name,
+          slug: p.slug,
+          price,
+          costUSD: cost,
+          costUGX: Math.round(costUGX),
+          margin: Math.round(margin * 10) / 10,
+          source: p.cjProductId ? "CJ" : "AliExpress",
+        };
+      })
+      .sort((a, b) => b.margin - a.margin);
+
+    // Most wishlisted products (demand signal)
+    const mostWishlisted = allProducts
+      .filter(p => p._count.wishlist > 0)
+      .sort((a, b) => b._count.wishlist - a._count.wishlist)
+      .slice(0, 5)
+      .map(p => ({ name: p.name, slug: p.slug, wishlistCount: p._count.wishlist, stock: p.stock }));
+
+    // Products with no orders (potential dead stock)
+    const neverOrdered = allProducts
+      .filter(p => p._count.orderItems === 0)
+      .map(p => ({ name: p.name, slug: p.slug, stock: p.stock, price: Number(p.price), daysListed: Math.floor((now.getTime() - p.createdAt.getTime()) / 86400000) }))
+      .sort((a, b) => b.daysListed - a.daysListed)
+      .slice(0, 10);
+
+    // ─── Revenue Projection (linear regression) ───────────────────────────
+    const revenueValues = dailyData.map(d => d.revenue);
+    const orderValues = dailyData.map(d => d.orders);
+    const visitorValues = dailyData.map(d => d.visitors);
+
+    function linearRegression(values: number[]): { slope: number; intercept: number } {
+      const n = values.length;
+      if (n < 2) return { slope: 0, intercept: 0 };
+      let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+      for (let i = 0; i < n; i++) {
+        sumX += i; sumY += values[i]; sumXY += i * values[i]; sumXX += i * i;
+      }
+      const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+      const intercept = (sumY - slope * sumX) / n;
+      return { slope: isNaN(slope) ? 0 : slope, intercept: isNaN(intercept) ? 0 : intercept };
+    }
+
+    const revTrend = linearRegression(revenueValues);
+    const visTrend = linearRegression(visitorValues);
+
+    // Project next 30 days
+    const projectedRevenue30d = Math.max(0, Array.from({ length: 30 }, (_, i) =>
+      Math.max(0, revTrend.slope * (revenueValues.length + i) + revTrend.intercept)
+    ).reduce((s, v) => s + v, 0));
+
+    const projectedVisitors30d = Math.max(0, Math.round(Array.from({ length: 30 }, (_, i) =>
+      Math.max(0, visTrend.slope * (visitorValues.length + i) + visTrend.intercept)
+    ).reduce((s, v) => s + v, 0)));
+
+    // Weekly comparison
+    const last7 = dailyData.slice(-7);
+    const prev7 = dailyData.slice(-14, -7);
+    const lastWeekRevenue = last7.reduce((s, d) => s + d.revenue, 0);
+    const prevWeekRevenue = prev7.reduce((s, d) => s + d.revenue, 0);
+    const lastWeekVisitors = last7.reduce((s, d) => s + d.visitors, 0);
+    const prevWeekVisitors = prev7.reduce((s, d) => s + d.visitors, 0);
+
+    // ─── All orders (including non-paid) for funnel analysis ──────────────
+    const allOrders = await prisma.order.findMany({
+      where: { createdAt: { gte: startDate } },
+      select: { status: true, paymentStatus: true, totalAmount: true, createdAt: true },
+    });
+
+    const orderFunnel = {
+      totalOrders: allOrders.length,
+      pending: allOrders.filter(o => o.paymentStatus === "PENDING").length,
+      successful: allOrders.filter(o => o.paymentStatus === "SUCCESSFUL").length,
+      failed: allOrders.filter(o => o.paymentStatus === "FAILED").length,
+      pendingValue: allOrders
+        .filter(o => o.paymentStatus === "PENDING")
+        .reduce((s, o) => s + Number(o.totalAmount), 0),
+    };
+
+    // ─── Payments ─────────────────────────────────────────────────────────
     const payments = await prisma.payment.groupBy({
       by: ["method"],
       where: { status: "SUCCESSFUL", createdAt: { gte: startDate } },
@@ -150,6 +348,67 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
     const totalVisitors = dailyData.reduce((s, d) => s + d.visitors, 0);
     const conversionRate = totalVisitors > 0 ? (currentOrders / totalVisitors) * 100 : 0;
 
+    // ─── Auto-generated Business Insights ─────────────────────────────────
+    const insights: Array<{ type: "success" | "warning" | "info" | "danger"; title: string; message: string }> = [];
+
+    if (outOfStock.length > 0) {
+      insights.push({
+        type: "danger",
+        title: "Out of Stock Alert",
+        message: `${outOfStock.length} product${outOfStock.length > 1 ? "s are" : " is"} out of stock: ${outOfStock.slice(0, 3).map(p => p.name).join(", ")}${outOfStock.length > 3 ? ` and ${outOfStock.length - 3} more` : ""}.`,
+      });
+    }
+
+    if (lowStock.length > 0) {
+      insights.push({
+        type: "warning",
+        title: "Low Stock Warning",
+        message: `${lowStock.length} product${lowStock.length > 1 ? "s have" : " has"} low stock (≤10 units). Consider restocking soon.`,
+      });
+    }
+
+    if (orderFunnel.pending > 0) {
+      insights.push({
+        type: "info",
+        title: "Pending Orders",
+        message: `You have ${orderFunnel.pending} pending order${orderFunnel.pending > 1 ? "s" : ""} worth USh ${orderFunnel.pendingValue.toLocaleString()}. Follow up to convert them.`,
+      });
+    }
+
+    if (neverOrdered.length > 5) {
+      insights.push({
+        type: "warning",
+        title: "Slow Moving Products",
+        message: `${neverOrdered.length} products have never been ordered. Consider running promotions or improving their listings.`,
+      });
+    }
+
+    if (revTrend.slope > 0) {
+      insights.push({ type: "success", title: "Revenue Trending Up", message: `Your daily revenue is trending upward. Projected revenue for next 30 days: USh ${Math.round(projectedRevenue30d).toLocaleString()}.` });
+    } else if (revTrend.slope < 0 && currentRevenue > 0) {
+      insights.push({ type: "warning", title: "Revenue Declining", message: "Your daily revenue is trending downward. Consider running promotions or expanding your product range." });
+    }
+
+    if (visTrend.slope > 0) {
+      insights.push({ type: "success", title: "Traffic Growing", message: `Visitor traffic is increasing. Projected visitors next 30 days: ${projectedVisitors30d.toLocaleString()}.` });
+    }
+
+    if (bounceRate > 70) {
+      insights.push({ type: "warning", title: "High Bounce Rate", message: `${bounceRate.toFixed(0)}% of visitors leave after one page. Improve product pages and site navigation.` });
+    }
+
+    if (conversionRate === 0 && totalVisitors > 50) {
+      insights.push({ type: "info", title: "Conversion Opportunity", message: `You've had ${totalVisitors} visitors but no completed sales. Consider: lower prices, add reviews, improve checkout flow, or offer a first-order discount.` });
+    }
+
+    if (dropshipProducts.length > 0) {
+      const avgMargin = dropshipProducts.reduce((s, p) => s + p.margin, 0) / dropshipProducts.length;
+      if (avgMargin < 40) {
+        insights.push({ type: "warning", title: "Low Profit Margins", message: `Average margin on dropship products is ${avgMargin.toFixed(0)}%. Consider increasing prices or finding cheaper suppliers.` });
+      }
+    }
+
+    // ─── Return comprehensive response ────────────────────────────────────
     return res.json({
       revenue: {
         total: currentRevenue,
@@ -169,6 +428,7 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
         thisMonth: monthOrderCount,
         lastMonth: lastMonthOrderCount,
         monthChange: lastMonthOrderCount > 0 ? ((monthOrderCount - lastMonthOrderCount) / lastMonthOrderCount) * 100 : 0,
+        funnel: orderFunnel,
       },
       customers: {
         total: totalCustomers,
@@ -179,17 +439,43 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
       },
       products: {
         topSelling,
-        lowStock: lowStockCount,
-        totalActive: totalActiveProducts,
+        lowStock: lowStock.length,
+        outOfStock: outOfStock.length,
+        totalActive: allProducts.length,
+        categoryBreakdown: categoryStats,
+        dropshipMargins: dropshipProducts.slice(0, 10),
+        mostWishlisted,
+        neverOrdered: neverOrdered.slice(0, 10),
+        inventoryValue: Math.round(totalInventoryValue),
+        healthBreakdown: {
+          outOfStock: outOfStock.length,
+          lowStock: lowStock.length,
+          healthy: healthyStock.length,
+          overstocked: overstocked.length,
+        },
       },
       traffic: {
         daily: dailyData,
         totalVisitors,
-        bounceRate: 0,
+        bounceRate: Math.round(bounceRate * 10) / 10,
+        avgPagesPerSession: Math.round(avgPagesPerSession * 10) / 10,
         visitorsByCountry,
+        trafficSources,
+        topPages,
+      },
+      projections: {
+        revenue30d: Math.round(projectedRevenue30d),
+        visitors30d: projectedVisitors30d,
+        revenueTrend: revTrend.slope > 0 ? "up" : revTrend.slope < 0 ? "down" : "flat",
+        visitorTrend: visTrend.slope > 0 ? "up" : visTrend.slope < 0 ? "down" : "flat",
+        weekOverWeek: {
+          revenue: { current: lastWeekRevenue, previous: prevWeekRevenue, change: prevWeekRevenue > 0 ? ((lastWeekRevenue - prevWeekRevenue) / prevWeekRevenue) * 100 : 0 },
+          visitors: { current: lastWeekVisitors, previous: prevWeekVisitors, change: prevWeekVisitors > 0 ? ((lastWeekVisitors - prevWeekVisitors) / prevWeekVisitors) * 100 : 0 },
+        },
       },
       paymentMethods: payments.map((p) => ({ name: p.method || "Other", count: p._count.id, amount: Number(p._sum.amount) || 0 })),
       hourlyOrders,
+      insights,
     });
   } catch (error) {
     console.error("Analytics GET error:", error);
@@ -203,11 +489,8 @@ router.post("/track", async (req: Request, res: Response) => {
     const { path, referrer, sessionId } = req.body;
     if (!path) return res.status(400).json({ error: "path required" });
 
-    // Get visitor IP (trust proxy is set, so req.ip uses X-Forwarded-For)
     const ip = (req.headers["x-real-ip"] as string) || req.ip || "";
-    const cleanIp = ip.replace(/^::ffff:/, ""); // strip IPv4-mapped prefix
-
-    // GeoIP lookup
+    const cleanIp = ip.replace(/^::ffff:/, "");
     const geo = geoip.lookup(cleanIp);
 
     await prisma.pageView.create({
@@ -225,7 +508,7 @@ router.post("/track", async (req: Request, res: Response) => {
 
     return res.status(204).send();
   } catch {
-    return res.status(204).send(); // silently fail — never break the page
+    return res.status(204).send();
   }
 });
 
