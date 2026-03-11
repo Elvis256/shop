@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
+import geoip from "geoip-lite";
 
 const router = Router();
 
@@ -47,15 +48,27 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
     // Page views for visitors
     const pageViews = await prisma.pageView.findMany({
       where: { createdAt: { gte: startDate } },
-      select: { createdAt: true, sessionId: true },
+      select: { createdAt: true, sessionId: true, country: true },
     });
     const visitorMap = new Map<string, Set<string>>();
+    const countryVisitorMap = new Map<string, Set<string>>();
     pageViews.forEach((pv) => {
       const key = pv.createdAt.toISOString().split("T")[0];
+      const visitorId = pv.sessionId || pv.createdAt.toISOString();
       if (!visitorMap.has(key)) visitorMap.set(key, new Set());
-      visitorMap.get(key)!.add(pv.sessionId || pv.createdAt.toISOString());
+      visitorMap.get(key)!.add(visitorId);
+
+      // Aggregate by country
+      const country = pv.country || "Unknown";
+      if (!countryVisitorMap.has(country)) countryVisitorMap.set(country, new Set());
+      countryVisitorMap.get(country)!.add(visitorId);
     });
     dailyData.forEach((d) => { d.visitors = visitorMap.get(d.date)?.size || 0; });
+
+    // Build visitors-by-country array sorted by count descending
+    const visitorsByCountry = Array.from(countryVisitorMap.entries())
+      .map(([country, sessions]) => ({ country, visitors: sessions.size }))
+      .sort((a, b) => b.visitors - a.visitors);
 
     const currentRevenue = dailyData.reduce((s, d) => s + d.revenue, 0);
     const currentOrders = dailyData.reduce((s, d) => s + d.orders, 0);
@@ -173,6 +186,7 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
         daily: dailyData,
         totalVisitors,
         bounceRate: 0,
+        visitorsByCountry,
       },
       paymentMethods: payments.map((p) => ({ name: p.method || "Other", count: p._count.id, amount: Number(p._sum.amount) || 0 })),
       hourlyOrders,
@@ -189,12 +203,23 @@ router.post("/track", async (req: Request, res: Response) => {
     const { path, referrer, sessionId } = req.body;
     if (!path) return res.status(400).json({ error: "path required" });
 
+    // Get visitor IP (trust proxy is set, so req.ip uses X-Forwarded-For)
+    const ip = (req.headers["x-real-ip"] as string) || req.ip || "";
+    const cleanIp = ip.replace(/^::ffff:/, ""); // strip IPv4-mapped prefix
+
+    // GeoIP lookup
+    const geo = geoip.lookup(cleanIp);
+
     await prisma.pageView.create({
       data: {
         path: String(path).slice(0, 500),
         referrer: referrer ? String(referrer).slice(0, 500) : null,
         userAgent: req.headers["user-agent"]?.slice(0, 500) || null,
         sessionId: sessionId ? String(sessionId).slice(0, 64) : null,
+        ipAddress: cleanIp.slice(0, 45) || null,
+        country: geo?.country || null,
+        region: geo?.region || null,
+        city: geo?.city || null,
       },
     });
 

@@ -22,6 +22,7 @@ import {
   Award,
   AlertTriangle,
   Activity,
+  Globe,
 } from "lucide-react";
 
 // ─── Pure SVG Chart Components ────────────────────────────────────────────────
@@ -257,6 +258,7 @@ interface AnalyticsData {
     daily: Array<{ date: string; visitors: number; orders: number; revenue: number }>;
     totalVisitors: number;
     bounceRate: number;
+    visitorsByCountry: Array<{ country: string; visitors: number }>;
   };
   paymentMethods: Array<{ name: string; count: number; amount: number }>;
   hourlyOrders: Array<{ hour: string; count: number }>;
@@ -272,6 +274,36 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: "#ef4444",
   REFUNDED: "#f97316",
 };
+
+// Country code → emoji flag
+function countryFlag(code: string): string {
+  if (!code || code === "Unknown") return "🌍";
+  const codePoints = [...code.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+}
+
+// Country code → display name
+const COUNTRY_NAMES: Record<string, string> = {
+  US: "United States", GB: "United Kingdom", UG: "Uganda", KE: "Kenya", TZ: "Tanzania",
+  NG: "Nigeria", ZA: "South Africa", GH: "Ghana", RW: "Rwanda", ET: "Ethiopia",
+  IN: "India", CN: "China", JP: "Japan", DE: "Germany", FR: "France",
+  CA: "Canada", AU: "Australia", BR: "Brazil", RU: "Russia", IT: "Italy",
+  ES: "Spain", NL: "Netherlands", SE: "Sweden", CH: "Switzerland", PL: "Poland",
+  MX: "Mexico", AR: "Argentina", CO: "Colombia", CL: "Chile", PE: "Peru",
+  EG: "Egypt", MA: "Morocco", SN: "Senegal", CM: "Cameroon", CI: "Ivory Coast",
+  CD: "DR Congo", SD: "Sudan", AO: "Angola", MZ: "Mozambique", MG: "Madagascar",
+  AE: "UAE", SA: "Saudi Arabia", PK: "Pakistan", BD: "Bangladesh", PH: "Philippines",
+  ID: "Indonesia", MY: "Malaysia", TH: "Thailand", VN: "Vietnam", SG: "Singapore",
+  KR: "South Korea", TW: "Taiwan", HK: "Hong Kong", NZ: "New Zealand",
+  IE: "Ireland", PT: "Portugal", AT: "Austria", BE: "Belgium", DK: "Denmark",
+  FI: "Finland", NO: "Norway", CZ: "Czechia", RO: "Romania", HU: "Hungary",
+  UA: "Ukraine", TR: "Turkey", IL: "Israel", QA: "Qatar", KW: "Kuwait",
+  Unknown: "Unknown",
+};
+
+function countryName(code: string): string {
+  return COUNTRY_NAMES[code] || code;
+}
 
 export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
@@ -352,6 +384,19 @@ export default function AnalyticsPage() {
     data.paymentMethods.forEach((p) => {
       csvRows.push(`${p.name},${p.count},${p.amount}`);
     });
+    csvRows.push("");
+
+    // Visitors by country
+    if (data.traffic.visitorsByCountry?.length) {
+      csvRows.push("VISITORS BY COUNTRY");
+      csvRows.push("Country,Visitors,Percentage");
+      data.traffic.visitorsByCountry.forEach((c) => {
+        const pct = data.traffic.totalVisitors > 0
+          ? ((c.visitors / data.traffic.totalVisitors) * 100).toFixed(1)
+          : "0.0";
+        csvRows.push(`${countryName(c.country)},${c.visitors},${pct}%`);
+      });
+    }
     
     // Create and download file
     const csvContent = csvRows.join("\n");
@@ -798,10 +843,46 @@ export default function AnalyticsPage() {
               <p className="text-sm text-gray-500 mt-1">Bounce Rate</p>
             </div>
           </div>
+
+          {/* Visitors by Country */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-semibold text-gray-900">Visitors by Country / Region</h3>
+              <Globe className="w-5 h-5 text-blue-500" />
+            </div>
+            {(data.traffic.visitorsByCountry?.length || 0) > 0 ? (
+              <div className="space-y-3">
+                {data.traffic.visitorsByCountry.slice(0, 15).map((item, i) => {
+                  const maxVisitors = data.traffic.visitorsByCountry[0]?.visitors || 1;
+                  const pct = Math.round((item.visitors / data.traffic.totalVisitors) * 100);
+                  const barPct = Math.round((item.visitors / maxVisitors) * 100);
+                  const colors = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#14b8a6"];
+                  return (
+                    <div key={item.country}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-700 font-medium flex items-center gap-2">
+                          <span className="text-lg">{countryFlag(item.country)}</span>
+                          {countryName(item.country)}
+                        </span>
+                        <span className="text-gray-500">{item.visitors.toLocaleString()} visitors · {pct}%</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${barPct}%`, backgroundColor: colors[i % colors.length] }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Globe className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>No country data yet</p>
+                <p className="text-sm text-gray-400 mt-1">Country tracking starts with new visits</p>
+              </div>
+            )}
+          </div>
         </>
       )}
-
-      {/* Products Tab */}
       {activeTab === "products" && (
         <>
           {/* Products KPIs */}

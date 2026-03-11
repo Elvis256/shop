@@ -995,10 +995,15 @@ model PageView {
   referrer  String?
   userAgent String?
   sessionId String?
+  ipAddress String?
+  country   String?
+  region    String?
+  city      String?
   createdAt DateTime @default(now())
 
   @@index([createdAt])
   @@index([path])
+  @@index([country])
 }
 
 // ─── Affiliate Marketing System ──────────────────────────────────────────────
