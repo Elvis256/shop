@@ -90,12 +90,12 @@ export default function Header() {
             <Logo variant="default" href="/" />
 
             {/* Desktop Nav */}
-            <nav className="hidden lg:flex items-center gap-7">
+            <nav className="hidden lg:flex items-center gap-8">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="text-sm font-medium text-text-muted hover:text-text transition-colors duration-200"
+                  className="text-sm font-medium text-text-muted hover:text-text transition-colors duration-200 relative after:absolute after:bottom-[-2px] after:left-0 after:w-0 after:h-[2px] after:bg-primary after:transition-all after:duration-300 hover:after:w-full"
                 >
                   {link.label}
                 </Link>
@@ -166,21 +166,21 @@ export default function Header() {
             </div>
           </div>
 
-          {/* Mobile Menu */}
+          {/* Mobile Menu — slide-down with backdrop */}
           {mobileMenuOpen && (
-            <nav className="lg:hidden py-6 border-t border-border animate-fade-in">
-              <div className="space-y-1">
+            <nav className="lg:hidden py-4 border-t border-border animate-fade-in">
+              <div className="space-y-0.5">
                 {navLinks.map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
-                    className="block px-4 py-3 text-text hover:text-primary hover:bg-surface-secondary rounded-12 font-medium transition-all duration-200"
+                    className="flex items-center px-4 py-3.5 text-text hover:text-primary hover:bg-surface-secondary rounded-12 font-medium transition-all duration-200 min-h-[44px]"
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     {link.label}
                   </Link>
                 ))}
-                <div className="pt-4 border-t border-border mt-4">
+                <div className="pt-3 border-t border-border mt-3">
                   <div className="px-4 py-3 flex items-center justify-between">
                     <CurrencySelector variant="default" />
                     <ThemeToggle showLabel />
@@ -188,7 +188,7 @@ export default function Header() {
                   {user ? (
                     <Link
                       href="/account"
-                      className="block px-4 py-3 text-text hover:text-primary hover:bg-surface-secondary rounded-12 font-medium"
+                      className="flex items-center px-4 py-3.5 text-text hover:text-primary hover:bg-surface-secondary rounded-12 font-medium min-h-[44px]"
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       My Account
@@ -196,7 +196,7 @@ export default function Header() {
                   ) : (
                     <Link
                       href="/auth/login"
-                      className="block px-4 py-3 text-primary font-medium"
+                      className="flex items-center px-4 py-3.5 text-primary font-medium min-h-[44px]"
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       Sign In / Register

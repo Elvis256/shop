@@ -9,6 +9,7 @@ type SectionProps = {
   children: React.ReactNode;
   className?: string;
   bgColor?: "white" | "gray";
+  fullWidth?: boolean;
 };
 
 export default function Section({ 
@@ -18,13 +19,14 @@ export default function Section({
   viewAllText = "View All",
   children, 
   className = "",
-  bgColor = "white"
+  bgColor = "white",
+  fullWidth = false,
 }: SectionProps) {
   return (
-    <section className={`py-16 sm:py-20 lg:py-24 ${bgColor === "gray" ? "bg-surface-secondary" : ""} ${className}`}>
-      <div className="container">
+    <section className={`py-12 sm:py-16 lg:py-20 ${bgColor === "gray" ? "bg-surface-secondary" : ""} ${className}`}>
+      <div className={fullWidth ? "px-4 sm:px-6 lg:px-8 2xl:px-12" : "container"}>
         {(title || viewAllLink) && (
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 sm:mb-12">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 sm:mb-10">
             <div>
               {title && <h2 className="section-title">{title}</h2>}
               {subtitle && <p className="section-subtitle">{subtitle}</p>}

@@ -8,6 +8,14 @@ const config: Config = {
     "./contexts/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
+    screens: {
+      sm: "640px",
+      md: "768px",
+      lg: "1024px",
+      xl: "1280px",
+      "2xl": "1536px",
+      "3xl": "1920px",
+    },
     extend: {
       fontFamily: {
         head: ["SF Pro Display", "Inter", "sans-serif"],
@@ -52,9 +60,10 @@ const config: Config = {
         md: "0 4px 12px rgba(0,0,0,0.08)",
         lg: "0 12px 40px rgba(0,0,0,0.12)",
         soft: "0 2px 8px rgba(0,0,0,0.04), 0 4px 24px rgba(0,0,0,0.06)",
+        glow: "0 0 20px rgba(0,113,227,0.15)",
       },
       maxWidth: {
-        container: "1200px",
+        container: "1400px",
       },
       letterSpacing: {
         tight: "-0.02em",
@@ -64,6 +73,8 @@ const config: Config = {
         "fade-up": "fadeUp 0.5s ease-out",
         "fade-in": "fadeIn 0.4s ease-out",
         "scale-in": "scaleIn 0.3s ease-out",
+        "shimmer": "shimmer 2s infinite linear",
+        "pulse-soft": "pulseSoft 2s ease-in-out infinite",
       },
       keyframes: {
         fadeUp: {
@@ -77,6 +88,14 @@ const config: Config = {
         scaleIn: {
           "0%": { opacity: "0", transform: "scale(0.95)" },
           "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
+        pulseSoft: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.7" },
         },
       },
     },

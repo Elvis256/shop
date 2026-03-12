@@ -83,7 +83,7 @@ export default function ProductCard({
   };
 
   return (
-    <div className="group">
+    <div className="group hover-lift">
       {/* Image Container */}
       <Link href={`/product/${slug}`} className="block relative">
         <div className="aspect-[4/5] bg-surface-secondary rounded-24 overflow-hidden relative transition-all duration-500 group-hover:shadow-lg">

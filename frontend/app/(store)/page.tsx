@@ -11,6 +11,9 @@ import PrivacySection from "@/components/PrivacySection";
 import NewsletterSignup from "@/components/NewsletterSignup";
 import RecentlyViewed from "@/components/RecentlyViewed";
 import FlashSaleCountdown from "@/components/FlashSaleCountdown";
+import ScrollProgress from "@/components/ScrollProgress";
+import AnimateOnScroll, { StaggerGrid, StaggerItem } from "@/components/AnimateOnScroll";
+import ProductCarousel, { CarouselItem } from "@/components/ProductCarousel";
 import { Zap, TrendingUp, Star, Sparkles, ArrowRight, Shield, Truck, Clock, Gift } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -47,27 +50,29 @@ interface Category {
 
 function ProductSkeleton() {
   return (
-    <div className="animate-pulse">
-      <div className="aspect-[4/5] bg-surface rounded-24 mb-4" />
-      <div className="h-3 bg-surface rounded-full mb-2 w-1/3" />
-      <div className="h-4 bg-surface rounded-full mb-2" />
-      <div className="h-3 bg-surface rounded-full w-1/2" />
+    <div>
+      <div className="aspect-[4/5] bg-surface-secondary rounded-24 mb-4 skeleton-shimmer" />
+      <div className="h-3 bg-surface-secondary rounded-full mb-2 w-1/3 skeleton-shimmer" />
+      <div className="h-4 bg-surface-secondary rounded-full mb-2 skeleton-shimmer" />
+      <div className="h-3 bg-surface-secondary rounded-full w-1/2 skeleton-shimmer" />
     </div>
   );
 }
 
 function SectionHeader({ icon, title, subtitle, badge }: { icon: React.ReactNode; title: string; subtitle: string; badge?: string }) {
   return (
-    <div className="flex items-center gap-3 mb-8">
-      <div className="p-2.5 bg-primary/10 rounded-2xl text-primary">{icon}</div>
-      <div>
-        <div className="flex items-center gap-2">
-          <h2 className="text-2xl font-bold text-text">{title}</h2>
-          {badge && <span className="text-xs font-semibold bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse">{badge}</span>}
+    <AnimateOnScroll variant="fadeUp">
+      <div className="flex items-center gap-3 mb-8">
+        <div className="p-2.5 bg-primary/10 rounded-2xl text-primary">{icon}</div>
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-bold text-text">{title}</h2>
+            {badge && <span className="text-xs font-semibold bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse-soft">{badge}</span>}
+          </div>
+          <p className="text-sm text-text-muted">{subtitle}</p>
         </div>
-        <p className="text-sm text-text-muted">{subtitle}</p>
       </div>
-    </div>
+    </AnimateOnScroll>
   );
 }
 
@@ -79,15 +84,17 @@ function ValueProposition() {
     { icon: <Gift className="w-6 h-6" />, title: "Earn Rewards", desc: "Points on every order" },
   ];
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-10 px-4 max-w-7xl mx-auto">
+    <StaggerGrid className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 py-8 sm:py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
       {values.map((v) => (
-        <div key={v.title} className="flex flex-col items-center text-center p-5 rounded-2xl bg-surface hover:shadow-lg transition-all duration-300 group cursor-default">
-          <div className="p-3 rounded-xl bg-primary/10 text-primary mb-3 group-hover:bg-primary group-hover:text-white transition-colors">{v.icon}</div>
-          <h3 className="font-semibold text-text text-sm">{v.title}</h3>
-          <p className="text-xs text-text-muted mt-1">{v.desc}</p>
-        </div>
+        <StaggerItem key={v.title}>
+          <div className="flex flex-col items-center text-center p-4 sm:p-5 rounded-2xl bg-surface hover:shadow-lg transition-all duration-300 group cursor-default hover-lift">
+            <div className="p-3 rounded-xl bg-primary/10 text-primary mb-3 group-hover:bg-primary group-hover:text-white transition-colors duration-300">{v.icon}</div>
+            <h3 className="font-semibold text-text text-sm">{v.title}</h3>
+            <p className="text-xs text-text-muted mt-1">{v.desc}</p>
+          </div>
+        </StaggerItem>
       ))}
-    </div>
+    </StaggerGrid>
   );
 }
 
@@ -107,9 +114,9 @@ export default function Home() {
   const loadData = async () => {
     try {
       const [newRes, bestRes, flashRes, catRes, trendRes, topRes] = await Promise.all([
-        fetch(`${API_URL}/api/products?limit=8&status=ACTIVE&sortBy=createdAt&sortOrder=desc`),
-        fetch(`${API_URL}/api/products?limit=8&status=ACTIVE&sort=bestseller`),
-        fetch(`${API_URL}/api/products?limit=4&status=ACTIVE&flashSale=true`),
+        fetch(`${API_URL}/api/products?limit=12&status=ACTIVE&sortBy=createdAt&sortOrder=desc`),
+        fetch(`${API_URL}/api/products?limit=12&status=ACTIVE&sort=bestseller`),
+        fetch(`${API_URL}/api/products?limit=8&status=ACTIVE&flashSale=true`),
         fetch(`${API_URL}/api/categories`),
         fetch(`${API_URL}/api/recommendations/trending`).catch(() => null),
         fetch(`${API_URL}/api/recommendations/top-rated`).catch(() => null),
@@ -154,31 +161,38 @@ export default function Home() {
 
   return (
     <div className="bg-bg min-h-screen">
+      <ScrollProgress />
       <HeroBanner />
       <TrustStrip />
       <ValueProposition />
 
-      {/* Flash Sale Section */}
+      {/* Flash Sale Section — horizontal carousel for urgency */}
       {(loading || flashSaleProducts.length > 0) && (
         <Section title="" bgColor="gray">
-          <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-500 rounded-xl">
-                <Zap className="w-5 h-5 text-white" />
+          <AnimateOnScroll variant="fadeUp">
+            <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-500 rounded-xl animate-pulse-soft">
+                  <Zap className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-text">Flash Sale</h2>
+                  <p className="text-sm text-text-muted">Limited time deals</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-2xl font-bold text-text">Flash Sale</h2>
-                <p className="text-sm text-text-muted">Limited time deals</p>
-              </div>
+              {flashSaleEnd && <FlashSaleCountdown endTime={flashSaleEnd} />}
             </div>
-            {flashSaleEnd && <FlashSaleCountdown endTime={flashSaleEnd} />}
-          </div>
-          <div className="grid-products">
-            {loading
-              ? Array.from({ length: 4 }).map((_, i) => <ProductSkeleton key={i} />)
-              : flashSaleProducts.map((p) => (
+          </AnimateOnScroll>
+
+          {loading ? (
+            <div className="grid-products">
+              {Array.from({ length: 4 }).map((_, i) => <ProductSkeleton key={i} />)}
+            </div>
+          ) : (
+            <ProductCarousel>
+              {flashSaleProducts.map((p) => (
+                <CarouselItem key={p.slug}>
                   <ProductCard
-                    key={p.slug}
                     id={p.id}
                     name={p.name}
                     slug={p.slug}
@@ -191,12 +205,14 @@ export default function Home() {
                     badgeText="🔥 SALE"
                     shippingBadge={p.shippingBadge}
                   />
-                ))}
-          </div>
+                </CarouselItem>
+              ))}
+            </ProductCarousel>
+          )}
         </Section>
       )}
 
-      {/* Trending Now */}
+      {/* Trending Now — horizontal carousel */}
       {(loading || trending.length > 0) && (
         <Section
           title=""
@@ -209,12 +225,15 @@ export default function Home() {
             subtitle="Most popular this week"
             badge="HOT"
           />
-          <div className="grid-products">
-            {loading
-              ? Array.from({ length: 4 }).map((_, i) => <ProductSkeleton key={i} />)
-              : trending.slice(0, 8).map((product) => (
+          {loading ? (
+            <div className="grid-products">
+              {Array.from({ length: 4 }).map((_, i) => <ProductSkeleton key={i} />)}
+            </div>
+          ) : (
+            <ProductCarousel>
+              {trending.slice(0, 12).map((product) => (
+                <CarouselItem key={product.slug}>
                   <ProductCard
-                    key={product.slug}
                     id={product.id}
                     name={product.name}
                     slug={product.slug}
@@ -227,12 +246,14 @@ export default function Home() {
                     badgeText={product.soldRecently ? `${product.soldRecently} sold` : undefined}
                     shippingBadge={product.shippingBadge}
                   />
-                ))}
-          </div>
+                </CarouselItem>
+              ))}
+            </ProductCarousel>
+          )}
         </Section>
       )}
 
-      {/* Categories Section */}
+      {/* Categories Section — staggered grid */}
       <Section
         title="Shop by Category"
         subtitle="Explore our curated collections"
@@ -240,27 +261,30 @@ export default function Home() {
         viewAllText="View All"
         bgColor="gray"
       >
-        <div className="grid-categories">
+        <StaggerGrid className="grid-categories">
           {loading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="aspect-square bg-surface-secondary rounded-24 animate-pulse" />
+            Array.from({ length: 6 }).map((_, i) => (
+              <StaggerItem key={i}>
+                <div className="aspect-[4/5] sm:aspect-square bg-surface rounded-24 skeleton-shimmer" />
+              </StaggerItem>
             ))
           ) : categories.length > 0 ? (
             categories.slice(0, 6).map((category) => (
-              <CategoryCard
-                key={category.slug}
-                title={category.name}
-                slug={category.slug}
-                imageUrl={category.imageUrl}
-              />
+              <StaggerItem key={category.slug}>
+                <CategoryCard
+                  title={category.name}
+                  slug={category.slug}
+                  imageUrl={category.imageUrl}
+                />
+              </StaggerItem>
             ))
           ) : (
             <div className="col-span-full text-center py-12 text-text-muted">No categories available</div>
           )}
-        </div>
+        </StaggerGrid>
       </Section>
 
-      {/* New Arrivals Section */}
+      {/* New Arrivals Section — full grid with stagger */}
       <Section
         title=""
         viewAllLink="/category?sort=newest"
@@ -271,34 +295,35 @@ export default function Home() {
           title="New Arrivals"
           subtitle="Fresh picks just added to the store"
         />
-        <div className="grid-products">
+        <StaggerGrid className="grid-products">
           {loading ? (
-            Array.from({ length: 8 }).map((_, i) => <ProductSkeleton key={i} />)
+            Array.from({ length: 8 }).map((_, i) => <StaggerItem key={i}><ProductSkeleton /></StaggerItem>)
           ) : newArrivals.length > 0 ? (
             newArrivals.map((product) => (
-              <ProductCard
-                key={product.slug}
-                id={product.id}
-                name={product.name}
-                slug={product.slug}
-                price={Number(product.price)}
-                comparePrice={product.comparePrice ? Number(product.comparePrice) : undefined}
-                rating={Number(product.rating)}
-                imageUrl={product.imageUrl}
-                category={product.category || undefined}
-                inStock={product.inStock}
-                isNew={true}
-                isBestseller={product.isBestseller}
-                shippingBadge={product.shippingBadge}
-              />
+              <StaggerItem key={product.slug}>
+                <ProductCard
+                  id={product.id}
+                  name={product.name}
+                  slug={product.slug}
+                  price={Number(product.price)}
+                  comparePrice={product.comparePrice ? Number(product.comparePrice) : undefined}
+                  rating={Number(product.rating)}
+                  imageUrl={product.imageUrl}
+                  category={product.category || undefined}
+                  inStock={product.inStock}
+                  isNew={true}
+                  isBestseller={product.isBestseller}
+                  shippingBadge={product.shippingBadge}
+                />
+              </StaggerItem>
             ))
           ) : (
             <div className="col-span-full text-center py-12 text-text-muted">No products available</div>
           )}
-        </div>
+        </StaggerGrid>
       </Section>
 
-      {/* Top Rated */}
+      {/* Top Rated — horizontal carousel */}
       {(loading || topRated.length > 0) && (
         <Section title="" bgColor="gray">
           <SectionHeader
@@ -306,12 +331,15 @@ export default function Home() {
             title="Top Rated"
             subtitle="Highest rated by our customers"
           />
-          <div className="grid-products">
-            {loading
-              ? Array.from({ length: 4 }).map((_, i) => <ProductSkeleton key={i} />)
-              : topRated.slice(0, 8).map((product) => (
+          {loading ? (
+            <div className="grid-products">
+              {Array.from({ length: 4 }).map((_, i) => <ProductSkeleton key={i} />)}
+            </div>
+          ) : (
+            <ProductCarousel>
+              {topRated.slice(0, 12).map((product) => (
+                <CarouselItem key={product.slug}>
                   <ProductCard
-                    key={product.slug}
                     id={product.id}
                     name={product.name}
                     slug={product.slug}
@@ -323,12 +351,14 @@ export default function Home() {
                     inStock={product.stock !== 0}
                     shippingBadge={product.shippingBadge}
                   />
-                ))}
-          </div>
+                </CarouselItem>
+              ))}
+            </ProductCarousel>
+          )}
         </Section>
       )}
 
-      {/* Bestsellers Section */}
+      {/* Bestsellers Section — full grid with stagger */}
       <Section
         title=""
         viewAllLink="/category"
@@ -339,31 +369,32 @@ export default function Home() {
           title="Bestsellers"
           subtitle="Loved by our customers"
         />
-        <div className="grid-products">
+        <StaggerGrid className="grid-products">
           {loading ? (
-            Array.from({ length: 8 }).map((_, i) => <ProductSkeleton key={i} />)
+            Array.from({ length: 8 }).map((_, i) => <StaggerItem key={i}><ProductSkeleton /></StaggerItem>)
           ) : bestsellers.length > 0 ? (
             bestsellers.map((product) => (
-              <ProductCard
-                key={product.slug}
-                id={product.id}
-                name={product.name}
-                slug={product.slug}
-                price={Number(product.price)}
-                comparePrice={product.comparePrice ? Number(product.comparePrice) : undefined}
-                rating={Number(product.rating)}
-                imageUrl={product.imageUrl}
-                category={product.category || undefined}
-                inStock={product.inStock}
-                isNew={product.isNew}
-                isBestseller={true}
-                shippingBadge={product.shippingBadge}
-              />
+              <StaggerItem key={product.slug}>
+                <ProductCard
+                  id={product.id}
+                  name={product.name}
+                  slug={product.slug}
+                  price={Number(product.price)}
+                  comparePrice={product.comparePrice ? Number(product.comparePrice) : undefined}
+                  rating={Number(product.rating)}
+                  imageUrl={product.imageUrl}
+                  category={product.category || undefined}
+                  inStock={product.inStock}
+                  isNew={product.isNew}
+                  isBestseller={true}
+                  shippingBadge={product.shippingBadge}
+                />
+              </StaggerItem>
             ))
           ) : (
             <div className="col-span-full text-center py-12 text-text-muted">No products available</div>
           )}
-        </div>
+        </StaggerGrid>
       </Section>
 
       <PrivacySection />
@@ -371,13 +402,15 @@ export default function Home() {
 
       {/* Newsletter Section */}
       <Section bgColor="gray">
-        <div className="max-w-2xl mx-auto text-center py-8">
-          <h2 className="section-title mb-4">Stay in the Loop</h2>
-          <p className="text-text-muted text-lg mb-10">
-            Subscribe for exclusive offers, new arrivals, and wellness tips.
-          </p>
-          <NewsletterSignup variant="hero" source="homepage" />
-        </div>
+        <AnimateOnScroll variant="scaleIn">
+          <div className="max-w-2xl mx-auto text-center py-8">
+            <h2 className="section-title mb-4">Stay in the Loop</h2>
+            <p className="text-text-muted text-lg mb-10">
+              Subscribe for exclusive offers, new arrivals, and wellness tips.
+            </p>
+            <NewsletterSignup variant="hero" source="homepage" />
+          </div>
+        </AnimateOnScroll>
       </Section>
     </div>
   );
