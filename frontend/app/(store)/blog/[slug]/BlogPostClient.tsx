@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import DOMPurify from "isomorphic-dompurify";
 import Section from "@/components/Section";
 import { Calendar, User, Tag, ArrowLeft, Share2, Facebook, Twitter } from "lucide-react";
 
@@ -148,7 +149,7 @@ export default function BlogPostPage() {
           {/* Content */}
           <article
             className="prose prose-lg max-w-none mb-12"
-            dangerouslySetInnerHTML={{ __html: post.content }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content) }}
           />
 
           {/* Tags */}

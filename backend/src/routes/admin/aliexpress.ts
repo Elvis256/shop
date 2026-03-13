@@ -371,10 +371,7 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
         }
 
         // Use raw SQL for Decimal fields to avoid Prisma persistence issues
-        await prisma.$executeRawUnsafe(
-          `UPDATE "Product" SET "aliexpressCost" = $1, price = $2, stock = $3, "lastSyncedAt" = NOW() WHERE id = $4`,
-          newCost, newSellingPrice, newStock, product.id,
-        );
+        await prisma.$executeRaw`UPDATE "Product" SET "aliexpressCost" = ${newCost}, price = ${newSellingPrice}, stock = ${newStock}, "lastSyncedAt" = NOW() WHERE id = ${product.id}`;
 
         results.push({
           id: product.id,

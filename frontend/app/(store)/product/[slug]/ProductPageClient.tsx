@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import DOMPurify from "isomorphic-dompurify";
 import ProductGallery from "@/components/ProductGallery";
 import ProductTabs from "@/components/ProductTabs";
 import AddToCartButton from "@/components/AddToCartButton";
@@ -501,7 +502,7 @@ export default function ProductPageClient() {
 
             {/* Description */}
             {product.description && (
-              <div className="text-gray-600 text-sm mb-5 leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: product.description }} />
+              <div className="text-gray-600 text-sm mb-5 leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(product.description) }} />
             )}
 
             {/* Tags */}
