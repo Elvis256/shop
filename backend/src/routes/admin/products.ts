@@ -321,7 +321,17 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/admin/products/:id/images
-router.post("/:id/images", uploadMultiple, validateUploadedFiles, async (req: AuthRequest, res: Response) => {
+router.post("/:id/images", (req, res, next) => {
+  uploadMultiple(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ error: `Upload error: ${err.message}` });
+    }
+    if (err) {
+      return res.status(400).json({ error: err.message || "Upload failed" });
+    }
+    next();
+  });
+}, validateUploadedFiles, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const files = req.files as Express.Multer.File[];
@@ -389,7 +399,7 @@ router.delete("/:id/images/:imageId", async (req: AuthRequest, res: Response) =>
 const VariantSchema = z.object({
   name: z.string().min(1),
   sku: z.string().optional().nullable(),
-  price: z.number().positive().optional().nullable(),
+  price: z.number().nonnegative().optional().nullable(),
   stock: z.number().int().min(0).default(0),
   size: z.string().optional().nullable(),
   color: z.string().optional().nullable(),
@@ -444,7 +454,8 @@ router.put("/:id/variants", async (req: AuthRequest, res: Response) => {
     return res.json({ message: "Variants updated", variants: result });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors });
+      const summary = error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
+      return res.status(400).json({ error: `Variant validation failed: ${summary}`, details: error.errors });
     }
     console.error("Admin update variants error:", error);
     return res.status(500).json({ error: "Failed to update variants" });

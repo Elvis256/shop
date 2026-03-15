@@ -450,17 +450,24 @@ export default function EditProductPage() {
       await api.admin.updateProduct(productId, payload);
 
       if (formData.hasVariants) {
-        const variantPayload = variants.map((v) => ({
-          id: v.id,
-          name: v.name,
-          size: v.size || undefined,
-          color: v.color || undefined,
-          material: v.material || undefined,
-          price: v.price ? parseFloat(v.price) : undefined,
-          stock: v.stock ? parseInt(v.stock) : 0,
-          sku: v.sku || undefined,
-        }));
-        await api.admin.updateProductVariants(productId, variantPayload);
+        try {
+          const variantPayload = variants.map((v) => ({
+            id: v.id,
+            name: v.name,
+            size: v.size || undefined,
+            color: v.color || undefined,
+            material: v.material || undefined,
+            price: v.price ? parseFloat(v.price) : null,
+            stock: v.stock ? parseInt(v.stock) : 0,
+            sku: v.sku || undefined,
+          }));
+          await api.admin.updateProductVariants(productId, variantPayload);
+        } catch (varErr: any) {
+          console.error("Variant save failed:", varErr);
+          setError(varErr?.message || "Product saved but variant update failed.");
+          setSaving(false);
+          return;
+        }
       }
 
       setSuccess(true);
