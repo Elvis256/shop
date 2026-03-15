@@ -538,8 +538,8 @@ export default function CheckoutPage() {
                   />
                   <CreditCard className="w-6 h-6" />
                   <div>
-                    <span className="font-medium">Credit/Debit Card</span>
-                    <p className="text-small text-text-muted">Visa, Mastercard - Secure checkout via Flutterwave</p>
+                    <span className="font-medium">Pay with Flutterwave</span>
+                    <p className="text-small text-text-muted">Card, Mobile Money, Bank Transfer, USSD & more</p>
                   </div>
                 </label>
                 )}
@@ -623,9 +623,17 @@ export default function CheckoutPage() {
                 <div className="p-4 bg-gray-50 rounded-8 flex items-start gap-3">
                   <Lock className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium">Secure Card Payment</p>
+                    <p className="text-sm font-medium">Secure Flutterwave Checkout</p>
                     <p className="text-xs text-gray-500 mt-1">
-                      You'll be redirected to Flutterwave's secure (256-bit SSL) payment page. Your card details are never stored on our servers.
+                      You'll be redirected to Flutterwave's secure payment page where you can pay with:
+                    </p>
+                    <ul className="text-xs text-gray-500 mt-2 space-y-1">
+                      <li>💳 Visa, Mastercard & Verve cards</li>
+                      <li>📱 Mobile Money (MTN, Airtel)</li>
+                      <li>🏦 Bank Transfer & USSD</li>
+                    </ul>
+                    <p className="text-xs text-gray-400 mt-2">
+                      Your payment details are never stored on our servers.
                     </p>
                   </div>
                 </div>
@@ -722,7 +730,7 @@ export default function CheckoutPage() {
                       ? "PayPal"
                       : paymentMethod === "cod"
                       ? "Cash on Delivery"
-                      : "Credit/Debit Card"}
+                      : "Flutterwave (Card, Mobile Money, Bank & more)"}
                   </p>
                   <p className="text-small text-text-muted mt-1">
                     {paymentMethod === "mobile_money"
