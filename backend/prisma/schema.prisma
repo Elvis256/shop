@@ -506,6 +506,7 @@ enum PaymentMethod {
   CARD
   MOBILE_MONEY
   PAYPAL
+  COD
 }
 
 enum DiscountType {

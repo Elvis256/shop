@@ -204,16 +204,16 @@ export default function InventoryPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Inventory</h1>
-          <p className="text-gray-500 mt-1">Manage your product stock levels</p>
+          <h1 className="text-2xl font-semibold text-gray-900">Inventory</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Manage your product stock levels</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setBulkMode(!bulkMode)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors ${
               bulkMode
-                ? "bg-primary text-white"
-                : "text-gray-600 bg-white border border-gray-200 hover:bg-gray-50"
+                ? "bg-gray-900 text-white"
+                : "text-gray-700 bg-white border border-gray-200 hover:bg-gray-50"
             }`}
           >
             <Edit2 className="w-4 h-4" />
@@ -221,7 +221,7 @@ export default function InventoryPage() {
           </button>
           <button
             onClick={loadInventory}
-            className="flex items-center gap-2 px-4 py-2 text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
           >
             <RefreshCw className="w-4 h-4" />
             Refresh
@@ -230,114 +230,87 @@ export default function InventoryPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border shadow-sm p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Package className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{items.length}</p>
-              <p className="text-sm text-gray-500">Total Products</p>
-            </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Products</p>
+            <Package className="w-4 h-4 text-gray-400" />
           </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{items.length}</p>
         </div>
-        <div className="bg-white rounded-xl border shadow-sm p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{availableStock.toLocaleString()}</p>
-              <p className="text-sm text-gray-500">Total Units</p>
-            </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Units</p>
+            <CheckCircle className="w-4 h-4 text-gray-400" />
           </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{availableStock.toLocaleString()}</p>
         </div>
-        <div className="bg-white rounded-xl border shadow-sm p-4 cursor-pointer hover:bg-amber-50 transition-colors" onClick={() => setFilter("low")}>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-lg">
-              <TrendingDown className="w-5 h-5 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{lowStockCount}</p>
-              <p className="text-sm text-gray-500">Low Stock</p>
-            </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setFilter("low")}>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Low Stock</p>
+            <TrendingDown className="w-4 h-4 text-gray-400" />
           </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{lowStockCount}</p>
         </div>
-        <div className="bg-white rounded-xl border shadow-sm p-4 cursor-pointer hover:bg-red-50 transition-colors" onClick={() => setFilter("out")}>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <XCircle className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{outOfStockCount}</p>
-              <p className="text-sm text-gray-500">Out of Stock</p>
-            </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setFilter("out")}>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Out of Stock</p>
+            <XCircle className="w-4 h-4 text-gray-400" />
           </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{outOfStockCount}</p>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border shadow-sm p-4">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by name or SKU..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-            />
-          </div>
-          <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-3 items-center">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by name or SKU..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+          />
+        </div>
+        <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
+          {([
+            { key: "all", label: "All" },
+            { key: "low", label: "Low Stock" },
+            { key: "out", label: "Out of Stock" },
+          ] as const).map((f) => (
             <button
-              onClick={() => setFilter("all")}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                filter === "all" ? "bg-primary text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`px-3 py-2 transition-colors ${
+                filter === f.key ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
               }`}
             >
-              All
+              {f.label}
             </button>
-            <button
-              onClick={() => setFilter("low")}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                filter === "low" ? "bg-amber-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              Low Stock
-            </button>
-            <button
-              onClick={() => setFilter("out")}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                filter === "out" ? "bg-red-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              Out of Stock
-            </button>
-          </div>
+          ))}
         </div>
       </div>
 
       {/* Bulk Actions */}
       {bulkMode && selectedItems.size > 0 && (
-        <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex items-center gap-4">
-          <span className="font-medium text-primary">
-            {selectedItems.size} items selected
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center gap-4">
+          <span className="text-sm font-medium text-gray-700">
+            {selectedItems.size} selected
           </span>
           <div className="flex items-center gap-2 flex-1">
-            <label className="text-sm text-gray-600">Set stock to:</label>
+            <label className="text-sm text-gray-500">Set stock to:</label>
             <input
               type="number"
               min="0"
               value={bulkStock}
               onChange={(e) => setBulkStock(Number(e.target.value))}
-              className="w-24 px-3 py-1 border border-gray-200 rounded-lg"
+              className="w-24 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300"
             />
             <button
               onClick={handleBulkUpdate}
               disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
               Update All
@@ -348,7 +321,7 @@ export default function InventoryPage() {
               setSelectedItems(new Set());
               setBulkMode(false);
             }}
-            className="text-gray-500 hover:text-gray-700"
+            className="text-gray-400 hover:text-gray-600"
           >
             <X className="w-5 h-5" />
           </button>
@@ -356,11 +329,18 @@ export default function InventoryPage() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center">
-            <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
-            <p className="text-gray-500">Loading inventory...</p>
+          <div className="p-8">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 py-3">
+                <div className="w-10 h-10 bg-gray-100 rounded-lg animate-pulse" />
+                <div className="flex-1">
+                  <div className="h-4 bg-gray-100 rounded animate-pulse mb-2" style={{ width: `${40 + Math.random() * 40}%` }} />
+                  <div className="h-3 bg-gray-50 rounded animate-pulse w-20" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="p-12 text-center">
@@ -371,8 +351,8 @@ export default function InventoryPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/50">
                   {bulkMode && (
                     <th className="px-4 py-3 text-left">
                       <input
@@ -383,27 +363,27 @@ export default function InventoryPage() {
                       />
                     </th>
                   )}
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Product</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">SKU</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Variants</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Product</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">SKU</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Variants</th>
                   <th
-                    className="px-4 py-3 text-left text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700"
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                     onClick={() => handleSort("stock")}
                   >
                     <span className="flex items-center gap-1">
-                      Stock <ArrowUpDown className="w-4 h-4" />
+                      Stock <ArrowUpDown className={`w-3 h-3 ${sortField === "stock" ? "text-gray-900" : "text-gray-400"}`} />
                     </span>
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Reserved</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Status</th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Reserved</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-gray-100">
                 {filteredItems.map((item) => {
                   const stockStatus = getStockStatus(item);
                   return (
-                    <tr key={item.id} className="hover:bg-gray-50">
+                    <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
                       {bulkMode && (
                         <td className="px-4 py-3">
                           <input
@@ -424,26 +404,26 @@ export default function InventoryPage() {
                             />
                           ) : (
                             <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                              <Package className="w-5 h-5 text-gray-400" />
+                              <Package className="w-4 h-4 text-gray-400" />
                             </div>
                           )}
-                          <div>
+                          <div className="min-w-0">
                             <Link
                               href={`/admin/products/${item.id}`}
-                              className="font-medium text-gray-900 hover:text-primary"
+                              className="text-sm font-medium text-gray-900 hover:underline truncate block"
                             >
                               {item.name}
                             </Link>
                             {item.category && (
-                              <p className="text-sm text-gray-500">{item.category}</p>
+                              <p className="text-xs text-gray-500">{item.category}</p>
                             )}
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{item.sku || "—"}</td>
+                      <td className="px-4 py-3 text-sm text-gray-500 font-mono">{item.sku || "—"}</td>
                       <td className="px-4 py-3 text-sm text-gray-500">
                         {item.variantCount > 0 ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">{item.variantCount} variants</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">{item.variantCount} variants</span>
                         ) : "—"}
                       </td>
                       <td className="px-4 py-3">
@@ -453,34 +433,34 @@ export default function InventoryPage() {
                             min="0"
                             value={editStock}
                             onChange={(e) => setEditStock(Number(e.target.value))}
-                            className="w-20 px-2 py-1 border border-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-400"
                             autoFocus
                           />
                         ) : (
-                          <span className={`font-medium ${item.stock === 0 ? "text-red-600" : item.stock <= item.lowStockAlert ? "text-amber-600" : "text-gray-900"}`}>
-                            {item.stock}
+                          <span className={`text-sm font-medium ${item.stock === 0 ? "text-red-600" : item.stock <= item.lowStockAlert ? "text-amber-600" : "text-gray-900"}`}>
+                            {item.stock.toLocaleString()}
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500">{item.reservedStock}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${stockStatus.color}`}>
+                        <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${stockStatus.color}`}>
                           {stockStatus.label}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         {editingId === item.id ? (
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => handleSave(item.id)}
                               disabled={saving}
-                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                              className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
                             >
                               <Save className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => setEditingId(null)}
-                              className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg"
+                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
                             >
                               <X className="w-4 h-4" />
                             </button>
@@ -488,7 +468,7 @@ export default function InventoryPage() {
                         ) : (
                           <button
                             onClick={() => handleEdit(item)}
-                            className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg"
+                            className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
@@ -505,19 +485,19 @@ export default function InventoryPage() {
 
       {/* Low Stock Alert */}
       {lowStockCount > 0 && filter === "all" && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-4">
-          <AlertTriangle className="w-6 h-6 text-amber-600 flex-shrink-0" />
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center gap-4">
+          <AlertTriangle className="w-5 h-5 text-gray-500 flex-shrink-0" />
           <div className="flex-1">
-            <p className="font-medium text-amber-800">Low Stock Warning</p>
-            <p className="text-sm text-amber-700">
-              {lowStockCount} products are running low on stock. Consider restocking soon.
+            <p className="text-sm font-medium text-gray-700">Low Stock Warning</p>
+            <p className="text-xs text-gray-500">
+              {lowStockCount} product{lowStockCount > 1 ? "s" : ""} running low. Consider restocking.
             </p>
           </div>
           <button
             onClick={() => setFilter("low")}
-            className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+            className="px-3 py-1.5 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
           >
-            View Items
+            View
           </button>
         </div>
       )}

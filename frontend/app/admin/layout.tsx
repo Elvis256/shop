@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { api } from "@/lib/api";
 import Logo from "@/components/Logo";
 import {
   LayoutDashboard,
@@ -54,7 +55,22 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, isLoading, isAdmin, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
   const isLoginPage = pathname === "/admin/login";
+
+  useEffect(() => {
+    if (isLoginPage || isLoading || !user || !isAdmin) return;
+    // Fetch pending order count
+    const fetchPending = () => {
+      api.admin.getOrders({ status: "PENDING" })
+        .then((data: any) => setPendingCount(data.pagination?.total || 0))
+        .catch(() => {});
+    };
+    fetchPending();
+    const interval = setInterval(fetchPending, 60000); // refresh every minute
+    return () => clearInterval(interval);
+  }, [isLoginPage, isLoading, user, isAdmin]);
 
   useEffect(() => {
     if (isLoginPage) return;
@@ -90,10 +106,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <Menu className="w-5 h-5" />
         </button>
         <Logo variant="compact" href="/admin" />
-        <button className="p-2 hover:bg-gray-100 rounded-lg relative">
+        <Link href="/admin/orders?status=PENDING" className="p-2 hover:bg-gray-100 rounded-lg relative">
           <Bell className="w-5 h-5" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-        </button>
+          {pendingCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
+              {pendingCount > 9 ? "9+" : pendingCount}
+            </span>
+          )}
+        </Link>
       </div>
 
       {/* Mobile Sidebar Overlay */}
@@ -138,6 +158,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 onClick={() => setSidebarOpen(false)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
                   isActive
@@ -198,10 +219,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <button className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
             <Search className="w-5 h-5" />
           </button>
-          <button className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors relative">
+          <Link href="/admin/orders?status=PENDING" className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors relative" title={pendingCount > 0 ? `${pendingCount} pending orders` : "No pending orders"}>
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
-          </button>
+            {pendingCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
+                {pendingCount > 9 ? "9+" : pendingCount}
+              </span>
+            )}
+          </Link>
           <button 
             onClick={() => window.location.reload()}
             className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"

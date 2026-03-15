@@ -54,7 +54,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
     const orderBy: any = {};
     orderBy[sort as string] = order;
 
-    const [products, total] = await Promise.all([
+    const [products, total, totalAll, activeCount, lowStockCount, outOfStockCount] = await Promise.all([
       prisma.product.findMany({
         where,
         orderBy,
@@ -67,6 +67,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         },
       }),
       prisma.product.count({ where }),
+      prisma.product.count(),
+      prisma.product.count({ where: { status: "ACTIVE" } }),
+      prisma.product.count({ where: { stock: { gt: 0, lte: 10 } } }),
+      prisma.product.count({ where: { stock: 0 } }),
     ]);
 
     return res.json({
@@ -92,6 +96,12 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         page: Math.floor(skip / take) + 1,
         limit: take,
         totalPages: Math.ceil(total / take),
+      },
+      stats: {
+        total: totalAll,
+        active: activeCount,
+        lowStock: lowStockCount,
+        outOfStock: outOfStockCount,
       },
     });
   } catch (error) {

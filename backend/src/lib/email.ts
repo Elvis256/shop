@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-type EmailTemplate = "welcome" | "order-confirmation" | "order-shipped" | "order-processing" | "order-delivered" | "order-cancelled" | "password-reset";
+type EmailTemplate = "welcome" | "order-received" | "order-confirmation" | "order-shipped" | "order-processing" | "order-delivered" | "order-cancelled" | "password-reset";
 
 interface SendEmailOptions {
   to: string;
@@ -32,6 +32,28 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
           <li>Secure, encrypted checkout</li>
         </ul>
         <a href="${process.env.BASE_URL}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Start Shopping</a>
+      </div>
+    `,
+  },
+  "order-received": {
+    subject: "Order Received - #${orderNumber}",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2a2a2a;">We've Received Your Order!</h1>
+        <p>Hi ${data.customerName},</p>
+        <p>Thank you for your order. We'll start processing it ${data.paymentMethod === "COD" ? "right away" : "once your payment is confirmed"}.</p>
+        <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
+          <p><strong>Order Number:</strong> ${data.orderNumber}</p>
+          <p><strong>Total:</strong> UGX ${Number(data.total).toLocaleString()}</p>
+          <p><strong>Payment Method:</strong> ${data.paymentMethod}</p>
+        </div>
+        <h3>Items:</h3>
+        <ul>
+          ${data.items.map((item: any) => `<li>${item.name} x ${item.quantity} - UGX ${Number(item.price).toLocaleString()}</li>`).join("")}
+        </ul>
+        ${data.paymentMethod === "COD" ? '<p style="color: #2a2a2a; font-weight: bold;">💰 Please have the exact amount ready at delivery.</p>' : ""}
+        <p style="color: #666; font-size: 14px;"><em>Your order will be shipped in plain, unmarked packaging for your privacy.</em></p>
+        <a href="${process.env.BASE_URL}/orders/${data.orderId}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Track Order</a>
       </div>
     `,
   },
@@ -160,6 +182,31 @@ export async function sendEmail({ to, template, data }: SendEmailOptions): Promi
     console.error("Email send error:", error);
     return false;
   }
+}
+
+export async function sendOrderReceivedEmail(order: any) {
+  const paymentMethodLabels: Record<string, string> = {
+    CARD: "Credit/Debit Card",
+    MOBILE_MONEY: "Mobile Money",
+    PAYPAL: "PayPal",
+    COD: "Cash on Delivery",
+  };
+  return sendEmail({
+    to: order.customerEmail,
+    template: "order-received",
+    data: {
+      customerName: order.customerName,
+      orderNumber: order.orderNumber,
+      orderId: order.id,
+      total: Number(order.totalAmount),
+      paymentMethod: paymentMethodLabels[order.payments?.[0]?.method] || order.payments?.[0]?.method || "Card",
+      items: order.items.map((item: any) => ({
+        name: item.name,
+        quantity: item.quantity,
+        price: Number(item.price) * item.quantity,
+      })),
+    },
+  });
 }
 
 export async function sendOrderConfirmation(order: any) {

@@ -120,7 +120,58 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "Order not found" });
     }
 
-    return res.json(order);
+    // Parse shippingAddress if stored as JSON string
+    let shippingAddress: any = order.shippingAddress;
+    if (typeof shippingAddress === "string") {
+      try { shippingAddress = JSON.parse(shippingAddress); } catch { /* keep as-is */ }
+    }
+
+    return res.json({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      paymentMethod: order.payments?.[0]?.method || null,
+      totalAmount: order.totalAmount,
+      subtotal: order.subtotal,
+      discount: order.discount || 0,
+      tax: 0,
+      shippingCost: order.shippingCost,
+      currency: order.currency,
+      discreet: order.discreet,
+      trackingNumber: order.trackingNumber,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      customer: order.user
+        ? { id: order.user.id, name: order.user.name, email: order.user.email, phone: null }
+        : { id: null, name: order.customerName, email: order.customerEmail, phone: null },
+      shippingAddress: typeof shippingAddress === "object" && shippingAddress !== null
+        ? {
+            name: shippingAddress.name || order.customerName,
+            phone: shippingAddress.phone || "",
+            street: shippingAddress.address || shippingAddress.street || "",
+            city: shippingAddress.city || "",
+            county: shippingAddress.county || shippingAddress.postalCode || null,
+            country: shippingAddress.country || "Uganda",
+          }
+        : null,
+      items: order.items.map((item) => ({
+        id: item.id,
+        productId: item.productId,
+        name: item.name || item.product.name,
+        price: item.price,
+        quantity: item.quantity,
+        imageUrl: item.product.images?.[0]?.url || null,
+      })),
+      payments: order.payments,
+      timeline: order.timeline.map((e) => ({
+        id: e.id,
+        status: e.status,
+        note: e.note,
+        createdAt: e.createdAt,
+      })),
+      coupon: order.coupon,
+    });
   } catch (error) {
     console.error("Admin get order error:", error);
     return res.status(500).json({ error: "Failed to fetch order" });
@@ -199,11 +250,36 @@ router.put("/:id/status", async (req: AuthRequest, res: Response) => {
 
     // Restore inventory if cancelled
     if (status === "CANCELLED" && order.status !== "CANCELLED") {
+      // Set payment status to FAILED for non-paid orders
+      if (order.paymentStatus !== "SUCCESSFUL") {
+        await prisma.order.update({
+          where: { id },
+          data: { paymentStatus: "FAILED" },
+        });
+        await prisma.payment.updateMany({
+          where: { orderId: id },
+          data: { status: "FAILED" },
+        });
+      }
       sendCancelledNotification(order, note).catch(console.error);
       for (const item of order.items) {
         await prisma.product.update({
           where: { id: item.productId },
           data: { stock: { increment: item.quantity } },
+        });
+      }
+      // Release stock reservations
+      const reservations = await prisma.stockReservation.findMany({
+        where: { orderId: id, released: false },
+      });
+      for (const reservation of reservations) {
+        await prisma.product.update({
+          where: { id: reservation.productId },
+          data: { reservedStock: { decrement: reservation.quantity } },
+        });
+        await prisma.stockReservation.update({
+          where: { id: reservation.id },
+          data: { released: true },
         });
       }
     }
@@ -270,6 +346,49 @@ router.post("/:id/refund", async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Admin refund order error:", error);
     return res.status(500).json({ error: "Failed to process refund" });
+  }
+});
+
+// POST /api/admin/orders/:id/mark-paid - Mark COD order as paid
+router.post("/:id/mark-paid", async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { payments: true },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    if (order.paymentStatus === "SUCCESSFUL") {
+      return res.status(400).json({ error: "Payment is already marked as successful" });
+    }
+
+    await prisma.$transaction([
+      prisma.order.update({
+        where: { id },
+        data: { paymentStatus: "SUCCESSFUL" },
+      }),
+      prisma.payment.updateMany({
+        where: { orderId: id },
+        data: { status: "SUCCESSFUL" },
+      }),
+      prisma.orderEvent.create({
+        data: {
+          orderId: id,
+          status: "PAYMENT_RECEIVED",
+          note: "Payment received and confirmed by admin",
+        },
+      }),
+    ]);
+
+    return res.json({ message: "Payment marked as successful" });
+  } catch (error) {
+    console.error("Admin mark paid error:", error);
+    return res.status(500).json({ error: "Failed to mark payment" });
   }
 });
 

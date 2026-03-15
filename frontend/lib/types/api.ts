@@ -82,6 +82,12 @@ export interface ProductDetail extends Omit<ProductListItem, "category"> {
 export interface ProductsResponse {
   products: ProductListItem[];
   pagination: PaginationInfo;
+  stats?: {
+    total: number;
+    active: number;
+    lowStock: number;
+    outOfStock: number;
+  };
 }
 
 // ============ Categories ============
@@ -285,20 +291,28 @@ export interface DashboardStats {
 }
 
 export interface CustomerListItem {
-  id: string;
+  id: string | null;
   email: string;
   name: string | null;
   phone: string | null;
+  isRegistered: boolean;
+  isBlocked: boolean;
   orderCount: number;
+  activeOrders: number;
   totalSpent: number;
-  wishlistCount: number;
-  reviewCount: number;
-  createdAt: string;
+  lastOrderDate: string | null;
+  firstOrderDate: string | null;
 }
 
 export interface CustomersResponse {
   customers: CustomerListItem[];
   pagination: PaginationInfo;
+  stats?: {
+    total: number;
+    registered: number;
+    guest: number;
+    withOrders: number;
+  };
 }
 
 // ============ Common ============

@@ -203,247 +203,338 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
     const days = parseInt(period as string) || 30;
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
-    
+
     const previousStartDate = new Date(startDate);
     previousStartDate.setDate(previousStartDate.getDate() - days);
 
-    // Get daily revenue and orders
-    const dailyStats = await prisma.order.groupBy({
-      by: ["createdAt"],
-      where: {
-        createdAt: { gte: startDate },
-        paymentStatus: "SUCCESSFUL",
-      },
-      _sum: { totalAmount: true },
-      _count: { id: true },
-    });
+    // Active orders = not cancelled/refunded (includes COD with pending payment)
+    const activeFilter = { status: { notIn: ["CANCELLED", "REFUNDED"] as ("CANCELLED" | "REFUNDED")[] } };
 
-    // Aggregate by date (since groupBy gives per-record, we need to aggregate)
-    const dailyMap = new Map<string, { revenue: number; orders: number }>();
-    
-    // Initialize all days in range
-    for (let i = 0; i < days; i++) {
+    // ── Daily order data (active orders) ──────────────────────
+    const dailyMap = new Map<string, { revenue: number; orders: number; collected: number }>();
+    for (let i = 0; i <= days; i++) {
       const d = new Date(startDate);
       d.setDate(d.getDate() + i);
-      const dateKey = d.toISOString().split("T")[0];
-      dailyMap.set(dateKey, { revenue: 0, orders: 0 });
+      dailyMap.set(d.toISOString().split("T")[0], { revenue: 0, orders: 0, collected: 0 });
     }
 
-    // Get actual daily data
-    const orders = await prisma.order.findMany({
-      where: {
-        createdAt: { gte: startDate },
-        paymentStatus: "SUCCESSFUL",
-      },
-      select: {
-        createdAt: true,
-        totalAmount: true,
-      },
+    const periodOrders = await prisma.order.findMany({
+      where: { createdAt: { gte: startDate }, ...activeFilter },
+      select: { createdAt: true, totalAmount: true, paymentStatus: true },
     });
 
-    orders.forEach((order) => {
-      const dateKey = order.createdAt.toISOString().split("T")[0];
-      const existing = dailyMap.get(dateKey) || { revenue: 0, orders: 0 };
-      existing.revenue += Number(order.totalAmount);
-      existing.orders += 1;
-      dailyMap.set(dateKey, existing);
+    periodOrders.forEach((o) => {
+      const key = o.createdAt.toISOString().split("T")[0];
+      const entry = dailyMap.get(key) || { revenue: 0, orders: 0, collected: 0 };
+      const amt = Number(o.totalAmount);
+      entry.revenue += amt;
+      entry.orders += 1;
+      if (o.paymentStatus === "SUCCESSFUL") entry.collected += amt;
+      dailyMap.set(key, entry);
     });
 
     const dailyData = Array.from(dailyMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, stats]) => ({
-        date,
-        revenue: stats.revenue,
-        orders: stats.orders,
-        visitors: 0, // filled below from real PageView data
-      }));
+      .map(([date, s]) => ({ date, revenue: s.revenue, orders: s.orders, collected: s.collected, visitors: 0 }));
 
-    // Real visitor data from PageView table
+    // ── Visitor data from PageView ────────────────────────────
     const pageViews = await prisma.pageView.findMany({
       where: { createdAt: { gte: startDate } },
-      select: { createdAt: true, sessionId: true },
+      select: { createdAt: true, sessionId: true, path: true },
     });
     const visitorMap = new Map<string, Set<string>>();
+    const allSessions = new Set<string>();
+    const pathCounts = new Map<string, number>();
+    let totalPageViews = 0;
+
     pageViews.forEach((pv) => {
-      const dateKey = pv.createdAt.toISOString().split("T")[0];
-      if (!visitorMap.has(dateKey)) visitorMap.set(dateKey, new Set());
-      visitorMap.get(dateKey)!.add(pv.sessionId || pv.createdAt.toISOString());
+      const key = pv.createdAt.toISOString().split("T")[0];
+      const sid = pv.sessionId || pv.createdAt.toISOString();
+      if (!visitorMap.has(key)) visitorMap.set(key, new Set());
+      visitorMap.get(key)!.add(sid);
+      allSessions.add(sid);
+      totalPageViews++;
+      const p = pv.path || "/";
+      pathCounts.set(p, (pathCounts.get(p) || 0) + 1);
     });
+
     dailyData.forEach((d) => {
       d.visitors = visitorMap.get(d.date)?.size || 0;
     });
 
-    // Current period totals
-    const currentRevenue = dailyData.reduce((sum, d) => sum + d.revenue, 0);
-    const currentOrders = dailyData.reduce((sum, d) => sum + d.orders, 0);
+    const totalVisitors = allSessions.size;
+    const pagesPerSession = totalVisitors > 0 ? Math.round((totalPageViews / totalVisitors) * 10) / 10 : 0;
 
-    // Previous period totals for comparison
-    const previousOrders = await prisma.order.findMany({
-      where: {
-        createdAt: { gte: previousStartDate, lt: startDate },
-        paymentStatus: "SUCCESSFUL",
-      },
+    // Top pages
+    const topPages = Array.from(pathCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([path, views]) => ({ path, views }));
+
+    // ── Period totals ─────────────────────────────────────────
+    const currentRevenue = dailyData.reduce((s, d) => s + d.revenue, 0);
+    const currentCollected = dailyData.reduce((s, d) => s + d.collected, 0);
+    const currentOrders = dailyData.reduce((s, d) => s + d.orders, 0);
+
+    // Previous period for comparison
+    const prevOrders = await prisma.order.findMany({
+      where: { createdAt: { gte: previousStartDate, lt: startDate }, ...activeFilter },
       select: { totalAmount: true },
     });
-    const previousRevenue = previousOrders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
-    const previousOrderCount = previousOrders.length;
+    const previousRevenue = prevOrders.reduce((s, o) => s + Number(o.totalAmount), 0);
+    const previousOrderCount = prevOrders.length;
 
-    // Orders by status
+    const prevVisitorPVs = await prisma.pageView.findMany({
+      where: { createdAt: { gte: previousStartDate, lt: startDate } },
+      select: { sessionId: true },
+    });
+    const prevSessions = new Set(prevVisitorPVs.map((p) => p.sessionId || ""));
+    const previousVisitors = prevSessions.size;
+
+    // ── Orders by status ──────────────────────────────────────
     const ordersByStatus = await prisma.order.groupBy({
       by: ["status"],
       where: { createdAt: { gte: startDate } },
       _count: { id: true },
     });
     const byStatus: Record<string, number> = {};
-    ordersByStatus.forEach((s) => {
-      byStatus[s.status] = s._count.id;
-    });
+    ordersByStatus.forEach((s) => { byStatus[s.status] = s._count.id; });
 
-    // Customer stats
-    const totalCustomers = await prisma.user.count({ where: { role: "CUSTOMER" } });
-    const newCustomers = await prisma.user.count({
-      where: {
-        role: "CUSTOMER",
-        createdAt: { gte: startDate },
-      },
-    });
-    const returningCustomers = await prisma.order.groupBy({
-      by: ["userId"],
-      where: {
-        createdAt: { gte: startDate },
-        paymentStatus: "SUCCESSFUL",
-      },
+    // All-time orders by status (for funnel)
+    const allOrdersByStatus = await prisma.order.groupBy({
+      by: ["status"],
       _count: { id: true },
-      having: {
-        id: { _count: { gt: 1 } },
-      },
+      _sum: { totalAmount: true },
+    });
+    const funnel: Record<string, { count: number; value: number }> = {};
+    allOrdersByStatus.forEach((s) => {
+      funnel[s.status] = { count: s._count.id, value: Number(s._sum.totalAmount) || 0 };
     });
 
-    // Top selling products
-    const topProducts = await prisma.orderItem.groupBy({
+    // ── Payment method breakdown (from Payment table) ──
+    const paymentsByMethod = await prisma.payment.groupBy({
+      by: ["method"],
+      where: { createdAt: { gte: startDate }, status: "SUCCESSFUL" },
+      _count: true,
+      _sum: { amount: true },
+    });
+    // Also count COD orders (no payment record)
+    const codOrders = await prisma.order.count({
+      where: { createdAt: { gte: startDate }, ...activeFilter, payments: { none: {} } },
+    });
+    const codValue = await prisma.order.aggregate({
+      where: { createdAt: { gte: startDate }, ...activeFilter, payments: { none: {} } },
+      _sum: { totalAmount: true },
+    });
+    const paymentMethods = [
+      ...paymentsByMethod.map((p) => ({
+        name: p.method || "Unknown",
+        count: p._count,
+        amount: Number(p._sum?.amount) || 0,
+      })),
+      ...(codOrders > 0 ? [{ name: "COD", count: codOrders, amount: Number(codValue._sum?.totalAmount) || 0 }] : []),
+    ];
+
+    // ── Customer stats ────────────────────────────────────────
+    const registeredCustomers = await prisma.user.count({ where: { role: "CUSTOMER" } });
+    const newRegistered = await prisma.user.count({
+      where: { role: "CUSTOMER", createdAt: { gte: startDate } },
+    });
+
+    // Unique customers from orders (includes guests)
+    const uniqueEmails = await prisma.order.findMany({
+      where: { createdAt: { gte: startDate } },
+      select: { customerEmail: true },
+      distinct: ["customerEmail"],
+    });
+    const totalOrderCustomers = uniqueEmails.length;
+
+    // Repeat customers
+    const repeatBuyers = await prisma.order.groupBy({
+      by: ["customerEmail"],
+      where: { createdAt: { gte: startDate }, ...activeFilter },
+      _count: { id: true },
+    });
+    const returningCount = repeatBuyers.filter((r) => r._count.id > 1).length;
+
+    const conversionRate = totalVisitors > 0 ? (currentOrders / totalVisitors) * 100 : 0;
+
+    // ── Top selling products ──────────────────────────────────
+    const topProductGroups = await prisma.orderItem.groupBy({
       by: ["productId"],
-      where: {
-        order: {
-          createdAt: { gte: startDate },
-          paymentStatus: "SUCCESSFUL",
-        },
-      },
+      where: { order: { createdAt: { gte: startDate }, ...activeFilter } },
       _sum: { quantity: true, price: true },
       orderBy: { _sum: { quantity: "desc" } },
-      take: 6,
+      take: 10,
     });
 
-    const productDetails = await prisma.product.findMany({
-      where: { id: { in: topProducts.map((p) => p.productId) } },
-      select: { id: true, name: true },
+    const topProdDetails = await prisma.product.findMany({
+      where: { id: { in: topProductGroups.map((p) => p.productId) } },
+      select: { id: true, name: true, price: true, cjCost: true, aliexpressCost: true },
     });
 
-    const topSellingProducts = topProducts.map((p) => {
-      const product = productDetails.find((pd) => pd.id === p.productId);
+    const topSellingProducts = topProductGroups.map((tp) => {
+      const prod = topProdDetails.find((p) => p.id === tp.productId);
+      const revenue = Number(tp._sum.price) || 0;
+      const unitCost = prod?.cjCost ? Number(prod.cjCost) : prod?.aliexpressCost ? Number(prod.aliexpressCost) : 0;
+      const cost = unitCost * (tp._sum.quantity || 1);
       return {
-        name: product?.name || "Unknown",
-        sold: p._sum.quantity || 0,
-        revenue: Number(p._sum.price) || 0,
+        name: prod?.name || "Unknown",
+        sold: tp._sum.quantity || 0,
+        revenue,
+        margin: revenue > 0 && cost > 0 ? Math.round(((revenue - cost) / revenue) * 100) : null,
       };
     });
 
-    // Low stock products
+    // ── Product insights ──────────────────────────────────────
     const lowStockCount = await prisma.product.count({
-      where: {
-        stock: { lte: 10 },
-        status: "ACTIVE",
-      },
+      where: { stock: { lte: 10 }, status: "ACTIVE", trackInventory: true },
     });
+    const outOfStock = await prisma.product.count({
+      where: { stock: { lte: 0 }, status: "ACTIVE", trackInventory: true },
+    });
+    const totalActiveProducts = await prisma.product.count({ where: { status: "ACTIVE" } });
 
-    const totalActiveProducts = await prisma.product.count({
+    // Never ordered products
+    const orderedProductIds = await prisma.orderItem.findMany({
+      select: { productId: true },
+      distinct: ["productId"],
+    });
+    const orderedSet = new Set(orderedProductIds.map((p) => p.productId));
+    const allActiveProducts = await prisma.product.findMany({
       where: { status: "ACTIVE" },
+      select: { id: true },
     });
+    const neverOrdered = allActiveProducts.filter((p) => !orderedSet.has(p.id)).length;
 
-    // Payment methods
-    const payments = await prisma.payment.groupBy({
-      by: ["method"],
+    // Dropship margin analysis
+    const dropshipProducts = await prisma.product.findMany({
       where: {
-        status: "SUCCESSFUL",
-        createdAt: { gte: startDate },
+        status: "ACTIVE",
+        OR: [{ cjProductId: { not: null } }, { aliexpressProductId: { not: null } }],
       },
-      _count: { id: true },
-      _sum: { amount: true },
+      select: { id: true, name: true, price: true, cjCost: true, aliexpressCost: true },
     });
+    const dropshipMargins = dropshipProducts
+      .filter((p) => {
+        const cost = Number(p.cjCost) || Number(p.aliexpressCost) || 0;
+        return cost > 0 && Number(p.price) > 0;
+      })
+      .map((p) => {
+        const price = Number(p.price);
+        const cost = Number(p.cjCost) || Number(p.aliexpressCost) || 0;
+        const margin = Math.round(((price - cost) / price) * 100);
+        return { name: p.name, price, cost, margin };
+      })
+      .sort((a, b) => a.margin - b.margin);
 
-    const paymentMethods = payments.map((p) => ({
-      name: p.method || "Other",
-      count: p._count.id,
-      amount: Number(p._sum.amount) || 0,
-    }));
+    const avgDropshipMargin = dropshipMargins.length > 0
+      ? Math.round(dropshipMargins.reduce((s, m) => s + m.margin, 0) / dropshipMargins.length)
+      : null;
 
-    // Hourly orders distribution
+    // ── Hourly distribution (active orders) ───────────────────
     const hourlyOrders = await prisma.order.findMany({
-      where: {
-        createdAt: { gte: startDate },
-        paymentStatus: "SUCCESSFUL",
-      },
+      where: { createdAt: { gte: startDate }, ...activeFilter },
       select: { createdAt: true },
     });
-
     const hourlyMap = new Map<number, number>();
     for (let i = 0; i < 24; i++) hourlyMap.set(i, 0);
     hourlyOrders.forEach((o) => {
-      const hour = o.createdAt.getHours();
-      hourlyMap.set(hour, (hourlyMap.get(hour) || 0) + 1);
+      const h = o.createdAt.getHours();
+      hourlyMap.set(h, (hourlyMap.get(h) || 0) + 1);
     });
-
     const hourlyData = Array.from(hourlyMap.entries())
       .sort(([a], [b]) => a - b)
-      .map(([hour, count]) => ({
-        hour: `${hour.toString().padStart(2, "0")}:00`,
-        count,
+      .map(([hour, count]) => ({ hour: `${hour.toString().padStart(2, "0")}:00`, count }));
+
+    // ── Growth calculations ───────────────────────────────────
+    const revenueGrowth = previousRevenue > 0
+      ? Math.round(((currentRevenue - previousRevenue) / previousRevenue) * 1000) / 10
+      : currentRevenue > 0 ? 100 : 0;
+    const ordersGrowth = previousOrderCount > 0
+      ? Math.round(((currentOrders - previousOrderCount) / previousOrderCount) * 1000) / 10
+      : currentOrders > 0 ? 100 : 0;
+    const visitorGrowth = previousVisitors > 0
+      ? Math.round(((totalVisitors - previousVisitors) / previousVisitors) * 1000) / 10
+      : totalVisitors > 0 ? 100 : 0;
+
+    // ── Traffic sources from referrer ─────────────────────────
+    const referrerViews = await prisma.pageView.findMany({
+      where: { createdAt: { gte: startDate } },
+      select: { referrer: true },
+    });
+    const sourceCounts = new Map<string, number>();
+    referrerViews.forEach((pv) => {
+      let source = "Direct";
+      if (pv.referrer) {
+        try {
+          const url = new URL(pv.referrer);
+          source = url.hostname.replace("www.", "");
+        } catch { source = pv.referrer; }
+      }
+      sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
+    });
+    const trafficSources = Array.from(sourceCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([source, visits]) => ({
+        source,
+        visits,
+        pct: totalPageViews > 0 ? Math.round((visits / totalPageViews) * 100) : 0,
       }));
 
-    // Calculate growth percentages
-    const revenueGrowth = previousRevenue > 0 
-      ? ((currentRevenue - previousRevenue) / previousRevenue) * 100 
-      : 0;
-    const ordersGrowth = previousOrderCount > 0 
-      ? ((currentOrders - previousOrderCount) / previousOrderCount) * 100 
-      : 0;
-
-    // Total visitors (simulated based on orders with conversion rate)
-    const totalVisitors = dailyData.reduce((sum, d) => sum + d.visitors, 0);
-    const conversionRate = totalVisitors > 0 ? (currentOrders / totalVisitors) * 100 : 0;
+    // ── Inventory value ───────────────────────────────────────
+    const inventoryProducts = await prisma.product.findMany({
+      where: { status: "ACTIVE", trackInventory: true },
+      select: { stock: true, cjCost: true, aliexpressCost: true, price: true },
+    });
+    const inventoryValue = inventoryProducts.reduce((sum, p) => {
+      const unitCost = Number(p.cjCost) || Number(p.aliexpressCost) || 0;
+      const unitValue = unitCost > 0 ? unitCost : Number(p.price);
+      return sum + unitValue * (p.stock || 0);
+    }, 0);
 
     return res.json({
       revenue: {
         total: currentRevenue,
+        collected: currentCollected,
         growth: revenueGrowth,
-        daily: dailyData.map((d) => ({ date: d.date, amount: d.revenue })),
+        daily: dailyData.map((d) => ({ date: d.date, amount: d.revenue, collected: d.collected })),
         avgOrderValue: currentOrders > 0 ? Math.round(currentRevenue / currentOrders) : 0,
       },
       orders: {
         total: currentOrders,
+        allTime: await prisma.order.count(),
         growth: ordersGrowth,
         daily: dailyData.map((d) => ({ date: d.date, count: d.orders })),
         byStatus,
-        avgPerDay: Math.round(currentOrders / days),
+        funnel,
+        avgPerDay: days > 0 ? Math.round((currentOrders / days) * 10) / 10 : 0,
       },
       customers: {
-        total: totalCustomers,
-        newThisMonth: newCustomers,
-        returning: returningCustomers.length,
-        conversionRate,
+        registered: registeredCustomers,
+        newRegistered,
+        orderCustomers: totalOrderCustomers,
+        returning: returningCount,
+        conversionRate: Math.round(conversionRate * 10) / 10,
       },
       products: {
         topSelling: topSellingProducts,
         lowStock: lowStockCount,
+        outOfStock,
         totalActive: totalActiveProducts,
+        neverOrdered,
+        dropshipMargins,
+        avgDropshipMargin,
+        inventoryValue,
       },
       traffic: {
-        daily: dailyData.map((d) => ({
-          date: d.date,
-          visitors: d.visitors,
-          orders: d.orders,
-          revenue: d.revenue,
-        })),
+        daily: dailyData.map((d) => ({ date: d.date, visitors: d.visitors, orders: d.orders, revenue: d.revenue })),
         totalVisitors,
+        visitorGrowth,
+        pagesPerSession,
+        topPages,
+        sources: trafficSources,
         bounceRate: 0,
       },
       paymentMethods,

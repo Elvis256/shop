@@ -10,7 +10,7 @@ import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
 import { useToast } from "@/lib/hooks/useToast";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
-import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck } from "lucide-react";
+import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck, Banknote } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -43,13 +43,14 @@ export default function CheckoutPage() {
   const { config: shippingConfig, calculateShipping } = useShippingConfig();
   
   const [step, setStep] = useState<Step>(1);
-  const [paymentMethod, setPaymentMethod] = useState<"card" | "mobile_money" | "paypal">("mobile_money");
+  const [paymentMethod, setPaymentMethod] = useState<"card" | "mobile_money" | "paypal" | "cod">("mobile_money");
   const [mobileNetwork, setMobileNetwork] = useState<"MPESA" | "AIRTEL" | "MTN">("MTN");
   const [mobilePhone, setMobilePhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paymentPending, setPaymentPending] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [paymentSettings, setPaymentSettings] = useState<Record<string, string>>({});
   
   const [shipping, setShipping] = useState<ShippingData>({
     firstName: "",
@@ -108,6 +109,31 @@ export default function CheckoutPage() {
       }));
     }
   }, [user]);
+
+  // Fetch payment settings from public API
+  useEffect(() => {
+    fetch(`${API_URL}/api/settings/public`)
+      .then((r) => r.json())
+      .then((data) => {
+        const s = data?.settings || data || {};
+        setPaymentSettings(s);
+        // Auto-select first enabled payment method
+        const methods: Array<{ key: string; id: "mobile_money" | "card" | "paypal" | "cod" }> = [
+          { key: "payment_mobile_money_enabled", id: "mobile_money" },
+          { key: "payment_card_enabled", id: "card" },
+          { key: "payment_paypal_enabled", id: "paypal" },
+          { key: "payment_cod_enabled", id: "cod" },
+        ];
+        const first = methods.find((m) => s[m.key] === "true");
+        if (first) setPaymentMethod(first.id);
+      })
+      .catch(() => {});
+  }, []);
+
+  // If a payment key hasn't been configured at all, treat it as enabled (backwards-compatible default)
+  const hasAnyPaymentConfig = Object.keys(paymentSettings).some((k) => k.startsWith("payment_") && k.endsWith("_enabled"));
+  const isPaymentEnabled = (key: string) =>
+    hasAnyPaymentConfig ? paymentSettings[key] === "true" : key !== "payment_cod_enabled";
 
   const steps = [
     { num: 1, label: "Shipping" },
@@ -213,6 +239,11 @@ export default function CheckoutPage() {
       if (data.paymentLink) {
         // Redirect to PayPal or Flutterwave
         window.location.href = data.paymentLink;
+      } else if (data.paymentMethod === "cod" || paymentMethod === "cod") {
+        // Cash on Delivery - order placed, redirect to confirmation
+        clearCart();
+        showToast("Order placed! Pay on delivery.", "success");
+        router.push(`/orders/${data.orderId}?success=true`);
       } else if (paymentMethod === "mobile_money") {
         // Mobile money - show pending screen
         setPaymentPending(true);
@@ -473,6 +504,7 @@ export default function CheckoutPage() {
 
               {/* Payment Options */}
               <div className="space-y-4">
+                {isPaymentEnabled("payment_mobile_money_enabled") && (
                 <label
                   className={`flex items-center gap-4 p-4 border rounded-8 cursor-pointer ${
                     paymentMethod === "mobile_money" ? "border-accent bg-accent/5" : "border-border"
@@ -490,7 +522,9 @@ export default function CheckoutPage() {
                     <p className="text-small text-text-muted">MTN MoMo, Airtel Money (Uganda)</p>
                   </div>
                 </label>
+                )}
 
+                {isPaymentEnabled("payment_card_enabled") && (
                 <label
                   className={`flex items-center gap-4 p-4 border rounded-8 cursor-pointer ${
                     paymentMethod === "card" ? "border-accent bg-accent/5" : "border-border"
@@ -508,7 +542,9 @@ export default function CheckoutPage() {
                     <p className="text-small text-text-muted">Visa, Mastercard - Secure checkout via Flutterwave</p>
                   </div>
                 </label>
+                )}
 
+                {isPaymentEnabled("payment_paypal_enabled") && (
                 <label
                   className={`flex items-center gap-4 p-4 border rounded-8 cursor-pointer ${
                     paymentMethod === "paypal" ? "border-accent bg-accent/5" : "border-border"
@@ -529,6 +565,27 @@ export default function CheckoutPage() {
                     <p className="text-small text-text-muted">Pay securely with your PayPal account (charged in USD)</p>
                   </div>
                 </label>
+                )}
+
+                {isPaymentEnabled("payment_cod_enabled") && (
+                <label
+                  className={`flex items-center gap-4 p-4 border rounded-8 cursor-pointer ${
+                    paymentMethod === "cod" ? "border-accent bg-accent/5" : "border-border"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="payment"
+                    checked={paymentMethod === "cod"}
+                    onChange={() => setPaymentMethod("cod")}
+                  />
+                  <Banknote className="w-6 h-6" />
+                  <div>
+                    <span className="font-medium">Cash on Delivery</span>
+                    <p className="text-small text-text-muted">Pay when you receive your order</p>
+                  </div>
+                </label>
+                )}
               </div>
 
               {/* Mobile Money Form */}
@@ -585,6 +642,23 @@ export default function CheckoutPage() {
                     </p>
                   </div>
                 </div>
+              )}
+
+              {/* COD Info */}
+              {paymentMethod === "cod" && (
+                <div className="p-4 bg-amber-50 rounded-8 flex items-start gap-3">
+                  <Banknote className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-900">Cash on Delivery</p>
+                    <p className="text-xs text-amber-700 mt-1">
+                      Pay with cash when your order is delivered. Please have the exact amount ready.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {paymentSettings.payment_instructions && (
+                <p className="text-xs text-text-muted italic">{paymentSettings.payment_instructions}</p>
               )}
 
               <div className="flex gap-4">
@@ -646,6 +720,8 @@ export default function CheckoutPage() {
                       ? `${mobileNetwork} Mobile Money`
                       : paymentMethod === "paypal"
                       ? "PayPal"
+                      : paymentMethod === "cod"
+                      ? "Cash on Delivery"
                       : "Credit/Debit Card"}
                   </p>
                   <p className="text-small text-text-muted mt-1">
@@ -653,6 +729,8 @@ export default function CheckoutPage() {
                       ? mobilePhone
                       : paymentMethod === "paypal"
                       ? "Secure checkout via PayPal (charged in USD)"
+                      : paymentMethod === "cod"
+                      ? "Pay cash when you receive your order"
                       : "Via Flutterwave secure checkout"}
                   </p>
                 </div>

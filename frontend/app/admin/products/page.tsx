@@ -86,14 +86,10 @@ export default function AdminProductsPage() {
       setProducts(data.products || []);
       setPagination(data.pagination || { total: 0, page: 1, totalPages: 1, limit: 20 });
       
-      // Calculate stats
-      const allProducts = data.products || [];
-      setStats({
-        total: data.pagination?.total || allProducts.length,
-        active: allProducts.filter((p: Product) => p.status === "ACTIVE").length,
-        lowStock: allProducts.filter((p: Product) => p.stock > 0 && p.stock <= 10).length,
-        outOfStock: allProducts.filter((p: Product) => p.stock === 0).length,
-      });
+      // Use server-side stats
+      if (data.stats) {
+        setStats(data.stats);
+      }
     } catch (error) {
       console.error("Failed to load products:", error);
     } finally {
@@ -250,20 +246,20 @@ export default function AdminProductsPage() {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Products</h1>
-          <p className="text-gray-500 mt-1">Manage your product catalog</p>
+          <h1 className="text-2xl font-semibold text-gray-900">Products</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Manage your product catalog</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => loadProducts()}
-            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200"
             title="Refresh"
           >
-            <RefreshCw className="w-5 h-5" />
+            <RefreshCw className="w-4 h-4" />
           </button>
           <button
             onClick={exportProducts}
-            className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <Download className="w-4 h-4" />
             Export
@@ -272,16 +268,16 @@ export default function AdminProductsPage() {
           <button
             onClick={() => csvInputRef.current?.click()}
             disabled={csvImporting}
-            className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60"
           >
             <Upload className="w-4 h-4" />
             {csvImporting ? "Importing..." : "Import CSV"}
           </button>
           <Link 
             href="/admin/products/new" 
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4" />
             Add Product
           </Link>
         </div>
@@ -308,49 +304,33 @@ export default function AdminProductsPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Package className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-              <p className="text-sm text-gray-500">Total Products</p>
-            </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Products</p>
+            <Package className="w-4 h-4 text-gray-400" />
           </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.total}</p>
         </div>
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-100 rounded-lg">
-              <Check className="w-5 h-5 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.active}</p>
-              <p className="text-sm text-gray-500">Active</p>
-            </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Active</p>
+            <Check className="w-4 h-4 text-gray-400" />
           </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.active}</p>
         </div>
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-lg">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.lowStock}</p>
-              <p className="text-sm text-gray-500">Low Stock</p>
-            </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Low Stock</p>
+            <AlertTriangle className="w-4 h-4 text-gray-400" />
           </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.lowStock}</p>
         </div>
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <X className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.outOfStock}</p>
-              <p className="text-sm text-gray-500">Out of Stock</p>
-            </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Out of Stock</p>
+            <X className="w-4 h-4 text-gray-400" />
           </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.outOfStock}</p>
         </div>
       </div>
 

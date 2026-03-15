@@ -229,10 +229,15 @@ export default function SettingsPage() {
     try {
       const data = await api.admin.getSettings();
       const settingsMap: Record<string, string> = {};
-      if (Array.isArray(data)) {
-        data.forEach((s: Setting) => { settingsMap[s.key] = s.value; });
-      } else if (typeof data === "object") {
-        Object.assign(settingsMap, data);
+      const raw = data?.settings ?? data;
+      if (Array.isArray(raw)) {
+        raw.forEach((s: Setting) => { settingsMap[s.key] = s.value; });
+      } else if (typeof raw === "object" && raw !== null) {
+        for (const [key, value] of Object.entries(raw)) {
+          if (typeof value === "string") {
+            settingsMap[key] = value;
+          }
+        }
       }
       setSettings(settingsMap);
       setOriginalSettings(settingsMap);

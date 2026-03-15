@@ -21,6 +21,8 @@ import {
   AlertTriangle,
   Copy,
   Check,
+  Banknote,
+  MessageSquare,
 } from "lucide-react";
 
 interface OrderDetail {
@@ -93,6 +95,9 @@ export default function OrderDetailPage() {
   const [refundAmount, setRefundAmount] = useState(0);
   const [refundReason, setRefundReason] = useState("");
   const [copied, setCopied] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [addingNote, setAddingNote] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   const loadOrder = async () => {
     setLoading(true);
@@ -153,18 +158,55 @@ export default function OrderDetailPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const formatCurrency = (amount: number) => {
-    return `${order?.currency || "UGX"} ${Number(amount).toLocaleString()}`;
+  const handleMarkPaid = async () => {
+    if (!order) return;
+    setMarkingPaid(true);
+    try {
+      await api.admin.markOrderPaid(order.id);
+      loadOrder();
+    } catch (error) {
+      console.error("Failed to mark as paid:", error);
+      alert("Failed to mark payment as received");
+    } finally {
+      setMarkingPaid(false);
+    }
   };
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const handleAddNote = async () => {
+    if (!order || !noteText.trim()) return;
+    setAddingNote(true);
+    try {
+      await api.admin.addOrderNote(order.id, noteText.trim());
+      setNoteText("");
+      loadOrder();
+    } catch (error) {
+      console.error("Failed to add note:", error);
+      alert("Failed to add note");
+    } finally {
+      setAddingNote(false);
+    }
+  };
+
+  const formatCurrency = (amount: number | string | null | undefined) => {
+    const num = Number(amount) || 0;
+    return `${order?.currency || "UGX"} ${num.toLocaleString()}`;
+  };
+
+  const formatDate = (date: string | null | undefined) => {
+    if (!date) return "N/A";
+    try {
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return "N/A";
+      return d.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "N/A";
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -257,6 +299,16 @@ export default function OrderDetailPage() {
               Refund
             </button>
           )}
+          {order.paymentStatus !== "SUCCESSFUL" && !["CANCELLED", "REFUNDED"].includes(order.status) && (
+            <button
+              onClick={handleMarkPaid}
+              disabled={markingPaid}
+              className="flex items-center gap-2 px-4 py-2 text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50"
+            >
+              <Banknote className="w-4 h-4" />
+              {markingPaid ? "Marking..." : "Mark as Paid"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -346,41 +398,68 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Timeline */}
+          {/* Timeline & Notes */}
           <div className="bg-white rounded-xl border shadow-sm">
-            <div className="px-6 py-4 border-b">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
               <h2 className="font-semibold text-gray-900">Order Timeline</h2>
             </div>
             <div className="p-6">
+              {/* Add Note Form */}
+              <div className="flex gap-2 mb-5">
+                <input
+                  type="text"
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Add an internal note..."
+                  className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  onKeyDown={(e) => e.key === "Enter" && handleAddNote()}
+                />
+                <button
+                  onClick={handleAddNote}
+                  disabled={addingNote || !noteText.trim()}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  {addingNote ? "..." : "Add Note"}
+                </button>
+              </div>
+
               {order.timeline.length === 0 ? (
                 <p className="text-gray-500 text-center py-4">No timeline events</p>
               ) : (
                 <div className="space-y-4">
-                  {order.timeline.map((event, index) => (
-                    <div key={event.id} className="flex gap-4">
-                      <div className="relative">
-                        <div className={`w-3 h-3 rounded-full mt-1.5 ${
-                          index === 0 ? "bg-primary" : "bg-gray-300"
-                        }`} />
-                        {index < order.timeline.length - 1 && (
-                          <div className="absolute top-4 left-1.5 w-0.5 h-full -translate-x-1/2 bg-gray-200" />
-                        )}
-                      </div>
-                      <div className="flex-1 pb-4">
-                        <div className="flex items-center justify-between">
-                          <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(event.status)}`}>
-                            {event.status}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {formatDate(event.createdAt)}
-                          </span>
+                  {order.timeline.map((event, index) => {
+                    const isNote = event.status === "NOTE";
+                    return (
+                      <div key={event.id} className="flex gap-4">
+                        <div className="relative">
+                          <div className={`w-3 h-3 rounded-full mt-1.5 ${
+                            isNote ? "bg-amber-400" : index === 0 ? "bg-primary" : "bg-gray-300"
+                          }`} />
+                          {index < order.timeline.length - 1 && (
+                            <div className="absolute top-4 left-1.5 w-0.5 h-full -translate-x-1/2 bg-gray-200" />
+                          )}
                         </div>
-                        {event.note && (
-                          <p className="text-sm text-gray-600 mt-1">{event.note}</p>
-                        )}
+                        <div className="flex-1 pb-4">
+                          <div className="flex items-center justify-between">
+                            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                              isNote ? "bg-amber-50 text-amber-700 border border-amber-200" : getStatusColor(event.status)
+                            }`}>
+                              {isNote ? "📝 Note" : event.status}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {formatDate(event.createdAt)}
+                            </span>
+                          </div>
+                          {event.note && (
+                            <p className={`text-sm mt-1 ${isNote ? "text-gray-800 bg-amber-50/50 rounded px-2 py-1 border border-amber-100" : "text-gray-600"}`}>
+                              {event.note}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -405,12 +484,14 @@ export default function OrderDetailPage() {
               {order.customer.phone && (
                 <p className="text-sm text-gray-500">{order.customer.phone}</p>
               )}
-              <Link
-                href={`/admin/customers/${order.customer.id}`}
-                className="text-sm text-primary hover:underline"
-              >
-                View Customer Profile →
-              </Link>
+              {order.customer.id && (
+                <Link
+                  href={`/admin/customers/${order.customer.id}`}
+                  className="text-sm text-primary hover:underline"
+                >
+                  View Customer Profile →
+                </Link>
+              )}
             </div>
           </div>
 

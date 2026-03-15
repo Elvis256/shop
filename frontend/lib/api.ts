@@ -307,6 +307,10 @@ export const api = {
       }),
     refundOrder: (id: string, amount?: number, reason?: string): Promise<SuccessMessage> =>
       apiFetch(`/api/admin/orders/${id}/refund`, { method: "POST", body: JSON.stringify({ amount, reason }) }),
+    markOrderPaid: (id: string): Promise<SuccessMessage> =>
+      apiFetch(`/api/admin/orders/${id}/mark-paid`, { method: "POST" }),
+    addOrderNote: (id: string, note: string): Promise<SuccessMessage> =>
+      apiFetch(`/api/admin/orders/${id}/note`, { method: "POST", body: JSON.stringify({ note }) }),
 
     // Customers
     getCustomers: (params?: Record<string, string>): Promise<CustomersResponse> => {

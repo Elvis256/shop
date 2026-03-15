@@ -1,19 +1,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Section from "@/components/Section";
-import { Package, Truck, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
+import {
+  Package, Truck, CheckCircle, Clock, AlertCircle, CreditCard,
+  Smartphone, Banknote, MapPin, ShieldCheck, Eye, Copy, Check,
+} from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 interface OrderItem {
   id: string;
+  productId: string;
   productName: string;
+  productSlug?: string;
   quantity: number;
   price: number;
-  imageUrl?: string;
+  imageUrl?: string | null;
 }
 
 interface OrderEvent {
@@ -31,12 +37,17 @@ interface Order {
   totalAmount: number;
   subtotal: number;
   shippingCost: number;
+  discount?: number;
   currency: string;
+  discreet?: boolean;
+  trackingNumber?: string | null;
+  customerName?: string;
   shippingAddress: any;
   items: OrderItem[];
-  events: OrderEvent[];
+  payments?: Array<{ method: string; status: string }>;
+  events?: OrderEvent[];
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
 }
 
 const statusSteps = [
@@ -48,22 +59,35 @@ const statusSteps = [
 ];
 
 const statusColors: Record<string, string> = {
-  PENDING: "bg-yellow-100 text-yellow-800",
-  CONFIRMED: "bg-blue-100 text-blue-800",
-  PROCESSING: "bg-purple-100 text-purple-800",
-  SHIPPED: "bg-indigo-100 text-indigo-800",
-  DELIVERED: "bg-green-100 text-green-800",
-  CANCELLED: "bg-red-100 text-red-800",
-  REFUNDED: "bg-gray-100 text-gray-800",
+  PENDING: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  CONFIRMED: "bg-blue-100 text-blue-800 border-blue-200",
+  PROCESSING: "bg-purple-100 text-purple-800 border-purple-200",
+  SHIPPED: "bg-indigo-100 text-indigo-800 border-indigo-200",
+  DELIVERED: "bg-green-100 text-green-800 border-green-200",
+  CANCELLED: "bg-red-100 text-red-800 border-red-200",
+  REFUNDED: "bg-gray-100 text-gray-800 border-gray-200",
+};
+
+const paymentMethodLabels: Record<string, { label: string; icon: typeof CreditCard }> = {
+  MOBILE_MONEY: { label: "Mobile Money", icon: Smartphone },
+  CARD: { label: "Credit/Debit Card", icon: CreditCard },
+  PAYPAL: { label: "PayPal", icon: CreditCard },
+  COD: { label: "Cash on Delivery", icon: Banknote },
 };
 
 export default function OrderDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const orderId = params.id as string;
+  const isSuccess = searchParams.get("success") === "true";
+  const { formatPrice } = useCurrency();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
 
   useEffect(() => {
     loadOrder();
@@ -73,30 +97,77 @@ export default function OrderDetailPage() {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
+        credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       if (!res.ok) {
-        if (res.status === 404) {
-          setError("Order not found");
-        } else {
-          setError("Failed to load order");
-        }
+        setError(res.status === 404 ? "Order not found" : "Failed to load order");
         return;
       }
 
       const data = await res.json();
       setOrder(data);
-    } catch (err) {
+    } catch {
       setError("Failed to load order");
     } finally {
       setLoading(false);
     }
   };
 
+  const copyOrderNumber = () => {
+    if (!order) return;
+    navigator.clipboard.writeText(order.orderNumber);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCancelOrder = async () => {
+    if (!order) return;
+    setCancelling(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/api/orders/${order.id}/cancel`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to cancel order");
+        return;
+      }
+      setCancelConfirm(false);
+      loadOrder();
+    } catch {
+      alert("Failed to cancel order");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const canCancel = order && ["PENDING", "CONFIRMED"].includes(order.status);
+
   const getCurrentStep = () => {
     if (!order) return -1;
     return statusSteps.findIndex((s) => s.status === order.status);
+  };
+
+  const getPaymentMethod = () => {
+    if (!order?.payments?.length) return null;
+    return order.payments[0].method;
+  };
+
+  const parseAddress = () => {
+    if (!order?.shippingAddress) return null;
+    let addr = order.shippingAddress;
+    if (typeof addr === "string") {
+      try { addr = JSON.parse(addr); } catch { return null; }
+    }
+    return addr;
   };
 
   if (loading) {
@@ -117,75 +188,90 @@ export default function OrderDetailPage() {
     return (
       <Section>
         <div className="max-w-3xl mx-auto text-center py-12">
-          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h2 className="text-2xl font-semibold mb-2">{error || "Order not found"}</h2>
-          <p className="text-gray-600 mb-6">
-            The order you're looking for doesn't exist or you don't have permission to view it.
+          <p className="text-gray-500 mb-6">
+            The order you&apos;re looking for doesn&apos;t exist or you don&apos;t have permission to view it.
           </p>
-          <Link href="/account/orders" className="btn-primary">
-            View My Orders
-          </Link>
+          <Link href="/" className="btn-primary">Continue Shopping</Link>
         </div>
       </Section>
     );
   }
 
   const currentStep = getCurrentStep();
+  const isCancelledOrRefunded = order.status === "CANCELLED" || order.status === "REFUNDED";
+  const paymentMethod = getPaymentMethod();
+  const pmInfo = paymentMethod ? paymentMethodLabels[paymentMethod] : null;
+  const address = parseAddress();
+  const subtotal = Number(order.subtotal) || 0;
+  const shippingCost = Number(order.shippingCost) || 0;
+  const discount = Number(order.discount) || 0;
 
   return (
     <Section>
       <div className="max-w-3xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
+        {/* Success Banner */}
+        {isSuccess && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
+            <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
             <div>
-              <h1 className="text-2xl font-bold">Order #{order.orderNumber}</h1>
-              <p className="text-gray-600">
-                Placed on {new Date(order.createdAt).toLocaleDateString()}
+              <p className="font-semibold text-green-800">Order placed successfully!</p>
+              <p className="text-sm text-green-700">
+                {paymentMethod === "COD"
+                  ? "Please have cash ready when your order is delivered."
+                  : "We'll send you a confirmation email shortly."}
               </p>
             </div>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[order.status]}`}>
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex items-start justify-between flex-wrap gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold">Order #{order.orderNumber}</h1>
+                <button onClick={copyOrderNumber} className="p-1.5 text-gray-400 hover:text-gray-600 rounded">
+                  {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-gray-500 mt-1">
+                Placed on {(() => { try { const d = new Date(order.createdAt); return isNaN(d.getTime()) ? "N/A" : d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }); } catch { return "N/A"; } })()}
+              </p>
+            </div>
+            <span className={`px-3 py-1.5 rounded-full text-sm font-medium border ${statusColors[order.status] || "bg-gray-100 text-gray-700"}`}>
               {order.status}
             </span>
           </div>
         </div>
 
         {/* Progress Tracker */}
-        {order.status !== "CANCELLED" && order.status !== "REFUNDED" && (
-          <div className="card mb-8">
+        {!isCancelledOrRefunded && (
+          <div className="card mb-6">
             <h3 className="font-semibold mb-6">Order Progress</h3>
             <div className="relative">
-              {/* Progress Line */}
               <div className="absolute top-5 left-0 right-0 h-0.5 bg-gray-200">
                 <div
-                  className="h-full bg-accent transition-all"
-                  style={{ width: `${(currentStep / (statusSteps.length - 1)) * 100}%` }}
+                  className="h-full bg-accent transition-all duration-500"
+                  style={{ width: `${Math.max(0, (currentStep / (statusSteps.length - 1)) * 100)}%` }}
                 />
               </div>
-
-              {/* Steps */}
               <div className="relative flex justify-between">
                 {statusSteps.map((step, index) => {
                   const Icon = step.icon;
                   const isComplete = index <= currentStep;
                   const isCurrent = index === currentStep;
-
                   return (
                     <div key={step.status} className="flex flex-col items-center">
                       <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center z-10 ${
-                          isComplete
-                            ? "bg-accent text-white"
-                            : "bg-gray-200 text-gray-500"
-                        } ${isCurrent ? "ring-4 ring-accent/20" : ""}`}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center z-10 transition-all ${
+                          isComplete ? "bg-accent text-white" : "bg-gray-200 text-gray-400"
+                        } ${isCurrent ? "ring-4 ring-accent/20 scale-110" : ""}`}
                       >
                         <Icon className="w-5 h-5" />
                       </div>
-                      <span
-                        className={`mt-2 text-sm ${
-                          isComplete ? "font-medium text-accent" : "text-gray-500"
-                        }`}
-                      >
+                      <span className={`mt-2 text-xs sm:text-sm text-center ${isComplete ? "font-medium text-accent" : "text-gray-400"}`}>
                         {step.label}
                       </span>
                     </div>
@@ -196,78 +282,134 @@ export default function OrderDetailPage() {
           </div>
         )}
 
+        {/* Cancelled/Refunded Banner */}
+        {isCancelledOrRefunded && (
+          <div className={`mb-6 p-4 rounded-xl border flex items-center gap-3 ${
+            order.status === "CANCELLED" ? "bg-red-50 border-red-200" : "bg-gray-50 border-gray-200"
+          }`}>
+            <AlertCircle className={`w-6 h-6 flex-shrink-0 ${order.status === "CANCELLED" ? "text-red-500" : "text-gray-500"}`} />
+            <div>
+              <p className={`font-semibold ${order.status === "CANCELLED" ? "text-red-800" : "text-gray-800"}`}>
+                Order {order.status.toLowerCase()}
+              </p>
+              <p className={`text-sm ${order.status === "CANCELLED" ? "text-red-600" : "text-gray-600"}`}>
+                {order.status === "CANCELLED"
+                  ? "This order has been cancelled."
+                  : "This order has been refunded."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Tracking Number */}
+        {order.trackingNumber && (
+          <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center gap-3">
+            <Truck className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+            <div>
+              <p className="text-sm text-indigo-700">Tracking Number</p>
+              <p className="font-semibold text-indigo-900">{order.trackingNumber}</p>
+            </div>
+          </div>
+        )}
+
         {/* Order Items */}
-        <div className="card mb-8">
-          <h3 className="font-semibold mb-4">Order Items</h3>
-          <div className="divide-y">
+        <div className="card mb-6">
+          <h3 className="font-semibold mb-4 flex items-center gap-2">
+            <Package className="w-5 h-5 text-accent" />
+            Order Items ({order.items.length})
+          </h3>
+          <div className="divide-y divide-gray-100">
             {order.items.map((item) => (
               <div key={item.id} className="py-4 flex items-center gap-4">
-                <div className="w-16 h-16 bg-gray-100 rounded overflow-hidden">
+                <div className="w-16 h-16 bg-gray-50 rounded-lg overflow-hidden flex-shrink-0">
                   {item.imageUrl ? (
-                    <img
-                      src={item.imageUrl}
-                      alt={item.productName}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={item.imageUrl} alt={item.productName} className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
+                    <div className="w-full h-full flex items-center justify-center text-gray-300">
                       <Package className="w-6 h-6" />
                     </div>
                   )}
                 </div>
-                <div className="flex-1">
-                  <h4 className="font-medium">{item.productName}</h4>
-                  <p className="text-sm text-gray-600">Qty: {item.quantity}</p>
+                <div className="flex-1 min-w-0">
+                  <Link
+                    href={item.productSlug ? `/product/${item.productSlug}` : "#"}
+                    className="font-medium text-gray-900 hover:text-accent transition-colors line-clamp-1"
+                  >
+                    {item.productName}
+                  </Link>
+                  <p className="text-sm text-gray-500">Qty: {item.quantity} × {formatPrice(Number(item.price))}</p>
                 </div>
-                <div className="font-medium">
-                  {order.currency} {(Number(item.price) * item.quantity).toLocaleString()}
+                <div className="font-semibold text-right">
+                  {formatPrice(Number(item.price) * item.quantity)}
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Order Summary */}
-        <div className="grid md:grid-cols-2 gap-6">
+        {/* Info Grid */}
+        <div className="grid sm:grid-cols-2 gap-6 mb-6">
           {/* Shipping Address */}
-          {order.shippingAddress && (
-            <div className="card">
-              <h3 className="font-semibold mb-4">Shipping Address</h3>
-              <div className="text-gray-600 space-y-1">
-                <p className="font-medium text-gray-900">{order.shippingAddress.name}</p>
-                <p>{order.shippingAddress.address}</p>
+          <div className="card">
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-accent" />
+              Shipping Address
+            </h3>
+            {address ? (
+              <div className="text-gray-600 space-y-1 text-sm">
+                <p className="font-medium text-gray-900">{address.name || order.customerName}</p>
+                {address.phone && <p>{address.phone}</p>}
+                {(address.address || address.street) && <p>{address.address || address.street}</p>}
                 <p>
-                  {order.shippingAddress.city}, {order.shippingAddress.postalCode}
+                  {[address.city, address.county || address.postalCode, address.country].filter(Boolean).join(", ")}
                 </p>
-                <p>{order.shippingAddress.country}</p>
-                {order.shippingAddress.phone && <p>{order.shippingAddress.phone}</p>}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="text-sm text-gray-400">No address provided</p>
+            )}
+          </div>
 
           {/* Payment Summary */}
           <div className="card">
-            <h3 className="font-semibold mb-4">Payment Summary</h3>
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-accent" />
+              Payment Summary
+            </h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">Subtotal</span>
-                <span>{order.currency} {Number(order.subtotal).toLocaleString()}</span>
+                <span className="text-gray-500">Subtotal</span>
+                <span className="text-gray-900">{formatPrice(subtotal)}</span>
               </div>
+              {discount > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>Discount</span>
+                  <span>-{formatPrice(discount)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
-                <span className="text-gray-600">Shipping</span>
-                <span>
-                  {Number(order.shippingCost) > 0
-                    ? `${order.currency} ${Number(order.shippingCost).toLocaleString()}`
-                    : "Free"}
-                </span>
+                <span className="text-gray-500">Shipping</span>
+                <span className="text-gray-900">{shippingCost > 0 ? formatPrice(shippingCost) : "Free"}</span>
               </div>
-              <div className="border-t pt-2 mt-2 flex justify-between font-semibold">
+              <div className="border-t pt-2 mt-2 flex justify-between font-semibold text-base">
                 <span>Total</span>
-                <span>{order.currency} {Number(order.totalAmount).toLocaleString()}</span>
+                <span>{formatPrice(Number(order.totalAmount))}</span>
               </div>
-              <div className="flex justify-between text-gray-600">
-                <span>Payment Status</span>
-                <span className={order.paymentStatus === "SUCCESSFUL" ? "text-green-600" : ""}>
+              {pmInfo && (
+                <div className="flex justify-between items-center pt-2 border-t mt-2">
+                  <span className="text-gray-500">Method</span>
+                  <span className="flex items-center gap-1.5 text-gray-700">
+                    <pmInfo.icon className="w-4 h-4" />
+                    {pmInfo.label}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">Status</span>
+                <span className={`font-medium ${
+                  order.paymentStatus === "SUCCESSFUL" ? "text-green-600" :
+                  order.paymentStatus === "PENDING" ? "text-yellow-600" :
+                  order.paymentStatus === "FAILED" ? "text-red-600" : "text-gray-600"
+                }`}>
                   {order.paymentStatus}
                 </span>
               </div>
@@ -275,23 +417,37 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
+        {/* Discreet Packaging */}
+        {order.discreet && (
+          <div className="card mb-6 bg-green-50 border-green-200">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="w-5 h-5 text-green-600 flex-shrink-0" />
+              <div>
+                <span className="font-medium text-green-800">Discreet Packaging Confirmed</span>
+                <p className="text-sm text-green-700">Plain packaging • Neutral sender name • Anonymous billing</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Order Timeline */}
         {order.events && order.events.length > 0 && (
-          <div className="card mt-6">
-            <h3 className="font-semibold mb-4">Order Timeline</h3>
-            <div className="space-y-4">
+          <div className="card mb-6">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-accent" />
+              Order Timeline
+            </h3>
+            <div className="space-y-0">
               {order.events.map((event, index) => (
                 <div key={event.id} className="flex gap-4">
                   <div className="flex flex-col items-center">
-                    <div className="w-3 h-3 bg-accent rounded-full" />
-                    {index < order.events.length - 1 && (
-                      <div className="w-0.5 h-full bg-gray-200 mt-1" />
-                    )}
+                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${index === 0 ? "bg-accent" : "bg-gray-300"}`} />
+                    {index < order.events!.length - 1 && <div className="w-0.5 flex-1 bg-gray-200 my-1" />}
                   </div>
-                  <div className="pb-4">
-                    <p className="font-medium">{event.message}</p>
-                    <p className="text-sm text-gray-500">
-                      {new Date(event.createdAt).toLocaleString()}
+                  <div className="pb-4 min-w-0">
+                    <p className={`text-sm ${index === 0 ? "font-medium text-gray-900" : "text-gray-600"}`}>{event.message}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {(() => { try { const d = new Date(event.createdAt); return isNaN(d.getTime()) ? "" : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })()}
                     </p>
                   </div>
                 </div>
@@ -300,11 +456,33 @@ export default function OrderDetailPage() {
           </div>
         )}
 
+        {/* Cancel Order Confirmation */}
+        {cancelConfirm && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+            <p className="font-semibold text-red-800 mb-2">Cancel this order?</p>
+            <p className="text-sm text-red-700 mb-3">This action cannot be undone. Your items will be released and you will receive a confirmation email.</p>
+            <div className="flex gap-2">
+              <button onClick={handleCancelOrder} disabled={cancelling} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50">
+                {cancelling ? "Cancelling..." : "Yes, Cancel Order"}
+              </button>
+              <button onClick={() => setCancelConfirm(false)} className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+                Keep Order
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
-        <div className="mt-8 flex gap-4">
-          <Link href="/account/orders" className="btn-secondary">
-            ← Back to Orders
+        <div className="flex flex-wrap gap-3">
+          <Link href="/account/orders" className="btn-secondary">← My Orders</Link>
+          <Link href="/track-order" className="btn-secondary flex items-center gap-2">
+            <Eye className="w-4 h-4" />Track Order
           </Link>
+          {canCancel && !cancelConfirm && (
+            <button onClick={() => setCancelConfirm(true)} className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm hover:bg-red-100">
+              Cancel Order
+            </button>
+          )}
           {order.status === "DELIVERED" && (
             <button className="btn-primary">Leave a Review</button>
           )}

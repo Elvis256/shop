@@ -4,6 +4,7 @@ import { createFlutterwavePayment } from "../services/flutterwave";
 import { createPayPalCheckout, getPayPalCheckoutDetails, executePayPalPayment } from "../services/paypal";
 import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
 import { placeCJOrdersForOrder } from "../services/cjOrder";
+import { sendOrderReceivedEmail } from "../lib/email";
 import prisma from "../lib/prisma";
 const router = Router();
 
@@ -21,7 +22,7 @@ const CheckoutSchema = z.object({
   currency: z.string().default("UGX"),
   amount: z.number().positive(),
   shipping: z.number().default(0),
-  paymentMethod: z.enum(["card", "mobile_money", "paypal"]),
+  paymentMethod: z.enum(["card", "mobile_money", "paypal", "cod"]),
   mobileMoney: z
     .object({
       network: z.enum(["MPESA", "AIRTEL", "MTN"]),
@@ -179,7 +180,23 @@ router.post("/create", async (req: Request, res: Response) => {
     let paymentRef: string | undefined;
     let paymentStatus = "PENDING";
 
-    if (body.paymentMethod === "paypal") {
+    if (body.paymentMethod === "cod") {
+      // Cash on Delivery — auto-confirm, payment collected on delivery
+      paymentStatus = "PENDING";
+      await prisma.$transaction(async (tx) => {
+        await tx.order.update({
+          where: { id: result.id },
+          data: { status: "CONFIRMED" },
+        });
+        await tx.orderEvent.create({
+          data: {
+            orderId: result.id,
+            status: "CONFIRMED",
+            note: "Order confirmed — Cash on Delivery. Payment will be collected at delivery.",
+          },
+        });
+      });
+    } else if (body.paymentMethod === "paypal") {
       // PayPal Express Checkout
       const ppResult = await createPayPalCheckout({
         orderId: result.id,
@@ -205,8 +222,15 @@ router.post("/create", async (req: Request, res: Response) => {
         paymentRef = paymentResponse.data?.flw_ref;
         paymentStatus = paymentResponse.status || "PENDING";
       } catch (flwErr: any) {
-        // Clean up the order if payment initiation fails
-        await prisma.order.update({ where: { id: result.id }, data: { status: "CANCELLED" } });
+        // Clean up the order and release stock if payment initiation fails
+        const reservations = await prisma.stockReservation.findMany({
+          where: { orderId: result.id, released: false },
+        });
+        await prisma.$transaction([
+          prisma.order.update({ where: { id: result.id }, data: { status: "CANCELLED", paymentStatus: "FAILED" } }),
+          ...reservations.map((r) => prisma.product.update({ where: { id: r.productId }, data: { reservedStock: { decrement: r.quantity } } })),
+          ...reservations.map((r) => prisma.stockReservation.update({ where: { id: r.id }, data: { released: true } })),
+        ]);
         const msg = flwErr.message?.includes("authorization key")
           ? "Payment gateway not configured. Please contact support or try PayPal."
           : "Payment initiation failed. Please try again or use a different method.";
@@ -215,16 +239,17 @@ router.post("/create", async (req: Request, res: Response) => {
     }
 
     // Save payment record
-    const methodMap: Record<string, "CARD" | "MOBILE_MONEY" | "PAYPAL"> = {
+    const methodMap: Record<string, "CARD" | "MOBILE_MONEY" | "PAYPAL" | "COD"> = {
       card: "CARD",
       mobile_money: "MOBILE_MONEY",
       paypal: "PAYPAL",
+      cod: "COD",
     };
 
     const payment = await prisma.payment.create({
       data: {
         orderId: result.id,
-        provider: body.paymentMethod === "paypal" ? "paypal" : "flutterwave",
+        provider: body.paymentMethod === "paypal" ? "paypal" : body.paymentMethod === "cod" ? "cod" : "flutterwave",
         method: methodMap[body.paymentMethod] || "CARD",
         status: "PENDING",
         amount: calculatedTotal + shippingAmount,
@@ -236,6 +261,17 @@ router.post("/create", async (req: Request, res: Response) => {
     // Clear cart after order created
     if (body.cartId) {
       await prisma.cartItem.deleteMany({ where: { cartId: body.cartId } }).catch(() => {});
+    }
+
+    // Send "Order Received" email immediately (all payment methods)
+    const orderWithItems = await prisma.order.findUnique({
+      where: { id: result.id },
+      include: { items: true, payments: { select: { method: true } } },
+    });
+    if (orderWithItems) {
+      sendOrderReceivedEmail(orderWithItems).catch((err) =>
+        console.error("Order received email failed:", err.message)
+      );
     }
 
     // Track affiliate conversion if referral code provided
@@ -350,15 +386,16 @@ router.get("/paypal-return", async (req: Request, res: Response) => {
       // Redirect to success page
       return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/orders/${orderId}?success=true`);
     } else {
-      // Payment not completed
-      await prisma.payment.updateMany({
-        where: { orderId },
-        data: { status: "FAILED" },
+      // Payment not completed — release stock reservations
+      const reservations = await prisma.stockReservation.findMany({
+        where: { orderId, released: false },
       });
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { status: "CANCELLED", paymentStatus: "FAILED" },
-      });
+      await prisma.$transaction([
+        prisma.payment.updateMany({ where: { orderId }, data: { status: "FAILED" } }),
+        prisma.order.update({ where: { id: orderId }, data: { status: "CANCELLED", paymentStatus: "FAILED" } }),
+        ...reservations.map((r) => prisma.product.update({ where: { id: r.productId }, data: { reservedStock: { decrement: r.quantity } } })),
+        ...reservations.map((r) => prisma.stockReservation.update({ where: { id: r.id }, data: { released: true } })),
+      ]);
 
       return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=payment_failed`);
     }
