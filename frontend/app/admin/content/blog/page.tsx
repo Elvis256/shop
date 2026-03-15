@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   PlusCircle, Edit2, Trash2, Eye, EyeOff, Star,
-  Search, RefreshCw, FileText, Calendar, Tag
+  Search, RefreshCw, FileText, Calendar, Tag, ArrowLeft
 } from "lucide-react";
 
 interface BlogPost {
@@ -103,36 +103,41 @@ export default function AdminBlogPage() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Blog Posts</h1>
-          <p className="text-gray-500 text-sm mt-1">Write and manage your blog articles</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link href="/admin/content" className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+            <ArrowLeft className="w-5 h-5 text-gray-500" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Blog Posts</h1>
+            <p className="text-gray-500 text-sm mt-1">Write and manage your blog articles</p>
+          </div>
         </div>
-        <Link href="/admin/content/blog/new" className="btn-primary flex items-center gap-2 text-sm">
+        <Link href="/admin/content/blog/new" className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 transition-colors">
           <PlusCircle className="w-4 h-4" />
           New Post
         </Link>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4">
         {[
-          { label: "Total Posts", value: stats.total, color: "text-gray-700" },
-          { label: "Published", value: stats.published, color: "text-green-600" },
-          { label: "Drafts", value: stats.drafts, color: "text-yellow-600" },
-          { label: "Featured", value: stats.featured, color: "text-purple-600" },
+          { label: "Total Posts", value: stats.total },
+          { label: "Published", value: stats.published },
+          { label: "Drafts", value: stats.drafts },
+          { label: "Featured", value: stats.featured },
         ].map(s => (
-          <div key={s.label} className="bg-white rounded-xl p-4 border">
-            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-gray-500 text-sm">{s.label}</p>
+          <div key={s.label} className="bg-white border border-gray-200 rounded-lg p-4">
+            <p className="font-mono text-2xl text-gray-900">{s.value}</p>
+            <p className="text-xs text-gray-500 mt-1">{s.label}</p>
           </div>
         ))}
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 mb-4">
+      <div className="flex gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -140,50 +145,52 @@ export default function AdminBlogPage() {
             placeholder="Search posts..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="input pl-9 w-full"
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-400"
           />
         </div>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input w-40">
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          className="w-40 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-400">
           <option value="all">All Posts</option>
           <option value="published">Published</option>
           <option value="draft">Drafts</option>
           <option value="featured">Featured</option>
         </select>
-        <button onClick={loadPosts} className="btn-secondary p-2" disabled={loading}>
+        <button onClick={loadPosts} disabled={loading}
+          className="p-2 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors disabled:opacity-50">
           <RefreshCw className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
 
       {/* Posts Table */}
-      <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">Loading posts...</div>
+          <div className="p-12 text-center text-gray-400 text-sm">Loading posts…</div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center">
-            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">No posts found</p>
-            <Link href="/admin/content/blog/new" className="btn-primary mt-4 inline-flex items-center gap-2 text-sm">
-              <PlusCircle className="w-4 h-4" /> Write your first post
+            <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 text-sm mb-3">No posts found</p>
+            <Link href="/admin/content/blog/new" className="text-sm text-gray-900 underline hover:no-underline">
+              Write your first post
             </Link>
           </div>
         ) : (
           <table className="w-full">
-            <thead className="bg-gray-50 border-b">
+            <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Post</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Category</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Date</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Post</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide hidden md:table-cell">Category</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide hidden md:table-cell">Date</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-gray-100">
               {filtered.map(post => (
-                <tr key={post.id} className="hover:bg-gray-50">
+                <tr key={post.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3">
                     <div>
-                      <p className="font-medium text-sm">{post.title}</p>
-                      {post.excerpt && <p className="text-xs text-gray-400 truncate max-w-xs mt-0.5">{post.excerpt}</p>}
+                      <p className="font-semibold text-sm text-gray-900">{post.title}</p>
+                      {post.excerpt && <p className="text-xs text-gray-500 truncate max-w-xs mt-0.5">{post.excerpt}</p>}
                       {post.tags.length > 0 && (
                         <div className="flex gap-1 mt-1 flex-wrap">
                           {post.tags.slice(0, 3).map(t => (
@@ -197,7 +204,7 @@ export default function AdminBlogPage() {
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell">
                     {post.category ? (
-                      <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded-full text-xs">{post.category}</span>
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">{post.category}</span>
                     ) : <span className="text-gray-400 text-xs">—</span>}
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell">
@@ -210,15 +217,15 @@ export default function AdminBlogPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                         post.status === "PUBLISHED"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-yellow-100 text-yellow-700"
+                          ? "bg-gray-900 text-white"
+                          : "bg-gray-200 text-gray-600"
                       }`}>
                         {post.status === "PUBLISHED" ? "Live" : "Draft"}
                       </span>
                       {post.featured && (
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">Featured</span>
+                        <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded text-xs font-medium">Featured</span>
                       )}
                     </div>
                   </td>
@@ -226,25 +233,25 @@ export default function AdminBlogPage() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => toggleFeatured(post)}
-                        className={`p-1.5 rounded ${post.featured ? "text-purple-500 hover:text-purple-700" : "text-gray-400 hover:text-gray-600"}`}
+                        className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
                         title={post.featured ? "Unfeature" : "Feature"}
                       >
                         <Star className="w-4 h-4" fill={post.featured ? "currentColor" : "none"} />
                       </button>
                       <button
                         onClick={() => togglePublish(post)}
-                        className={`p-1.5 rounded ${post.status === "PUBLISHED" ? "text-green-500 hover:text-red-500" : "text-gray-400 hover:text-green-500"}`}
+                        className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
                         title={post.status === "PUBLISHED" ? "Unpublish" : "Publish"}
                       >
-                        {post.status === "PUBLISHED" ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                        {post.status === "PUBLISHED" ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
-                      <Link href={`/admin/content/blog/${post.id}`} className="p-1.5 rounded text-blue-500 hover:text-blue-700" title="Edit">
+                      <Link href={`/admin/content/blog/${post.id}`} className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100" title="Edit">
                         <Edit2 className="w-4 h-4" />
                       </Link>
                       <button
                         onClick={() => deletePost(post.id)}
                         disabled={deleting === post.id}
-                        className="p-1.5 rounded text-red-400 hover:text-red-600 disabled:opacity-50"
+                        className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                         title="Delete"
                       >
                         <Trash2 className="w-4 h-4" />
