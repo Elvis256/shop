@@ -194,6 +194,10 @@ model ProductVariant {
   size        String?  // S, M, L, XL, etc.
   color       String?  // Pink, Black, etc.
   material    String?  // Silicone, Leather, etc.
+  weight      Decimal? @db.Decimal(10, 2) // Weight in grams
+  height      String?  // e.g., "15cm"
+  dimensions  String?  // e.g., "10x5x3cm"
+  description String?  @db.Text
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

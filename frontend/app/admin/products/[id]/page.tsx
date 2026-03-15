@@ -82,6 +82,10 @@ interface VariantRow {
   price: string;
   stock: string;
   sku: string;
+  weight: string;
+  height: string;
+  dimensions: string;
+  description: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +107,10 @@ const emptyVariant = (): VariantRow => ({
   price: "",
   stock: "",
   sku: "",
+  weight: "",
+  height: "",
+  dimensions: "",
+  description: "",
 });
 
 const resolveImageUrl = (url: string) =>
@@ -266,6 +274,10 @@ export default function EditProductPage() {
           price: v.price != null ? String(v.price) : "",
           stock: v.stock != null ? String(v.stock) : "",
           sku: v.sku || "",
+          weight: v.weight != null ? String(v.weight) : "",
+          height: v.height || "",
+          dimensions: v.dimensions || "",
+          description: v.description || "",
         })),
       );
 
@@ -384,6 +396,8 @@ export default function EditProductPage() {
   const removeVariant = (id: string) =>
     setVariants((prev) => prev.filter((v) => v.id !== id));
 
+  const [expandedVariant, setExpandedVariant] = useState<string | null>(null);
+
   const toggleHasVariants = (checked: boolean) => {
     if (!checked && variants.length > 0) {
       if (!confirm("This will delete all variants. Continue?")) return;
@@ -460,6 +474,10 @@ export default function EditProductPage() {
             price: v.price ? parseFloat(v.price) : null,
             stock: v.stock ? parseInt(v.stock) : 0,
             sku: v.sku || undefined,
+            weight: v.weight ? parseFloat(v.weight) : null,
+            height: v.height || undefined,
+            dimensions: v.dimensions || undefined,
+            description: v.description || undefined,
           }));
           await api.admin.updateProductVariants(productId, variantPayload);
         } catch (varErr: any) {
@@ -945,102 +963,67 @@ export default function EditProductPage() {
           {formData.hasVariants && (
             <>
               {variants.length > 0 && (
-                <div className="overflow-x-auto mb-4">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-2 pr-2 font-medium text-gray-500">Name</th>
-                        <th className="text-left py-2 pr-2 font-medium text-gray-500">Size</th>
-                        <th className="text-left py-2 pr-2 font-medium text-gray-500">Color</th>
-                        <th className="text-left py-2 pr-2 font-medium text-gray-500">Material</th>
-                        <th className="text-left py-2 pr-2 font-medium text-gray-500">Price</th>
-                        <th className="text-left py-2 pr-2 font-medium text-gray-500">Stock</th>
-                        <th className="text-left py-2 pr-2 font-medium text-gray-500">SKU</th>
-                        <th className="py-2 w-10" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {variants.map((v) => (
-                        <tr key={v.id} className="border-b border-gray-100">
-                          <td className="py-2 pr-2">
-                            <input
-                              type="text"
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400"
-                              value={v.name}
-                              onChange={(e) => updateVariant(v.id, "name", e.target.value)}
-                              placeholder="Variant name"
-                            />
-                          </td>
-                          <td className="py-2 pr-2">
-                            <input
-                              type="text"
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400"
-                              value={v.size}
-                              onChange={(e) => updateVariant(v.id, "size", e.target.value)}
-                              placeholder="Size"
-                            />
-                          </td>
-                          <td className="py-2 pr-2">
-                            <input
-                              type="text"
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400"
-                              value={v.color}
-                              onChange={(e) => updateVariant(v.id, "color", e.target.value)}
-                              placeholder="Color"
-                            />
-                          </td>
-                          <td className="py-2 pr-2">
-                            <input
-                              type="text"
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400"
-                              value={v.material}
-                              onChange={(e) => updateVariant(v.id, "material", e.target.value)}
-                              placeholder="Material"
-                            />
-                          </td>
-                          <td className="py-2 pr-2">
-                            <input
-                              type="number"
-                              className="w-20 px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400"
-                              value={v.price}
-                              onChange={(e) => updateVariant(v.id, "price", e.target.value)}
-                              placeholder="0.00"
-                              min="0"
-                              step="0.01"
-                            />
-                          </td>
-                          <td className="py-2 pr-2">
-                            <input
-                              type="number"
-                              className="w-20 px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400"
-                              value={v.stock}
-                              onChange={(e) => updateVariant(v.id, "stock", e.target.value)}
-                              placeholder="0"
-                              min="0"
-                            />
-                          </td>
-                          <td className="py-2 pr-2">
-                            <input
-                              type="text"
-                              className="w-24 px-2 py-1.5 border border-gray-200 rounded text-sm font-mono focus:outline-none focus:border-gray-400"
-                              value={v.sku}
-                              onChange={(e) => updateVariant(v.id, "sku", e.target.value)}
-                              placeholder="SKU"
-                            />
-                          </td>
-                          <td className="py-2">
-                            <button
-                              type="button"
-                              onClick={() => removeVariant(v.id)}
-                              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-3 mb-4">
+                  {variants.map((v) => (
+                    <div key={v.id} className="border border-gray-200 rounded-lg">
+                      {/* Main row */}
+                      <div className="flex items-center gap-2 p-3">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedVariant(expandedVariant === v.id ? null : v.id)}
+                          className="p-1 text-gray-400 hover:text-gray-700 transition-colors"
+                          title="Toggle details"
+                        >
+                          <svg className={`w-4 h-4 transition-transform ${expandedVariant === v.id ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                        <input type="text" className="w-28 px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400" value={v.size} onChange={(e) => updateVariant(v.id, "size", e.target.value)} placeholder="Size" />
+                        <input type="text" className="w-20 px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400" value={v.color} onChange={(e) => updateVariant(v.id, "color", e.target.value)} placeholder="Color" />
+                        <input type="number" className="w-24 px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400" value={v.price} onChange={(e) => updateVariant(v.id, "price", e.target.value)} placeholder="Price" min="0" step="0.01" />
+                        <input type="number" className="w-16 px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400" value={v.stock} onChange={(e) => updateVariant(v.id, "stock", e.target.value)} placeholder="Stock" min="0" />
+                        <span className="text-xs text-gray-400 bg-gray-50 px-2 py-1.5 rounded truncate max-w-[120px]" title={v.name || "Auto-generated"}>
+                          {v.name || "—"}
+                        </span>
+                        <div className="ml-auto">
+                          <button type="button" onClick={() => removeVariant(v.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      {/* Expanded details */}
+                      {expandedVariant === v.id && (
+                        <div className="border-t border-gray-100 p-3 bg-gray-50/50 space-y-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Material</label>
+                              <input type="text" className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400" value={v.material} onChange={(e) => updateVariant(v.id, "material", e.target.value)} placeholder="e.g., Gel" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Weight (g)</label>
+                              <input type="number" className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400" value={v.weight} onChange={(e) => updateVariant(v.id, "weight", e.target.value)} placeholder="e.g., 50" min="0" step="0.01" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Height</label>
+                              <input type="text" className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400" value={v.height} onChange={(e) => updateVariant(v.id, "height", e.target.value)} placeholder="e.g., 15cm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Dimensions</label>
+                              <input type="text" className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400" value={v.dimensions} onChange={(e) => updateVariant(v.id, "dimensions", e.target.value)} placeholder="e.g., 10x5x3cm" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">SKU</label>
+                              <input type="text" className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm font-mono focus:outline-none focus:border-gray-400" value={v.sku} onChange={(e) => updateVariant(v.id, "sku", e.target.value)} placeholder="SKU" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Description</label>
+                              <input type="text" className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-gray-400" value={v.description} onChange={(e) => updateVariant(v.id, "description", e.target.value)} placeholder="Variant-specific description" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 

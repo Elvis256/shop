@@ -404,6 +404,10 @@ const VariantSchema = z.object({
   size: z.string().optional().nullable(),
   color: z.string().optional().nullable(),
   material: z.string().optional().nullable(),
+  weight: z.number().nonnegative().optional().nullable(),
+  height: z.string().optional().nullable(),
+  dimensions: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
 });
 
 // PUT /api/admin/products/:id/variants — Replace all variants at once
@@ -433,6 +437,10 @@ router.put("/:id/variants", async (req: AuthRequest, res: Response) => {
               size: v.size || null,
               color: v.color || null,
               material: v.material || null,
+              weight: v.weight ?? null,
+              height: v.height || null,
+              dimensions: v.dimensions || null,
+              description: v.description || null,
             },
           })
         )
