@@ -16,9 +16,16 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
     }
 
     const { event, data } = req.body;
+    // Also support V4 webhook format which uses "type" instead of "event"
+    const webhookEvent = event || req.body.type;
 
-    if (event === "charge.completed") {
-      const { tx_ref, status, flw_ref, amount, currency } = data;
+    if (webhookEvent === "charge.completed" || webhookEvent === "charge.updated") {
+      // V3 uses tx_ref/status/flw_ref; V4 uses reference/status and data.id
+      const tx_ref = data.tx_ref || data.reference;
+      const status = data.status;
+      const flw_ref = data.flw_ref || data.id;
+      const amount = data.amount;
+      const currency = data.currency;
 
       // Idempotency check - prevent duplicate processing
       const existingWebhook = await prisma.processedWebhook.findUnique({
@@ -54,7 +61,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
           data: {
             webhookId: flw_ref,
             provider: "flutterwave",
-            eventType: event,
+            eventType: webhookEvent,
           },
         });
 
@@ -63,7 +70,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
           where: { orderId: tx_ref, released: false },
         });
 
-        if (status === "successful") {
+        if (status === "successful" || status === "succeeded") {
           await tx.payment.updateMany({
             where: { orderId: tx_ref },
             data: {
@@ -125,7 +132,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
       });
 
       // Auto-place AliExpress dropshipping orders (async, non-blocking)
-      if (status === "successful") {
+      if (status === "successful" || status === "succeeded") {
         placeAliExpressOrdersForOrder(tx_ref).catch((err) => {
           console.error(`AliExpress auto-order failed for ${tx_ref}:`, err.message);
         });

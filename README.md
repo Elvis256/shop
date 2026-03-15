@@ -122,10 +122,10 @@ JWT_SECRET=your-super-secret-jwt-key
 # Database
 DATABASE_URL=postgresql://user:password@localhost:5432/adultstore
 
-# Flutterwave
-FLW_PUBLIC_KEY=FLWPUBK_TEST-xxxx
-FLW_SECRET_KEY=FLWSECK_TEST-xxxx
-FLW_WEBHOOK_HASH=your-verif-hash
+# Flutterwave V4
+FLW_CLIENT_ID=your-client-id
+FLW_CLIENT_SECRET=your-client-secret
+FLW_ENCRYPTION_KEY=your-encryption-key
 
 # URLs
 BASE_URL=http://localhost:3000
