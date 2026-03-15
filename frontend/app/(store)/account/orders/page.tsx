@@ -109,7 +109,7 @@ export default function OrdersPage() {
                 </div>
                 <div className="mt-4 pt-4 border-t border-border flex justify-end">
                   <Link
-                    href={`/account/orders/${order.id}`}
+                    href={`/orders/${order.id}`}
                     className="btn-secondary text-small gap-2"
                   >
                     <Eye className="w-4 h-4" />
