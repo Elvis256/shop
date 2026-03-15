@@ -263,7 +263,7 @@ export const api = {
   // Admin
   admin: {
     getDashboard: (): Promise<DashboardStats> => apiFetch("/api/admin/dashboard"),
-    getAnalytics: (period?: number) => apiFetch(`/api/analytics?period=${period || 30}`),
+    getAnalytics: (period?: number) => apiFetch(`/api/admin/dashboard/analytics?days=${period || 30}`),
     
     // Products
     getProducts: (params?: Record<string, string>): Promise<ProductsResponse> => {

@@ -662,8 +662,8 @@ export default function AnalyticsPage() {
               />
               <InsightRow
                 label="Never ordered"
-                value={String(prod.neverOrdered || 0)}
-                warn={prod.neverOrdered > 3}
+                value={String(typeof prod.neverOrdered === "number" ? prod.neverOrdered : Array.isArray(prod.neverOrdered) ? prod.neverOrdered.length : 0)}
+                warn={(typeof prod.neverOrdered === "number" ? prod.neverOrdered : Array.isArray(prod.neverOrdered) ? prod.neverOrdered.length : 0) > 3}
               />
               <InsightRow
                 label="Inventory value"
