@@ -7,7 +7,7 @@ const router = Router();
 // GET /api/products
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const { category, minPrice, maxPrice, sort, sortBy, sortOrder, status, limit = "20", page = "1" } = req.query;
+    const { category, minPrice, maxPrice, sort, sortBy, sortOrder, status, limit = "20", page = "1", flashSale, search } = req.query;
 
     const take = Math.min(parseInt(limit as string, 10) || 20, 100);
     const skip = (Math.max(parseInt(page as string, 10) || 1, 1) - 1) * take;
@@ -20,6 +20,18 @@ router.get("/", async (req: Request, res: Response) => {
 
     if (status) {
       where.status = status;
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    if (flashSale === "true") {
+      where.flashSalePrice = { not: null };
+      where.flashSaleEndsAt = { gt: new Date() };
     }
 
     if (minPrice || maxPrice) {
@@ -53,6 +65,10 @@ router.get("/", async (req: Request, res: Response) => {
           break;
         case "newest":
           orderBy.createdAt = "desc";
+          break;
+        case "bestseller":
+        case "popular":
+          orderBy = { orderItems: { _count: "desc" } };
           break;
         default:
           orderBy.createdAt = "desc";
@@ -90,6 +106,9 @@ router.get("/", async (req: Request, res: Response) => {
         isBestseller: p.isBestseller,
         badgeText: p.badgeText,
         shippingBadge: (p.cjProductId || p.aliexpressProductId) ? "From Abroad" : "Express",
+        flashSalePrice: p.flashSalePrice ? Number(p.flashSalePrice) : null,
+        flashSaleEndsAt: p.flashSaleEndsAt?.toISOString() || null,
+        createdAt: p.createdAt.toISOString(),
       })),
       pagination: {
         total,
@@ -122,6 +141,10 @@ router.get("/:slug", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
+    // Check if flash sale is still active
+    const now = new Date();
+    const flashActive = product.flashSalePrice && product.flashSaleEndsAt && product.flashSaleEndsAt > now;
+
     return res.json({
       id: product.id,
       name: product.name,
@@ -145,6 +168,8 @@ router.get("/:slug", async (req: Request, res: Response) => {
       hasVariants: product.hasVariants,
       variants: product.variants,
       tags: product.tags,
+      flashSalePrice: flashActive ? Number(product.flashSalePrice) : null,
+      flashSaleEndsAt: flashActive ? product.flashSaleEndsAt!.toISOString() : null,
     });
   } catch (error) {
     console.error("Get product error:", error);

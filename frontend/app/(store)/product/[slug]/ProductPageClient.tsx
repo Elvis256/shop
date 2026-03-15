@@ -55,6 +55,8 @@ interface Product {
   shippingBadge?: "From Abroad" | "Express";
   hasVariants?: boolean;
   variants?: ProductVariant[];
+  flashSalePrice?: number;
+  flashSaleEndsAt?: string;
   tags?: string[];
 }
 
@@ -197,7 +199,9 @@ export default function ProductPageClient() {
     router.push("/checkout");
   };
 
-  const effectivePrice = selectedVariant?.price || product?.price || 0;
+  const basePrice = selectedVariant?.price || product?.price || 0;
+  const hasFlashSale = product?.flashSalePrice && product?.flashSaleEndsAt && new Date(product.flashSaleEndsAt) > new Date();
+  const effectivePrice = hasFlashSale ? product.flashSalePrice! : basePrice;
   const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
   const isLowStock = product && effectiveStock > 0 && effectiveStock <= product.lowStockAlert;
 
@@ -239,10 +243,11 @@ export default function ProductPageClient() {
   }
 
   const images = product.images || (product.imageUrl ? [product.imageUrl] : []);
-  const discountPercent = product.comparePrice && product.comparePrice > effectivePrice
-    ? Math.round((1 - effectivePrice / product.comparePrice) * 100)
+  const originalPrice = hasFlashSale ? basePrice : (product.comparePrice || 0);
+  const discountPercent = originalPrice > effectivePrice
+    ? Math.round((1 - effectivePrice / originalPrice) * 100)
     : 0;
-  const savingsAmount = discountPercent > 0 ? Number(product.comparePrice) - Number(effectivePrice) : 0;
+  const savingsAmount = discountPercent > 0 ? Number(originalPrice) - Number(effectivePrice) : 0;
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://pleasurezone.ug";
   const breadcrumbItems = [
@@ -426,15 +431,22 @@ export default function ProductPageClient() {
             {/* Price block */}
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
               <div className="flex items-baseline gap-3">
-                <span className="text-3xl font-bold text-gray-900">
+                <span className={`text-3xl font-bold ${hasFlashSale ? 'text-red-600' : 'text-gray-900'}`}>
                   {formatPrice(Number(effectivePrice))}
                 </span>
                 {discountPercent > 0 && (
                   <span className="text-lg text-gray-400 line-through">
-                    {formatPrice(Number(product.comparePrice))}
+                    {formatPrice(Number(originalPrice))}
                   </span>
                 )}
               </div>
+              {hasFlashSale && product.flashSaleEndsAt && (
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="inline-flex items-center gap-1 text-sm font-medium text-red-700 bg-red-50 px-2.5 py-0.5 rounded-md">
+                    ⚡ Flash Sale — ends {new Date(product.flashSaleEndsAt).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
               {savingsAmount > 0 && (
                 <div className="flex items-center gap-2 mt-2">
                   <span className="inline-flex items-center gap-1 text-sm font-medium text-green-700 bg-green-100 px-2.5 py-0.5 rounded-md">

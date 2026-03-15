@@ -25,7 +25,7 @@ router.get("/trending", async (_req: Request, res: Response) => {
       // Fallback: products with most recent orders
       const recent = await prisma.orderItem.groupBy({
         by: ["productId"],
-        where: { order: { createdAt: { gte: new Date(Date.now() - 7 * 86400000) }, paymentStatus: "SUCCESSFUL" } },
+        where: { order: { createdAt: { gte: new Date(Date.now() - 7 * 86400000) }, status: { notIn: ["CANCELLED", "REFUNDED"] } } },
         _sum: { quantity: true },
         orderBy: { _sum: { quantity: "desc" } },
         take: 12,

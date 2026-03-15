@@ -62,6 +62,8 @@ interface ProductFormData {
   hasVariants: boolean;
   metaTitle: string;
   metaDescription: string;
+  flashSalePrice: string;
+  flashSaleEndsAt: string;
 }
 
 interface VariantRow {
@@ -149,7 +151,11 @@ export default function EditProductPage() {
     hasVariants: false,
     metaTitle: "",
     metaDescription: "",
+    flashSalePrice: "",
+    flashSaleEndsAt: "",
   });
+
+  const [flashSaleEnabled, setFlashSaleEnabled] = useState(false);
 
   // ---- helpers to update form -------------------------------------------------
   const setField = <K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) =>
@@ -223,7 +229,13 @@ export default function EditProductPage() {
         hasVariants: p.hasVariants ?? false,
         metaTitle: p.metaTitle || "",
         metaDescription: p.metaDescription || "",
+        flashSalePrice: p.flashSalePrice ? String(Number(p.flashSalePrice)) : "",
+        flashSaleEndsAt: p.flashSaleEndsAt ? new Date(p.flashSaleEndsAt).toISOString().slice(0, 16) : "",
       });
+
+      if (p.flashSalePrice || p.flashSaleEndsAt) {
+        setFlashSaleEnabled(true);
+      }
 
       setImages(
         (p.images || []).map((img: any) => ({
@@ -405,6 +417,8 @@ export default function EditProductPage() {
         hasVariants: formData.hasVariants,
         metaTitle: formData.metaTitle || undefined,
         metaDescription: formData.metaDescription || undefined,
+        flashSalePrice: formData.flashSalePrice ? parseFloat(formData.flashSalePrice) : null,
+        flashSaleEndsAt: formData.flashSaleEndsAt ? new Date(formData.flashSaleEndsAt).toISOString() : null,
       };
 
       await api.admin.updateProduct(productId, payload);
@@ -792,6 +806,76 @@ export default function EditProductPage() {
               </label>
             </div>
           </div>
+        </div>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* 3b. Flash Sale                                                      */}
+        {/* ------------------------------------------------------------------ */}
+        <div className={cardClass}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">
+              ⚡ Flash Sale
+            </h2>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={flashSaleEnabled}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setFlashSaleEnabled(checked);
+                  if (!checked) {
+                    setField("flashSalePrice", "");
+                    setField("flashSaleEndsAt", "");
+                  }
+                }}
+                className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+              />
+              <span className="text-sm text-gray-700">Enable flash sale</span>
+            </label>
+          </div>
+
+          {flashSaleEnabled ? (
+            <div className="space-y-4">
+              <p className="text-xs text-gray-400">
+                Set a discounted price and end date. Product will appear in the Flash Sale section on the homepage.
+              </p>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Flash Sale Price (UGX) *</label>
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={formData.flashSalePrice}
+                    onChange={(e) => setField("flashSalePrice", e.target.value)}
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
+                  {formData.flashSalePrice &&
+                    formData.price &&
+                    parseFloat(formData.flashSalePrice) >= parseFloat(formData.price) && (
+                      <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Flash sale price must be less than the regular price ({formData.price})
+                      </p>
+                    )}
+                </div>
+                <div>
+                  <label className={labelClass}>Sale Ends At *</label>
+                  <input
+                    type="datetime-local"
+                    className={inputClass}
+                    value={formData.flashSaleEndsAt}
+                    onChange={(e) => setField("flashSaleEndsAt", e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">
+              Enable flash sale to set a limited-time discounted price.
+            </p>
+          )}
         </div>
 
         {/* ------------------------------------------------------------------ */}

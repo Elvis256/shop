@@ -53,6 +53,8 @@ interface ProductFormData {
   hasVariants: boolean;
   metaTitle: string;
   metaDescription: string;
+  flashSalePrice: string;
+  flashSaleEndsAt: string;
 }
 
 interface VariantRow {
@@ -113,7 +115,11 @@ export default function NewProductPage() {
     hasVariants: false,
     metaTitle: "",
     metaDescription: "",
+    flashSalePrice: "",
+    flashSaleEndsAt: "",
   });
+
+  const [flashSaleEnabled, setFlashSaleEnabled] = useState(false);
 
   const variantTotalStock = useMemo(
     () => variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0),
@@ -276,6 +282,8 @@ export default function NewProductPage() {
         hasVariants: formData.hasVariants,
         metaTitle: formData.metaTitle || undefined,
         metaDescription: formData.metaDescription || undefined,
+        flashSalePrice: formData.flashSalePrice ? parseFloat(formData.flashSalePrice) : null,
+        flashSaleEndsAt: formData.flashSaleEndsAt ? new Date(formData.flashSaleEndsAt).toISOString() : null,
         tags: formData.tags
           .split(",")
           .map((t) => t.trim())
@@ -528,6 +536,74 @@ export default function NewProductPage() {
               </label>
             </div>
           </div>
+        </section>
+
+        {/* ── 3b. Flash Sale ── */}
+        <section className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-gray-900">
+              ⚡ Flash Sale
+            </h2>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={flashSaleEnabled}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setFlashSaleEnabled(checked);
+                  if (!checked) {
+                    updateField("flashSalePrice", "");
+                    updateField("flashSaleEndsAt", "");
+                  }
+                }}
+                className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+              />
+              <span className="text-sm text-gray-700">Enable flash sale</span>
+            </label>
+          </div>
+
+          {flashSaleEnabled ? (
+            <div className="space-y-4">
+              <p className="text-xs text-gray-400">
+                Set a discounted price and end date. Product will appear in the Flash Sale section on the homepage.
+              </p>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Flash Sale Price (UGX) *</label>
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={formData.flashSalePrice}
+                    onChange={(e) => updateField("flashSalePrice", e.target.value)}
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
+                  {formData.flashSalePrice &&
+                    formData.price &&
+                    parseFloat(formData.flashSalePrice) >= parseFloat(formData.price) && (
+                      <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Flash sale price must be less than the regular price ({formData.price})
+                      </p>
+                    )}
+                </div>
+                <div>
+                  <label className={labelClass}>Sale Ends At *</label>
+                  <input
+                    type="datetime-local"
+                    className={inputClass}
+                    value={formData.flashSaleEndsAt}
+                    onChange={(e) => updateField("flashSaleEndsAt", e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">
+              Enable flash sale to set a limited-time discounted price.
+            </p>
+          )}
         </section>
 
         {/* ── 4. Variants ── */}

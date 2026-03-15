@@ -71,7 +71,7 @@ export default function Header() {
 
   const navLinks = [
     { href: "/category", label: "Shop" },
-    { href: "/affiliate", label: "Deals" },
+    { href: "/sales", label: "Sales" },
     { href: "/category?cat=toys", label: "Toys" },
     { href: "/category?cat=lingerie", label: "Lingerie" },
     { href: "/category?cat=wellness", label: "Wellness" },

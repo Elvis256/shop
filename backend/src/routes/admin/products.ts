@@ -205,6 +205,8 @@ const ProductSchema = z.object({
   hasVariants: z.boolean().default(false),
   metaTitle: z.string().optional(),
   metaDescription: z.string().optional(),
+  flashSalePrice: z.number().positive().optional().nullable(),
+  flashSaleEndsAt: z.string().datetime().optional().nullable(),
 });
 
 // POST /api/admin/products
@@ -226,8 +228,14 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       body.slug = `${body.slug}-${Date.now()}`;
     }
 
+    // Convert flashSaleEndsAt string to Date for Prisma
+    const data: any = { ...body };
+    if (data.flashSaleEndsAt) {
+      data.flashSaleEndsAt = new Date(data.flashSaleEndsAt);
+    }
+
     const product = await prisma.product.create({
-      data: body as any,
+      data,
     });
 
     return res.status(201).json(product);
@@ -265,9 +273,15 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // Convert flashSaleEndsAt string to Date for Prisma
+    const data: any = { ...body };
+    if (data.flashSaleEndsAt) {
+      data.flashSaleEndsAt = new Date(data.flashSaleEndsAt);
+    }
+
     const updated = await prisma.product.update({
       where: { id },
-      data: body as any,
+      data,
     });
 
     return res.json({ message: "Product updated", product: updated });
