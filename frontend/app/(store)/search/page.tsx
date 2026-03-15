@@ -19,6 +19,8 @@ interface Product {
   inStock?: boolean;
   category?: string | null;
   shippingBadge?: "From Abroad" | "Express";
+  flashSalePrice?: number | null;
+  flashSaleEndsAt?: string | null;
 }
 
 interface Category {
@@ -274,6 +276,8 @@ function SearchContent() {
                   category={product.category || undefined}
                   inStock={product.inStock !== false}
                   shippingBadge={product.shippingBadge}
+                  flashSalePrice={product.flashSalePrice}
+                  flashSaleEndsAt={product.flashSaleEndsAt}
                 />
               ))}
             </div>

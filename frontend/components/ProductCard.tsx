@@ -24,6 +24,8 @@ type ProductCardProps = {
   isBestseller?: boolean;
   badgeText?: string;
   shippingBadge?: "From Abroad" | "Express";
+  flashSalePrice?: number | null;
+  flashSaleEndsAt?: string | null;
 };
 
 export default function ProductCard({
@@ -40,6 +42,8 @@ export default function ProductCard({
   isBestseller,
   badgeText,
   shippingBadge,
+  flashSalePrice,
+  flashSaleEndsAt,
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false);
   const { addItem } = useCart();
@@ -48,7 +52,10 @@ export default function ProductCard({
   const { isInWishlist, toggleItem } = useWishlist();
   
   const isWishlisted = isInWishlist(id);
-  const discount = comparePrice ? Math.round((1 - Number(price) / Number(comparePrice)) * 100) : 0;
+  const hasFlashSale = flashSalePrice && flashSaleEndsAt && new Date(flashSaleEndsAt) > new Date();
+  const effectivePrice = hasFlashSale ? flashSalePrice : price;
+  const originalPrice = hasFlashSale ? price : (comparePrice || 0);
+  const discount = originalPrice > effectivePrice ? Math.round((1 - Number(effectivePrice) / Number(originalPrice)) * 100) : 0;
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -61,7 +68,7 @@ export default function ProductCard({
       productId: id,
       name,
       slug,
-      price: Number(price),
+      price: Number(effectivePrice),
       imageUrl: imageUrl || null,
       shippingBadge,
     });
@@ -118,7 +125,7 @@ export default function ProductCard({
             )}
             {inStock && discount > 0 && (
               <span className="text-xs font-medium bg-red-500 text-white px-3 py-1.5 rounded-full">
-                Save {discount}%
+                {hasFlashSale ? '⚡' : ''} Save {discount}%
               </span>
             )}
             {isNew && (
@@ -222,10 +229,10 @@ export default function ProductCard({
 
         {/* Price */}
         <div className="mt-2 flex items-baseline gap-2">
-          <span className="text-base font-semibold text-text">{formatPrice(Number(price))}</span>
-          {comparePrice && Number(comparePrice) > Number(price) && (
+          <span className={`text-base font-semibold ${hasFlashSale ? 'text-red-600' : 'text-text'}`}>{formatPrice(Number(effectivePrice))}</span>
+          {discount > 0 && (
             <span className="text-sm text-text-muted line-through">
-              {formatPrice(Number(comparePrice))}
+              {formatPrice(Number(originalPrice))}
             </span>
           )}
         </div>

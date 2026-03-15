@@ -21,6 +21,8 @@ interface Product {
   isNew?: boolean;
   isBestseller?: boolean;
   shippingBadge?: "From Abroad" | "Express";
+  flashSalePrice?: number | null;
+  flashSaleEndsAt?: string | null;
 }
 
 interface Category {
@@ -280,6 +282,8 @@ function CategoryContent() {
                     isNew={product.isNew}
                     isBestseller={product.isBestseller}
                     shippingBadge={product.shippingBadge}
+                    flashSalePrice={product.flashSalePrice}
+                    flashSaleEndsAt={product.flashSaleEndsAt}
                   />
                 ))}
               </div>
