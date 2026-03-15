@@ -271,6 +271,8 @@ export const api = {
       return apiFetch(`/api/admin/products${query}`);
     },
     getProduct: (id: string): Promise<ProductDetail> => apiFetch(`/api/admin/products/${id}`),
+    getNextSku: (categoryId: string): Promise<{ sku: string; prefix: string }> =>
+      apiFetch(`/api/admin/products/next-sku?categoryId=${categoryId}`),
     createProduct: (data: Partial<ProductDetail>): Promise<ProductDetail> => 
       apiFetch("/api/admin/products", { method: "POST", body: JSON.stringify(data) }),
     updateProduct: (id: string, data: Partial<ProductDetail>): Promise<ProductDetail> =>

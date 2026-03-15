@@ -110,6 +110,50 @@ router.get("/", async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/admin/products/next-sku?categoryId=xxx
+router.get("/next-sku", async (req: AuthRequest, res: Response) => {
+  try {
+    const { categoryId } = req.query;
+    if (!categoryId || typeof categoryId !== "string") {
+      return res.status(400).json({ error: "categoryId is required" });
+    }
+
+    const category = await prisma.category.findUnique({
+      where: { id: categoryId },
+      select: { slug: true },
+    });
+
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+
+    // Build prefix from category slug: e.g. "wellness" → "WEL", "lingerie" → "LIN"
+    const slug = category.slug.toUpperCase().replace(/[^A-Z]/g, "");
+    const prefix = slug.length >= 3 ? slug.slice(0, 3) : slug.padEnd(3, "X");
+
+    // Find the highest existing SKU number for this prefix
+    const existing = await prisma.product.findMany({
+      where: { sku: { startsWith: `${prefix}-`, mode: "insensitive" } },
+      select: { sku: true },
+      orderBy: { sku: "desc" },
+    });
+
+    let nextNum = 1;
+    for (const p of existing) {
+      const match = p.sku?.match(new RegExp(`^${prefix}-(\\d+)$`, "i"));
+      if (match) {
+        nextNum = Math.max(nextNum, parseInt(match[1]) + 1);
+      }
+    }
+
+    const sku = `${prefix}-${String(nextNum).padStart(3, "0")}`;
+    return res.json({ sku, prefix });
+  } catch (error) {
+    console.error("Next SKU error:", error);
+    return res.status(500).json({ error: "Failed to generate SKU" });
+  }
+});
+
 // GET /api/admin/products/:id
 router.get("/:id", async (req: AuthRequest, res: Response) => {
   try {
