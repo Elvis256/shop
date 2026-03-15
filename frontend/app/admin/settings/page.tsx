@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 import {
   Settings as SettingsIcon,
   Store,
@@ -104,6 +104,7 @@ const settingDefinitions: Record<string, SettingDef> = {
   appearance_footer_text: { label: "Footer Text", type: "text", description: "Copyright or tagline shown in the footer", section: "Storefront", placeholder: "© 2026 My Store. All rights reserved." },
 
   // ── Payment ──
+  payment_processing_fee: { label: "Processing Fee (%)", type: "number", description: "Percentage baked into product prices to cover payment gateway fees (e.g. 3.8 for Flutterwave)", section: "Processing Fee", placeholder: "3.8" },
   payment_flutterwave_enabled: { label: "Enable Flutterwave", type: "toggle", description: "Accept card, mobile money & bank payments via Flutterwave", section: "Payment Methods" },
   payment_mobile_money_enabled: { label: "Enable Mobile Money", type: "toggle", description: "Direct MTN/Airtel Money payments", section: "Payment Methods" },
   payment_card_enabled: { label: "Enable Card Payments", type: "toggle", description: "Visa, Mastercard & other cards", section: "Payment Methods" },
@@ -211,6 +212,7 @@ export default function SettingsPage() {
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [applyingFee, setApplyingFee] = useState(false);
 
   // ── Toast helpers ──
   let toastIdRef = 0;
@@ -278,6 +280,32 @@ export default function SettingsPage() {
     setHasChanges(false);
     setShowResetConfirm(false);
     addToast("success", "Changes discarded");
+  };
+
+  const handleApplyProcessingFee = async () => {
+    const newFee = parseFloat(settings.payment_processing_fee || "0");
+    const oldFee = parseFloat(originalSettings.payment_processing_fee || "0");
+    if (isNaN(newFee) || newFee < 0 || newFee > 50) {
+      addToast("error", "Enter a valid fee between 0 and 50%");
+      return;
+    }
+    if (newFee === oldFee) {
+      addToast("error", "Fee hasn't changed — nothing to recalculate");
+      return;
+    }
+    setApplyingFee(true);
+    try {
+      const res = await apiFetch("/api/admin/settings/apply-processing-fee", {
+        method: "POST",
+        body: JSON.stringify({ oldFee, newFee }),
+      });
+      setOriginalSettings((prev) => ({ ...prev, payment_processing_fee: String(newFee) }));
+      addToast("success", `All prices recalculated: ${oldFee}% → ${newFee}%`);
+    } catch (error) {
+      addToast("error", "Failed to recalculate prices");
+    } finally {
+      setApplyingFee(false);
+    }
   };
 
   // ── Export / Import ──
@@ -514,6 +542,21 @@ export default function SettingsPage() {
       <div className="divide-y divide-gray-100">
         {entries.map(([key, def]) => renderSettingRow(key, def))}
       </div>
+      {sectionName === "Processing Fee" && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm text-amber-800 mb-3">
+            Changing the fee will recalculate <strong>all</strong> product prices (including compare prices, flash sale prices, and variant prices).
+            Current fee: <strong>{originalSettings.payment_processing_fee || "0"}%</strong>
+          </p>
+          <button
+            onClick={handleApplyProcessingFee}
+            disabled={applyingFee || (settings.payment_processing_fee || "0") === (originalSettings.payment_processing_fee || "0")}
+            className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {applyingFee ? "Recalculating…" : "Recalculate All Prices"}
+          </button>
+        </div>
+      )}
     </div>
   );
 

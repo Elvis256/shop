@@ -45,6 +45,53 @@ router.put("/", async (req: AuthRequest, res: Response) => {
   }
 });
 
+// POST /api/admin/settings/apply-processing-fee
+// Adjusts all product prices from oldFee% to newFee%
+router.post("/apply-processing-fee", async (req: AuthRequest, res: Response) => {
+  try {
+    const { oldFee, newFee } = z.object({
+      oldFee: z.number().min(0).max(50),
+      newFee: z.number().min(0).max(50),
+    }).parse(req.body);
+
+    // multiplier = (1 + newFee/100) / (1 + oldFee/100)
+    const multiplier = (1 + newFee / 100) / (1 + oldFee / 100);
+
+    // Update all prices using raw SQL (Prisma Decimal workaround)
+    const products = await prisma.$executeRawUnsafe(
+      `UPDATE "Product" SET price = CEIL(price * $1)`,
+      multiplier
+    );
+    const comparePrices = await prisma.$executeRawUnsafe(
+      `UPDATE "Product" SET "comparePrice" = CEIL("comparePrice" * $1) WHERE "comparePrice" IS NOT NULL`,
+      multiplier
+    );
+    const flashPrices = await prisma.$executeRawUnsafe(
+      `UPDATE "Product" SET "flashSalePrice" = CEIL("flashSalePrice" * $1) WHERE "flashSalePrice" IS NOT NULL`,
+      multiplier
+    );
+    const variants = await prisma.$executeRawUnsafe(
+      `UPDATE "ProductVariant" SET price = CEIL(price * $1) WHERE price IS NOT NULL`,
+      multiplier
+    );
+
+    // Persist the new fee setting
+    await prisma.setting.upsert({
+      where: { key: "payment_processing_fee" },
+      update: { value: String(newFee) },
+      create: { key: "payment_processing_fee", value: String(newFee) },
+    });
+
+    return res.json({
+      message: `Processing fee updated from ${oldFee}% to ${newFee}%`,
+      updated: { products, comparePrices, flashPrices, variants },
+    });
+  } catch (error) {
+    console.error("Apply processing fee error:", error);
+    return res.status(500).json({ error: "Failed to apply processing fee" });
+  }
+});
+
 // GET /api/admin/inventory
 router.get("/inventory", async (req: AuthRequest, res: Response) => {
   try {
