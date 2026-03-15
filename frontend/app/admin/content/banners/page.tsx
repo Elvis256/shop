@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   ExternalLink,
   GripVertical,
+  Upload,
 } from "lucide-react";
 
 interface Banner {
@@ -74,12 +75,38 @@ export default function BannersPage() {
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FormData>(emptyForm);
+  const [uploading, setUploading] = useState<"image" | "mobile" | null>(null);
 
   const authHeaders = (): Record<string, string> => {
     const h: Record<string, string> = { "Content-Type": "application/json" };
     const csrf = getCsrfToken();
     if (csrf) h["x-csrf-token"] = csrf;
     return h;
+  };
+
+  const uploadImage = async (file: File, field: "imageUrl" | "mobileImageUrl") => {
+    setUploading(field === "imageUrl" ? "image" : "mobile");
+    try {
+      const fd = new window.FormData();
+      fd.append("image", file);
+      const csrf = getCsrfToken();
+      const headers: Record<string, string> = {};
+      if (csrf) headers["x-csrf-token"] = csrf;
+      const res = await fetch(`${API_URL}/api/admin/upload`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: fd,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      set(field, data.url);
+    } catch (err) {
+      console.error("Image upload failed:", err);
+      alert("Failed to upload image. Try again or paste a URL.");
+    } finally {
+      setUploading(null);
+    }
   };
 
   const loadBanners = async () => {
@@ -289,7 +316,7 @@ export default function BannersPage() {
                 <tr key={banner.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3">
                     {banner.imageUrl ? (
-                      <img src={banner.imageUrl} alt={banner.title} className="w-20 h-10 rounded object-cover bg-gray-100" />
+                      <img src={banner.imageUrl.startsWith("/") ? `${API_URL}${banner.imageUrl}` : banner.imageUrl} alt={banner.title} className="w-20 h-10 rounded object-cover bg-gray-100" />
                     ) : (
                       <div className="w-20 h-10 rounded bg-gray-100 flex items-center justify-center">
                         <ImageIcon className="w-4 h-4 text-gray-300" />
@@ -379,20 +406,36 @@ export default function BannersPage() {
 
               {/* Image URL */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Image URL *</label>
-                <input type="url" value={form.imageUrl} onChange={(e) => set("imageUrl", e.target.value)} required placeholder="https://..."
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-400" />
-                <p className="text-xs text-gray-400 mt-1">Enter a direct image URL or upload to your image hosting</p>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Banner Image *</label>
+                <div className="flex gap-2">
+                  <input type="url" value={form.imageUrl} onChange={(e) => set("imageUrl", e.target.value)} required placeholder="https://... or upload"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-400" />
+                  <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${uploading === "image" ? "bg-gray-200 text-gray-500" : "bg-gray-900 text-white hover:bg-gray-800"}`}>
+                    <Upload className="w-4 h-4" />
+                    {uploading === "image" ? "Uploading..." : "Upload"}
+                    <input type="file" accept="image/*" className="hidden" disabled={uploading === "image"}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImage(f, "imageUrl"); e.target.value = ""; }} />
+                  </label>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Upload an image (JPEG, PNG, WebP, max 5MB) or paste a URL</p>
                 {form.imageUrl && (
-                  <img src={form.imageUrl} alt="Preview" className="mt-2 w-full h-32 object-cover rounded-lg border border-gray-200 bg-gray-50" />
+                  <img src={form.imageUrl.startsWith("/") ? `${API_URL}${form.imageUrl}` : form.imageUrl} alt="Preview" className="mt-2 w-full h-32 object-cover rounded-lg border border-gray-200 bg-gray-50" />
                 )}
               </div>
 
               {/* Mobile Image URL */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Image URL</label>
-                <input type="url" value={form.mobileImageUrl} onChange={(e) => set("mobileImageUrl", e.target.value)} placeholder="Optional responsive image"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-400" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Image</label>
+                <div className="flex gap-2">
+                  <input type="url" value={form.mobileImageUrl} onChange={(e) => set("mobileImageUrl", e.target.value)} placeholder="Optional responsive image"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-400" />
+                  <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${uploading === "mobile" ? "bg-gray-200 text-gray-500" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
+                    <Upload className="w-4 h-4" />
+                    {uploading === "mobile" ? "..." : "Upload"}
+                    <input type="file" accept="image/*" className="hidden" disabled={uploading === "mobile"}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImage(f, "mobileImageUrl"); e.target.value = ""; }} />
+                  </label>
+                </div>
               </div>
 
               {/* Link URL */}
