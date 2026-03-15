@@ -31,6 +31,10 @@ interface ProductVariant {
   price?: number;
   stock: number;
   imageUrl?: string;
+  weight?: number;
+  height?: string;
+  dimensions?: string;
+  description?: string;
 }
 
 interface Product {
@@ -55,6 +59,8 @@ interface Product {
   shippingBadge?: "From Abroad" | "Express";
   hasVariants?: boolean;
   variants?: ProductVariant[];
+  weight?: number;
+  specifications?: { key: string; value: string }[];
   flashSalePrice?: number;
   flashSaleEndsAt?: string;
   tags?: string[];
@@ -619,6 +625,8 @@ export default function ProductPageClient() {
             productId={product.id}
             reviewCount={product.reviewCount}
             rating={Number(product.rating)}
+            weight={product.weight ?? undefined}
+            specifications={product.specifications}
           />
         </div>
       </div>

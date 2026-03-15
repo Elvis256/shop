@@ -12,6 +12,10 @@ interface Variant {
   size?: string;
   color?: string;
   material?: string;
+  weight?: number;
+  height?: string;
+  dimensions?: string;
+  description?: string;
 }
 
 interface VariantSelectorProps {
@@ -238,17 +242,39 @@ export default function VariantSelector({
 
       {/* Selected variant info */}
       {selectedVariant && (
-        <div className="text-sm text-gray-600">
-          {selectedVariant.stock > 0 ? (
-            selectedVariant.stock <= 5 ? (
-              <span className="text-orange-600 font-medium">
-                Only {selectedVariant.stock} left in stock!
-              </span>
+        <div className="space-y-2">
+          <div className="text-sm text-gray-600">
+            {selectedVariant.stock > 0 ? (
+              selectedVariant.stock <= 5 ? (
+                <span className="text-orange-600 font-medium">
+                  Only {selectedVariant.stock} left in stock!
+                </span>
+              ) : (
+                <span className="text-green-600">✓ In stock</span>
+              )
             ) : (
-              <span className="text-green-600">✓ In stock</span>
-            )
-          ) : (
-            <span className="text-red-600">Out of stock</span>
+              <span className="text-red-600">Out of stock</span>
+            )}
+          </div>
+
+          {/* Variant-specific details */}
+          {(selectedVariant.weight || selectedVariant.height || selectedVariant.dimensions || selectedVariant.description) && (
+            <div className="border border-gray-100 rounded-lg p-3 bg-gray-50/50 space-y-1.5">
+              {selectedVariant.description && (
+                <p className="text-sm text-gray-700">{selectedVariant.description}</p>
+              )}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                {selectedVariant.weight != null && (
+                  <span>Weight: <strong className="text-gray-700">{selectedVariant.weight}g</strong></span>
+                )}
+                {selectedVariant.height && (
+                  <span>Height: <strong className="text-gray-700">{selectedVariant.height}</strong></span>
+                )}
+                {selectedVariant.dimensions && (
+                  <span>Dimensions: <strong className="text-gray-700">{selectedVariant.dimensions}</strong></span>
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}

@@ -5,20 +5,23 @@ import { Star, ThumbsUp, ShieldCheck, Truck, RotateCcw } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Review, ReviewsResponse } from "@/lib/types/api";
 
-const tabs = [
-  { id: "details", label: "Details" },
-  { id: "shipping", label: "Shipping" },
-  { id: "reviews", label: "Reviews" },
-];
-
 interface ProductTabsProps {
   description?: string | null;
   productId?: string;
   reviewCount?: number;
   rating?: number;
+  weight?: number;
+  specifications?: { key: string; value: string }[];
 }
 
-export default function ProductTabs({ description, productId, reviewCount = 0, rating = 0 }: ProductTabsProps) {
+export default function ProductTabs({ description, productId, reviewCount = 0, rating = 0, weight, specifications }: ProductTabsProps) {
+  const hasSpecs = (specifications && specifications.length > 0) || weight;
+  const dynamicTabs = [
+    { id: "details", label: "Details" },
+    ...(hasSpecs ? [{ id: "specifications", label: "Specifications" }] : []),
+    { id: "shipping", label: "Shipping" },
+    { id: "reviews", label: "Reviews" },
+  ];
   const [activeTab, setActiveTab] = useState("details");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewStats, setReviewStats] = useState<ReviewsResponse["stats"] | null>(null);
@@ -81,7 +84,7 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
     <div>
       {/* Tab Headers */}
       <div className="flex border-b border-gray-200 -mx-6 px-6">
-        {tabs.map((tab) => (
+        {dynamicTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -110,6 +113,27 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
             ) : (
               <p className="text-gray-400 italic">No description provided for this product.</p>
             )}
+          </div>
+        )}
+
+        {activeTab === "specifications" && hasSpecs && (
+          <div className="space-y-4">
+            <table className="w-full text-sm">
+              <tbody>
+                {weight != null && (
+                  <tr className="border-b border-gray-100">
+                    <td className="py-2.5 pr-4 text-gray-500 font-medium w-1/3">Weight</td>
+                    <td className="py-2.5 text-gray-900">{weight}g</td>
+                  </tr>
+                )}
+                {specifications?.map((spec, i) => (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    <td className="py-2.5 pr-4 text-gray-500 font-medium w-1/3">{spec.key}</td>
+                    <td className="py-2.5 text-gray-900">{spec.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 

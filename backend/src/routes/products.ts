@@ -167,6 +167,8 @@ router.get("/:slug", async (req: Request, res: Response) => {
       shippingBadge: (product.cjProductId || product.aliexpressProductId) ? "From Abroad" : "Express",
       hasVariants: product.hasVariants,
       variants: product.variants,
+      weight: product.weight ? Number(product.weight) : null,
+      specifications: product.specifications,
       tags: product.tags,
       flashSalePrice: flashActive ? Number(product.flashSalePrice) : null,
       flashSaleEndsAt: flashActive ? product.flashSaleEndsAt!.toISOString() : null,
