@@ -51,10 +51,17 @@ interface ProductFormData {
   badgeText: string;
   tags: string;
   hasVariants: boolean;
+  weight: string;
   metaTitle: string;
   metaDescription: string;
   flashSalePrice: string;
   flashSaleEndsAt: string;
+}
+
+interface SpecRow {
+  id: string;
+  key: string;
+  value: string;
 }
 
 interface VariantRow {
@@ -89,6 +96,7 @@ export default function NewProductPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [variants, setVariants] = useState<VariantRow[]>([]);
+  const [specifications, setSpecifications] = useState<SpecRow[]>([]);
   const [quickAddValue, setQuickAddValue] = useState("");
   const [quickAddField, setQuickAddField] = useState<"size" | "color" | "material">("size");
 
@@ -113,6 +121,7 @@ export default function NewProductPage() {
     badgeText: "",
     tags: "",
     hasVariants: false,
+    weight: "",
     metaTitle: "",
     metaDescription: "",
     flashSalePrice: "",
@@ -260,7 +269,8 @@ export default function NewProductPage() {
     setSuccess(false);
 
     try {
-      const payload = {
+      const parsedLowStock = parseInt(formData.lowStockAlert);
+      const payload: Record<string, any> = {
         name: formData.name,
         slug: formData.slug || undefined,
         description: formData.description || undefined,
@@ -270,7 +280,7 @@ export default function NewProductPage() {
         barcode: formData.barcode || undefined,
         videoUrl: formData.videoUrl || undefined,
         stock: formData.hasVariants ? variantTotalStock : parseInt(formData.stock),
-        lowStockAlert: parseInt(formData.lowStockAlert) || 5,
+        lowStockAlert: isNaN(parsedLowStock) ? 5 : parsedLowStock,
         trackInventory: formData.trackInventory,
         allowBackorder: formData.allowBackorder,
         categoryId: formData.categoryId || undefined,
@@ -280,42 +290,61 @@ export default function NewProductPage() {
         isBestseller: formData.isBestseller,
         badgeText: formData.badgeText || undefined,
         hasVariants: formData.hasVariants,
+        weight: formData.weight ? parseFloat(formData.weight) : null,
+        specifications: specifications.filter((s) => s.key.trim() && s.value.trim()).map(({ key, value }) => ({ key: key.trim(), value: value.trim() })) || null,
         metaTitle: formData.metaTitle || undefined,
         metaDescription: formData.metaDescription || undefined,
-        flashSalePrice: formData.flashSalePrice ? parseFloat(formData.flashSalePrice) : null,
-        flashSaleEndsAt: formData.flashSaleEndsAt ? new Date(formData.flashSaleEndsAt).toISOString() : null,
         tags: formData.tags
           .split(",")
           .map((t) => t.trim())
           .filter(Boolean),
       };
 
-      const product = await api.admin.createProduct(payload);
-
-      if (imageFiles.length > 0) {
-        await api.admin.uploadProductImages(product.id, imageFiles);
+      // Only send flash sale fields when flash sale is enabled
+      if (flashSaleEnabled) {
+        payload.flashSalePrice = formData.flashSalePrice ? parseFloat(formData.flashSalePrice) : null;
+        payload.flashSaleEndsAt = formData.flashSaleEndsAt ? new Date(formData.flashSaleEndsAt).toISOString() : null;
+      } else {
+        payload.flashSalePrice = null;
+        payload.flashSaleEndsAt = null;
       }
 
+      const product = await api.admin.createProduct(payload);
+
+      // Upload images (non-fatal: product already created)
+      if (imageFiles.length > 0) {
+        try {
+          await api.admin.uploadProductImages(product.id, imageFiles);
+        } catch (imgErr) {
+          console.error("Image upload failed:", imgErr);
+        }
+      }
+
+      // Save variants (non-fatal: product already created)
       if (formData.hasVariants && variants.length > 0) {
-        await api.admin.updateProductVariants(
-          product.id,
-          variants.map((v) => ({
-            name: v.name,
-            sku: v.sku || undefined,
-            price: v.price ? parseFloat(v.price) : null,
-            stock: parseInt(v.stock) || 0,
-            size: v.size || undefined,
-            color: v.color || undefined,
-            material: v.material || undefined,
-          })),
-        );
+        try {
+          await api.admin.updateProductVariants(
+            product.id,
+            variants.map((v) => ({
+              name: v.name,
+              sku: v.sku || undefined,
+              price: v.price ? parseFloat(v.price) : null,
+              stock: parseInt(v.stock) || 0,
+              size: v.size || undefined,
+              color: v.color || undefined,
+              material: v.material || undefined,
+            })),
+          );
+        } catch (varErr) {
+          console.error("Variant save failed:", varErr);
+        }
       }
 
       setSuccess(true);
       setTimeout(() => router.push("/admin/products"), 1000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to save product:", err);
-      setError("Failed to create product. Please check your input and try again.");
+      setError(err?.message || "Failed to create product. Please check your input and try again.");
     } finally {
       setSaving(false);
     }
@@ -483,6 +512,18 @@ export default function NewProductPage() {
                   value={formData.barcode}
                   onChange={(e) => updateField("barcode", e.target.value)}
                   placeholder="e.g., 1234567890123"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Weight (grams)</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={formData.weight}
+                  onChange={(e) => updateField("weight", e.target.value)}
+                  min="0"
+                  step="0.01"
+                  placeholder="e.g., 150"
                 />
               </div>
             </div>
@@ -772,6 +813,65 @@ export default function NewProductPage() {
           {!formData.hasVariants && (
             <p className="text-sm text-gray-400">
               Enable variants to sell different sizes, colors, or materials of this product.
+            </p>
+          )}
+        </section>
+
+        {/* ── 4b. Specifications ── */}
+        <section className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-gray-900">Specifications</h2>
+          </div>
+          {specifications.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {specifications.map((spec) => (
+                <div key={spec.id} className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    className={`${inputClass} flex-1`}
+                    value={spec.key}
+                    onChange={(e) =>
+                      setSpecifications((prev) =>
+                        prev.map((s) => (s.id === spec.id ? { ...s, key: e.target.value } : s)),
+                      )
+                    }
+                    placeholder="e.g., Material"
+                  />
+                  <input
+                    type="text"
+                    className={`${inputClass} flex-1`}
+                    value={spec.value}
+                    onChange={(e) =>
+                      setSpecifications((prev) =>
+                        prev.map((s) => (s.id === spec.id ? { ...s, value: e.target.value } : s)),
+                      )
+                    }
+                    placeholder="e.g., Gel"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSpecifications((prev) => prev.filter((s) => s.id !== spec.id))}
+                    className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              setSpecifications((prev) => [...prev, { id: generateId(), key: "", value: "" }])
+            }
+            className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Specification
+          </button>
+          {specifications.length === 0 && (
+            <p className="text-sm text-gray-400 mt-2">
+              Add product specifications like material, dimensions, skin type, etc.
             </p>
           )}
         </section>

@@ -60,10 +60,17 @@ interface ProductFormData {
   badgeText: string;
   tags: string;
   hasVariants: boolean;
+  weight: string;
   metaTitle: string;
   metaDescription: string;
   flashSalePrice: string;
   flashSaleEndsAt: string;
+}
+
+interface SpecRow {
+  id: string;
+  key: string;
+  value: string;
 }
 
 interface VariantRow {
@@ -125,6 +132,7 @@ export default function EditProductPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [images, setImages] = useState<ProductImage[]>([]);
   const [variants, setVariants] = useState<VariantRow[]>([]);
+  const [specifications, setSpecifications] = useState<SpecRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -149,6 +157,7 @@ export default function EditProductPage() {
     badgeText: "",
     tags: "",
     hasVariants: false,
+    weight: "",
     metaTitle: "",
     metaDescription: "",
     flashSalePrice: "",
@@ -227,6 +236,7 @@ export default function EditProductPage() {
         badgeText: p.badgeText || "",
         tags: Array.isArray(p.tags) ? p.tags.join(", ") : p.tags || "",
         hasVariants: p.hasVariants ?? false,
+        weight: p.weight != null ? String(p.weight) : "",
         metaTitle: p.metaTitle || "",
         metaDescription: p.metaDescription || "",
         flashSalePrice: p.flashSalePrice ? String(Number(p.flashSalePrice)) : "",
@@ -257,6 +267,12 @@ export default function EditProductPage() {
           stock: v.stock != null ? String(v.stock) : "",
           sku: v.sku || "",
         })),
+      );
+
+      setSpecifications(
+        Array.isArray(p.specifications)
+          ? p.specifications.map((s: any) => ({ id: crypto.randomUUID(), key: s.key || "", value: s.value || "" }))
+          : [],
       );
     } catch (err: any) {
       console.error("Failed to load product:", err);
@@ -389,7 +405,8 @@ export default function EditProductPage() {
     setSuccess(false);
 
     try {
-      const payload = {
+      const parsedLowStock = parseInt(formData.lowStockAlert);
+      const payload: Record<string, any> = {
         name: formData.name,
         slug: formData.slug || undefined,
         description: formData.description || undefined,
@@ -401,7 +418,7 @@ export default function EditProductPage() {
         barcode: formData.barcode || undefined,
         videoUrl: formData.videoUrl || undefined,
         stock: formData.hasVariants ? variantsTotalStock : parseInt(formData.stock),
-        lowStockAlert: parseInt(formData.lowStockAlert) || 5,
+        lowStockAlert: isNaN(parsedLowStock) ? 5 : parsedLowStock,
         trackInventory: formData.trackInventory,
         allowBackorder: formData.allowBackorder,
         categoryId: formData.categoryId || undefined,
@@ -415,11 +432,20 @@ export default function EditProductPage() {
           .map((t) => t.trim())
           .filter(Boolean),
         hasVariants: formData.hasVariants,
+        weight: formData.weight ? parseFloat(formData.weight) : null,
+        specifications: specifications.filter((s) => s.key.trim() && s.value.trim()).map(({ key, value }) => ({ key: key.trim(), value: value.trim() })) || null,
         metaTitle: formData.metaTitle || undefined,
         metaDescription: formData.metaDescription || undefined,
-        flashSalePrice: formData.flashSalePrice ? parseFloat(formData.flashSalePrice) : null,
-        flashSaleEndsAt: formData.flashSaleEndsAt ? new Date(formData.flashSaleEndsAt).toISOString() : null,
       };
+
+      // Only send flash sale fields when flash sale is enabled
+      if (flashSaleEnabled) {
+        payload.flashSalePrice = formData.flashSalePrice ? parseFloat(formData.flashSalePrice) : null;
+        payload.flashSaleEndsAt = formData.flashSaleEndsAt ? new Date(formData.flashSaleEndsAt).toISOString() : null;
+      } else {
+        payload.flashSalePrice = null;
+        payload.flashSaleEndsAt = null;
+      }
 
       await api.admin.updateProduct(productId, payload);
 
@@ -439,9 +465,9 @@ export default function EditProductPage() {
 
       setSuccess(true);
       setTimeout(() => router.push("/admin/products"), 1000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to save product:", err);
-      setError("Failed to save product. Please check your input and try again.");
+      setError(err?.message || "Failed to save product. Please check your input and try again.");
     } finally {
       setSaving(false);
     }
@@ -755,6 +781,20 @@ export default function EditProductPage() {
               />
             </div>
 
+            {/* Weight */}
+            <div>
+              <label className={labelClass}>Weight (grams)</label>
+              <input
+                type="number"
+                className={inputClass}
+                value={formData.weight}
+                onChange={(e) => setField("weight", e.target.value)}
+                min="0"
+                step="0.01"
+                placeholder="e.g., 150"
+              />
+            </div>
+
             {/* Stock */}
             <div>
               <label className={labelClass}>Stock Quantity</label>
@@ -1022,6 +1062,67 @@ export default function EditProductPage() {
                 </button>
               </div>
             </>
+          )}
+        </div>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* 4b. Specifications                                                  */}
+        {/* ------------------------------------------------------------------ */}
+        <div className={cardClass}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Specifications</h2>
+          </div>
+          {specifications.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {specifications.map((spec) => (
+                <div key={spec.id} className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    className={`${inputClass} flex-1`}
+                    value={spec.key}
+                    onChange={(e) =>
+                      setSpecifications((prev) =>
+                        prev.map((s) => (s.id === spec.id ? { ...s, key: e.target.value } : s)),
+                      )
+                    }
+                    placeholder="e.g., Material"
+                  />
+                  <input
+                    type="text"
+                    className={`${inputClass} flex-1`}
+                    value={spec.value}
+                    onChange={(e) =>
+                      setSpecifications((prev) =>
+                        prev.map((s) => (s.id === spec.id ? { ...s, value: e.target.value } : s)),
+                      )
+                    }
+                    placeholder="e.g., Gel"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSpecifications((prev) => prev.filter((s) => s.id !== spec.id))}
+                    className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              setSpecifications((prev) => [...prev, { id: crypto.randomUUID(), key: "", value: "" }])
+            }
+            className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Specification
+          </button>
+          {specifications.length === 0 && (
+            <p className="text-sm text-gray-400 mt-2">
+              Add product specifications like material, dimensions, skin type, etc.
+            </p>
           )}
         </div>
 

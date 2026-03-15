@@ -143,6 +143,12 @@ model Product {
   hasVariants   Boolean   @default(false)
   variants      ProductVariant[]
   
+  // Shipping / Physical
+  weight          Decimal?  @db.Decimal(10, 2) // Weight in grams
+  
+  // Specifications (structured key-value pairs)
+  specifications  Json?     // e.g. [{ key: "Material", value: "Gel" }, ...]
+
   // SEO
   metaTitle       String?
   metaDescription String?

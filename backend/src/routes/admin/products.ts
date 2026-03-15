@@ -203,9 +203,11 @@ const ProductSchema = z.object({
   isBestseller: z.boolean().default(false),
   badgeText: z.string().optional().nullable(),
   hasVariants: z.boolean().default(false),
+  weight: z.number().nonnegative().optional().nullable(),
+  specifications: z.array(z.object({ key: z.string(), value: z.string() })).optional().nullable(),
   metaTitle: z.string().optional(),
   metaDescription: z.string().optional(),
-  flashSalePrice: z.number().positive().optional().nullable(),
+  flashSalePrice: z.number().nonnegative().optional().nullable(),
   flashSaleEndsAt: z.string().datetime().optional().nullable(),
 });
 
@@ -242,7 +244,8 @@ router.post("/", async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Admin create product error:", error);
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors });
+      const summary = error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
+      return res.status(400).json({ error: `Validation failed: ${summary}`, details: error.errors });
     }
     if ((error as any)?.code === "P2002") {
       const field = (error as any)?.meta?.target?.[0] || "field";
