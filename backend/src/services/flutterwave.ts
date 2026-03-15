@@ -37,6 +37,7 @@ type FlutterwaveResponse = {
 const FLW_TOKEN_URL =
   "https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token";
 const FLW_BASE_URL = "https://f4bexperience.flutterwave.com";
+const FLW_CHECKOUT_URL = "https://checkout.flutterwave.com/hosted/pay";
 
 // OAuth2 token cache
 let cachedToken: { accessToken: string; expiresAt: number } | null = null;
@@ -183,9 +184,9 @@ export async function createFlutterwavePayment(
     }
   }
 
-  // For card payments — use Standard Checkout (hosted payment page)
+  // For card payments — use V4 Checkout Sessions (hosted payment page)
   const payload = {
-    tx_ref: input.tx_ref,
+    reference: input.tx_ref,
     amount: input.amount,
     currency: input.currency,
     redirect_url: input.redirect_url,
@@ -198,7 +199,6 @@ export async function createFlutterwavePayment(
       description: "Order Payment",
       logo: "",
     },
-    payment_options: "card",
   };
 
   try {
@@ -206,12 +206,24 @@ export async function createFlutterwavePayment(
       "flutterwave-card",
       async () => {
         const headers = await getAuthHeaders();
-        const response = await axios.post<FlutterwaveResponse>(
-          `${FLW_BASE_URL}/payments`,
+        const response = await axios.post<any>(
+          `${FLW_BASE_URL}/checkout/sessions`,
           payload,
           { headers, timeout: 30000 }
         );
-        return response.data;
+        const sessionId = response.data?.data?.id;
+        const checkoutLink = sessionId
+          ? `${FLW_CHECKOUT_URL}?session=${sessionId}`
+          : undefined;
+        return {
+          status: response.data.status || "success",
+          message: response.data.message || "Checkout session created",
+          data: {
+            link: checkoutLink,
+            flw_ref: sessionId || response.data?.data?.reference,
+            tx_ref: input.tx_ref,
+          },
+        };
       },
       FLUTTERWAVE_RETRY_OPTIONS
     );
