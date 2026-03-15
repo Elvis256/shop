@@ -288,6 +288,10 @@ export const api = {
     },
     deleteProductImage: (productId: string, imageId: string): Promise<SuccessMessage> =>
       apiFetch(`/api/admin/products/${productId}/images/${imageId}`, { method: "DELETE" }),
+    updateProductVariants: (id: string, variants: any[]): Promise<any> =>
+      apiFetch(`/api/admin/products/${id}/variants`, { method: "PUT", body: JSON.stringify({ variants }), headers: { "Content-Type": "application/json" } }),
+    deleteProductVariant: (productId: string, variantId: string): Promise<SuccessMessage> =>
+      apiFetch(`/api/admin/products/${productId}/variants/${variantId}`, { method: "DELETE" }),
     uploadImage: (file: File): Promise<{ url: string }> => {
       const formData = new FormData();
       formData.append("image", file);

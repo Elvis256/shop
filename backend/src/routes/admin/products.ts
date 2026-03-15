@@ -120,6 +120,7 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       include: {
         category: true,
         images: { orderBy: { position: "asc" } },
+        variants: { orderBy: { createdAt: "asc" } },
       },
     });
 
@@ -145,6 +146,7 @@ const ProductSchema = z.object({
   comparePrice: z.number().positive().optional().nullable(),
   sku: optStr(),
   barcode: optStr(),
+  videoUrl: optStr(),
   stock: z.number().int().min(0).default(0),
   lowStockAlert: z.number().int().min(0).default(5),
   trackInventory: z.boolean().default(true),
@@ -153,6 +155,10 @@ const ProductSchema = z.object({
   tags: z.array(z.string()).default([]),
   status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).default("DRAFT"),
   featured: z.boolean().default(false),
+  isNew: z.boolean().default(false),
+  isBestseller: z.boolean().default(false),
+  badgeText: z.string().optional().nullable(),
+  hasVariants: z.boolean().default(false),
   metaTitle: z.string().optional(),
   metaDescription: z.string().optional(),
 });
@@ -314,6 +320,98 @@ router.delete("/:id/images/:imageId", async (req: AuthRequest, res: Response) =>
   } catch (error) {
     console.error("Admin delete image error:", error);
     return res.status(500).json({ error: "Failed to delete image" });
+  }
+});
+
+// ─── Variant CRUD ────────────────────────────────────────────────────────────
+
+const VariantSchema = z.object({
+  name: z.string().min(1),
+  sku: z.string().optional().nullable(),
+  price: z.number().positive().optional().nullable(),
+  stock: z.number().int().min(0).default(0),
+  size: z.string().optional().nullable(),
+  color: z.string().optional().nullable(),
+  material: z.string().optional().nullable(),
+});
+
+// PUT /api/admin/products/:id/variants — Replace all variants at once
+router.put("/:id/variants", async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    const body = z.object({
+      variants: z.array(VariantSchema),
+    }).parse(req.body);
+
+    // Delete existing variants and create new ones in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.productVariant.deleteMany({ where: { productId: id } });
+
+      const created = await Promise.all(
+        body.variants.map((v) =>
+          tx.productVariant.create({
+            data: {
+              productId: id,
+              name: v.name,
+              sku: v.sku || null,
+              price: v.price ?? null,
+              stock: v.stock,
+              size: v.size || null,
+              color: v.color || null,
+              material: v.material || null,
+            },
+          })
+        )
+      );
+
+      // Update product hasVariants flag and total stock
+      const totalVariantStock = body.variants.reduce((sum, v) => sum + v.stock, 0);
+      await tx.product.update({
+        where: { id },
+        data: {
+          hasVariants: body.variants.length > 0,
+          stock: body.variants.length > 0 ? totalVariantStock : undefined,
+        },
+      });
+
+      return created;
+    });
+
+    return res.json({ message: "Variants updated", variants: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: error.errors });
+    }
+    console.error("Admin update variants error:", error);
+    return res.status(500).json({ error: "Failed to update variants" });
+  }
+});
+
+// DELETE /api/admin/products/:id/variants/:variantId
+router.delete("/:id/variants/:variantId", async (req: AuthRequest, res: Response) => {
+  try {
+    const { id, variantId } = req.params;
+
+    const variant = await prisma.productVariant.findFirst({
+      where: { id: variantId, productId: id },
+    });
+    if (!variant) return res.status(404).json({ error: "Variant not found" });
+
+    await prisma.productVariant.delete({ where: { id: variantId } });
+
+    // Update hasVariants flag
+    const remaining = await prisma.productVariant.count({ where: { productId: id } });
+    if (remaining === 0) {
+      await prisma.product.update({ where: { id }, data: { hasVariants: false } });
+    }
+
+    return res.json({ message: "Variant deleted" });
+  } catch (error) {
+    console.error("Admin delete variant error:", error);
+    return res.status(500).json({ error: "Failed to delete variant" });
   }
 });
 
