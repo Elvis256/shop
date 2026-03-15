@@ -48,10 +48,13 @@ function SearchContent() {
   const inStockOnly = searchParams.get("inStock") === "true";
   const categorySlug = searchParams.get("category") || "";
   const sort = searchParams.get("sort") || "relevance";
+  const page = parseInt(searchParams.get("page") || "1", 10);
+  const LIMIT = 20;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -73,7 +76,7 @@ function SearchContent() {
       return;
     }
     setLoading(true);
-    const params: Record<string, string> = {};
+    const params: Record<string, string> = { limit: String(LIMIT), page: String(page) };
     if (minPrice) params.minPrice = minPrice;
     if (maxPrice) params.maxPrice = maxPrice;
     if (inStockOnly) params.inStock = "true";
@@ -85,10 +88,11 @@ function SearchContent() {
       .then((data) => {
         setProducts(data.products as Product[]);
         setTotal(data.pagination?.total ?? data.products.length);
+        setTotalPages(data.pagination?.totalPages ?? 1);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [query, minPrice, maxPrice, inStockOnly, categorySlug, sort]);
+  }, [query, minPrice, maxPrice, inStockOnly, categorySlug, sort, page]);
 
   function updateParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
@@ -97,6 +101,7 @@ function SearchContent() {
     } else {
       params.delete(key);
     }
+    if (key !== "page") params.delete("page");
     router.push(`/search?${params.toString()}`);
   }
 
@@ -104,6 +109,7 @@ function SearchContent() {
     const params = new URLSearchParams(searchParams.toString());
     if (minPriceInput) params.set("minPrice", minPriceInput); else params.delete("minPrice");
     if (maxPriceInput) params.set("maxPrice", maxPriceInput); else params.delete("maxPrice");
+    params.delete("page");
     router.push(`/search?${params.toString()}`);
   }
 
@@ -280,6 +286,29 @@ function SearchContent() {
                   flashSaleEndsAt={product.flashSaleEndsAt}
                 />
               ))}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4 mt-8 pt-6 border-t">
+              <button
+                onClick={() => updateParam("page", String(page - 1))}
+                disabled={page <= 1}
+                className="px-4 py-2 text-sm border rounded-lg disabled:opacity-30 hover:bg-gray-50 transition-colors"
+              >
+                ← Previous
+              </button>
+              <span className="text-sm text-gray-600">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => updateParam("page", String(page + 1))}
+                disabled={page >= totalPages}
+                className="px-4 py-2 text-sm border rounded-lg disabled:opacity-30 hover:bg-gray-50 transition-colors"
+              >
+                Next →
+              </button>
             </div>
           )}
         </div>

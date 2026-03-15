@@ -119,8 +119,11 @@ router.get("/", async (req: Request, res: Response) => {
         rating: p.rating,
         reviewCount: p.reviewCount,
         imageUrl: p.images[0]?.url || null,
-        category: p.category,
+        category: p.category?.name || null,
         inStock: p.stock > 0,
+        shippingBadge: (p.cjProductId || p.aliexpressProductId) ? "From Abroad" : "Express",
+        flashSalePrice: p.flashSalePrice ? Number(p.flashSalePrice) : null,
+        flashSaleEndsAt: p.flashSaleEndsAt?.toISOString() || null,
       })),
       facets: {
         priceRange: {
