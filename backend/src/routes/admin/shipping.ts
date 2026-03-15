@@ -20,10 +20,26 @@ const zoneSchema = z.object({
 // GET /api/admin/shipping-zones
 router.get("/", async (_req: AuthRequest, res: Response) => {
   try {
-    const zones = await prisma.shippingZone.findMany({
-      orderBy: { createdAt: "asc" },
+    const [zones, orderStats] = await Promise.all([
+      prisma.shippingZone.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.order.aggregate({
+        where: { status: { notIn: ["CANCELLED", "REFUNDED"] } },
+        _sum: { shippingCost: true },
+        _count: true,
+      }),
+    ]);
+
+    const activeCount = zones.filter((z) => z.isActive).length;
+
+    return res.json({
+      zones,
+      stats: {
+        totalZones: zones.length,
+        activeZones: activeCount,
+        totalShippingRevenue: Number(orderStats._sum.shippingCost || 0),
+        ordersWithShipping: orderStats._count,
+      },
     });
-    return res.json({ zones });
   } catch (error) {
     console.error("Get shipping zones error:", error);
     return res.status(500).json({ error: "Failed to fetch shipping zones" });
