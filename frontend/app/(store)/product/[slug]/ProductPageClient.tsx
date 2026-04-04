@@ -282,7 +282,7 @@ export default function ProductPageClient() {
     : 0;
   const savingsAmount = discountPercent > 0 ? Number(originalPrice) - Number(effectivePrice) : 0;
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://pleasurezone.ug";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
   const breadcrumbItems = [
     { name: "Home", url: siteUrl },
     { name: "Shop", url: `${siteUrl}/category` },

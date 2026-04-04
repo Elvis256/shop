@@ -144,7 +144,7 @@ export default function ProductCard({
           </div>
 
           {/* Action Buttons */}
-          <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+          <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all duration-300 translate-x-2 group-hover:translate-x-0">
             <button
               onClick={handleWishlist}
               className={`p-2.5 rounded-full shadow-soft backdrop-blur-sm transition-all duration-200 ${
@@ -160,7 +160,7 @@ export default function ProductCard({
 
           {/* Quick Add Button */}
           {inStock && (
-            <div className="absolute bottom-3 left-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
+            <div className="absolute bottom-3 left-3 right-3 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all duration-300 translate-y-2 group-hover:translate-y-0">
               <button
                 onClick={handleAddToCart}
                 disabled={isAdding}

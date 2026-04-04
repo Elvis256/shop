@@ -17,7 +17,7 @@ interface ProductSchemaProps {
 }
 
 export function ProductSchema({ product }: ProductSchemaProps) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://pleasurezone.ug";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
   
   const schema = {
     "@context": "https://schema.org",
@@ -68,7 +68,7 @@ export function ProductSchema({ product }: ProductSchemaProps) {
 }
 
 export function OrganizationSchema() {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://pleasurezone.ug";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
   
   const schema = {
     "@context": "https://schema.org",
@@ -94,7 +94,7 @@ export function OrganizationSchema() {
 }
 
 export function WebsiteSchema() {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://pleasurezone.ug";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
   
   const schema = {
     "@context": "https://schema.org",

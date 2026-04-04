@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import ProductPageClient from "./ProductPageClient";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://pleasurezone.ug";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
 
 interface Props {
   params: Promise<{ slug: string }>;

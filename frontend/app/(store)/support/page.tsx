@@ -417,7 +417,7 @@ export default function SupportPage() {
             Our support team typically responds within 24 hours.
           </p>
           <p className="text-sm">
-            Email: <a href="mailto:support@pleasurezone.ug" className="text-accent">support@pleasurezone.ug</a>
+            Email: <a href="mailto:support@ugsex.com" className="text-accent">support@ugsex.com</a>
           </p>
         </div>
       </div>

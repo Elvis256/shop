@@ -11,7 +11,7 @@ import { CurrencyProvider } from "@/contexts/CurrencyContext";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorker";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://pleasurezone.ug";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
 
 export const metadata: Metadata = {
   title: {
