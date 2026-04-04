@@ -17,6 +17,9 @@ import ProductQA from "@/components/ProductQA";
 import PriceTiers from "@/components/PriceTiers";
 import ProductBundles from "@/components/ProductBundles";
 import SubscribeAndSave from "@/components/SubscribeAndSave";
+import ShareForDiscount from "@/components/ShareForDiscount";
+import GroupBuyBanner from "@/components/GroupBuy";
+import PriceSlashButton from "@/components/PriceSlash";
 import {
   Star, Heart, Shield, Truck, Package, ArrowLeft, Share2, Check, Eye,
   Users, ShoppingBag, Copy, MessageCircle, Clock, Tag, Zap, RotateCcw,
@@ -434,6 +437,13 @@ export default function ProductPageClient() {
             {/* Price Tiers */}
             <PriceTiers productId={product.id} />
 
+            {/* Group Buy Banner */}
+            <GroupBuyBanner
+              productId={product.id}
+              productName={product.name}
+              regularPrice={Number(effectivePrice)}
+            />
+
             {/* Stock & Delivery */}
             <div className="mb-4 space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
@@ -514,6 +524,14 @@ export default function ProductPageClient() {
                 />
               </div>
             )}
+
+            {/* Price Slash */}
+            <PriceSlashButton
+              productId={product.id}
+              productSlug={product.slug}
+              productName={product.name}
+              originalPrice={Number(effectivePrice)}
+            />
 
             {/* Add to Cart + Buy Now */}
             <div ref={addToCartRef} className="mb-4 space-y-2.5">
@@ -640,6 +658,17 @@ export default function ProductPageClient() {
                 </div>
               </div>
             </div>
+
+            {/* Share for Discount */}
+            {user && product && (
+              <div className="mt-4">
+                <ShareForDiscount
+                  productId={product.id}
+                  productSlug={product.slug}
+                  productName={product.name}
+                />
+              </div>
+            )}
 
             {/* Payment methods */}
             <div className="mt-4 pt-4 border-t">

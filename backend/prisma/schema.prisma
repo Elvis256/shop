@@ -49,6 +49,10 @@ model User {
   pushSubscriptions PushSubscription[]
   browseHistory     BrowseEvent[]
   segmentTags       String[]
+  shareDiscounts    ShareDiscount[]
+  groupBuyJoined    GroupBuyParticipant[]
+  dailyCheckIns     DailyCheckIn[]
+  priceSlashes      PriceSlash[]
 }
 
 model RefreshToken {
@@ -209,6 +213,9 @@ model Product {
   priceTiers       PriceTier[]
   subscriptions    Subscription[]
   browseEvents     BrowseEvent[]
+  shareDiscounts   ShareDiscount[]
+  groupBuys        GroupBuy[]
+  priceSlashes     PriceSlash[]
 
   @@index([categoryId])
   @@index([status])
@@ -1466,4 +1473,100 @@ model WebhookEndpoint {
   lastError String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─── Social Shopping: Share for Discount ──────────────────────────────────────
+model ShareDiscount {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  shareCode  String   @unique
+  platform   String   // whatsapp, facebook, twitter, copy
+  clicks     Int      @default(0)
+  couponCode String?  @unique
+  couponUsed Boolean  @default(false)
+  discount   Int      @default(10) // percentage off
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([shareCode])
+}
+
+// ─── Social Shopping: Group Buy ───────────────────────────────────────────────
+model GroupBuy {
+  id              String   @id @default(cuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  targetCount     Int      @default(3)
+  currentCount    Int      @default(0)
+  discountPercent Int      @default(20)
+  groupPrice      Decimal  @db.Decimal(10, 2)
+  expiresAt       DateTime
+  status          String   @default("active") // active, completed, expired
+  createdAt       DateTime @default(now())
+  participants    GroupBuyParticipant[]
+
+  @@index([productId])
+  @@index([status, expiresAt])
+}
+
+model GroupBuyParticipant {
+  id         String   @id @default(cuid())
+  groupBuyId String
+  groupBuy   GroupBuy @relation(fields: [groupBuyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt   DateTime @default(now())
+
+  @@unique([groupBuyId, userId])
+}
+
+// ─── Social Shopping: Daily Check-in ──────────────────────────────────────────
+model DailyCheckIn {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  points    Int      @default(10)
+  streak    Int      @default(1)
+  bonus     Int      @default(0) // bonus points for streak milestones
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+// ─── Social Shopping: Price Slash ─────────────────────────────────────────────
+model PriceSlash {
+  id             String   @id @default(cuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  initiatorId    String
+  initiator      User     @relation(fields: [initiatorId], references: [id], onDelete: Cascade)
+  slashCode      String   @unique
+  originalPrice  Decimal  @db.Decimal(10, 2)
+  currentPrice   Decimal  @db.Decimal(10, 2)
+  minPrice       Decimal  @db.Decimal(10, 2)
+  slashAmount    Decimal  @default(500) @db.Decimal(10, 2)
+  maxSlashes     Int      @default(10)
+  currentSlashes Int      @default(0)
+  expiresAt      DateTime
+  status         String   @default("active") // active, claimed, expired
+  createdAt      DateTime @default(now())
+  slashers       PriceSlasher[]
+
+  @@index([slashCode])
+  @@index([initiatorId])
+}
+
+model PriceSlasher {
+  id           String     @id @default(cuid())
+  priceSlashId String
+  priceSlash   PriceSlash @relation(fields: [priceSlashId], references: [id], onDelete: Cascade)
+  visitorIp    String
+  slashedAt    DateTime   @default(now())
+
+  @@unique([priceSlashId, visitorIp])
 }

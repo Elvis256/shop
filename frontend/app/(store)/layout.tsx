@@ -10,6 +10,8 @@ import ExitIntent from "@/components/ExitIntent";
 import SpinWheel from "@/components/SpinWheel";
 import InstallPrompt from "@/components/InstallPrompt";
 import PushNotifications from "@/components/PushNotifications";
+import LivePurchaseFeed from "@/components/LivePurchaseFeed";
+import DailyCheckIn from "@/components/DailyCheckIn";
 import { OrganizationSchema, WebsiteSchema } from "@/components/StructuredData";
 
 export const metadata: Metadata = {
@@ -48,6 +50,8 @@ export default function StoreLayout({
       <SpinWheel />
       <InstallPrompt />
       <PushNotifications />
+      <LivePurchaseFeed />
+      <DailyCheckIn />
     </div>
   );
 }

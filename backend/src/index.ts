@@ -47,6 +47,7 @@ import pushNotificationsRoutes from "./routes/pushNotifications";
 import browseTrackingRoutes from "./routes/browseTracking";
 import webhookEndpointsRoutes from "./routes/webhookEndpoints";
 import dailyDealRoutes from "./routes/dailyDeal";
+import socialRoutes from "./routes/social";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -163,6 +164,7 @@ app.use("/api/push", pushNotificationsRoutes);
 app.use("/api/browse", browseTrackingRoutes);
 app.use("/api/webhooks/endpoints", webhookEndpointsRoutes);
 app.use("/api/daily-deal", dailyDealRoutes);
+app.use("/api/social", socialRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);
