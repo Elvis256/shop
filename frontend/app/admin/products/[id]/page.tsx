@@ -586,7 +586,7 @@ export default function EditProductPage() {
     formData.metaDescription ||
     formData.description?.replace(/<[^>]*>/g, "").slice(0, 160) ||
     "Product description will appear here...";
-  const serpUrl = `yourstore.com/products/${formData.slug || "product-slug"}`;
+  const serpUrl = `ugsex.com/product/${formData.slug || "product-slug"}`;
 
   // ---- render -----------------------------------------------------------------
   return (

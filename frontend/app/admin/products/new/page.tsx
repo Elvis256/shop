@@ -353,8 +353,8 @@ export default function NewProductPage() {
   };
 
   const serpUrl = formData.slug
-    ? `example.com/products/${formData.slug}`
-    : "example.com/products/your-product-slug";
+    ? `ugsex.com/product/${formData.slug}`
+    : "ugsex.com/product/your-product-slug";
 
   return (
     <div className="max-w-4xl mx-auto pb-28">

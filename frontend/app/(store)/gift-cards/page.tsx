@@ -272,7 +272,7 @@ export default function GiftCardsPage() {
                 </button>
                 
                 <div>
-                  <Link href="/products" className="btn-primary">
+                  <Link href="/category" className="btn-primary">
                     Continue Shopping
                   </Link>
                 </div>

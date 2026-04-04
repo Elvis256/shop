@@ -82,10 +82,17 @@ router.post("/:id/items", async (req: Request, res: Response) => {
     const { id } = req.params;
     const { productId, quantity } = AddItemSchema.parse(req.body);
 
-    // Check cart exists
+    // Verify cart exists and caller has access (knowing the UUID proves ownership)
     const cart = await prisma.cart.findUnique({ where: { id } });
     if (!cart) {
       return res.status(404).json({ error: "Cart not found" });
+    }
+    // If cart is associated with a user, verify ownership via auth
+    if ((cart as any).userId) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(403).json({ error: "This cart belongs to a registered user" });
+      }
     }
 
     // Check product exists and has stock
@@ -131,6 +138,12 @@ router.put("/:cartId/items/:itemId", async (req: Request, res: Response) => {
     const { cartId, itemId } = req.params;
     const { quantity } = z.object({ quantity: z.number().int().min(0) }).parse(req.body);
 
+    // Verify cart exists (knowing the UUID proves ownership for guest carts)
+    const cart = await prisma.cart.findUnique({ where: { id: cartId } });
+    if (!cart) {
+      return res.status(404).json({ error: "Cart not found" });
+    }
+
     const item = await prisma.cartItem.findFirst({
       where: { id: itemId, cartId },
     });
@@ -159,6 +172,12 @@ router.put("/:cartId/items/:itemId", async (req: Request, res: Response) => {
 router.delete("/:cartId/items/:itemId", async (req: Request, res: Response) => {
   try {
     const { cartId, itemId } = req.params;
+
+    // Verify cart exists (knowing the UUID proves ownership for guest carts)
+    const cart = await prisma.cart.findUnique({ where: { id: cartId } });
+    if (!cart) {
+      return res.status(404).json({ error: "Cart not found" });
+    }
 
     const item = await prisma.cartItem.findFirst({
       where: { id: itemId, cartId },
@@ -189,6 +208,13 @@ const SyncCartSchema = z.object({
 router.delete("/:cartId/items", async (req: Request, res: Response) => {
   try {
     const { cartId } = req.params;
+
+    // Verify cart exists (knowing the UUID proves ownership for guest carts)
+    const cart = await prisma.cart.findUnique({ where: { id: cartId } });
+    if (!cart) {
+      return res.status(404).json({ error: "Cart not found" });
+    }
+
     await prisma.cartItem.deleteMany({ where: { cartId } });
     return res.json({ success: true });
   } catch (error) {

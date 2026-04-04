@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { sendNewsletterWelcome } from "../services/email";
+import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 
@@ -103,7 +104,7 @@ router.get("/status", async (req: Request, res: Response) => {
 });
 
 // GET /api/newsletter/admin/subscribers - Admin list of subscribers
-router.get("/admin/subscribers", async (req: Request, res: Response) => {
+router.get("/admin/subscribers", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 50;

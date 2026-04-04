@@ -237,7 +237,7 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
     const usdCurrency = await prisma.currency.findUnique({ where: { code: "USD" } });
     const usdToUgx = usdCurrency ? Math.round(1 / Number(usdCurrency.exchangeRate)) : 3700;
 
-    const products = await prisma.product.findMany({ where, take: 50 });
+    const products = await prisma.product.findMany({ where, take: 50, include: { variants: true } });
     const results: Array<{ id: string; name: string; status: string; changes?: any }> = [];
 
     for (const product of products) {
@@ -263,7 +263,7 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
 
         // Update variant prices too
         if (detail.variants.length > 0) {
-          const existingVariants = await prisma.productVariant.findMany({ where: { productId: product.id } });
+          const existingVariants = product.variants;
           for (const ev of existingVariants) {
             const matchingDetail = detail.variants.find((v) => (v.variantName || "Default") === ev.name);
             if (matchingDetail) {

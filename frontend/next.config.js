@@ -9,6 +9,15 @@ const withPWA = require('next-pwa')({
 const nextConfig = {
   turbopack: {},
   allowedDevOrigins: ["192.168.1.250"],
+  async redirects() {
+    return [
+      {
+        source: '/products',
+        destination: '/category',
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
     return [

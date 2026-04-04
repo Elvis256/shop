@@ -127,7 +127,7 @@ model Product {
   
   // Organization
   categoryId  String?
-  category    Category? @relation(fields: [categoryId], references: [id])
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   tags        String[]
   
   // Status
@@ -178,6 +178,10 @@ model Product {
   stockAlerts      StockAlert[]
   aliexpressOrders AliExpressOrder[]
   cjOrders         CJOrder[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([featured])
 }
 
 model ProductVariant {
@@ -221,7 +225,7 @@ model Category {
   description String?
   imageUrl    String?
   parentId    String?
-  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children    Category[] @relation("CategoryTree")
   products    Product[]
   affiliateProducts AffiliateProduct[]
@@ -244,7 +248,7 @@ model CartItem {
   cartId    String
   cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
   productId String
-  product   Product @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   quantity  Int     @default(1)
   
   @@unique([cartId, productId])
@@ -254,7 +258,7 @@ model Order {
   id              String      @id @default(cuid())
   orderNumber     String      @unique
   userId          String?
-  user            User?       @relation(fields: [userId], references: [id])
+  user            User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   
   // Customer info (for guest checkout)
   customerName    String
@@ -297,6 +301,10 @@ model Order {
   
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+
+  @@index([customerEmail])
+  @@index([status])
+  @@index([userId])
 }
 
 model OrderItem {
@@ -304,7 +312,7 @@ model OrderItem {
   orderId   String
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId String
-  product   Product @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
   name      String
   price     Decimal @db.Decimal(10, 2)
   quantity  Int
@@ -338,7 +346,7 @@ model StockReservation {
 model Payment {
   id        String        @id @default(cuid())
   orderId   String
-  order     Order         @relation(fields: [orderId], references: [id])
+  order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   provider  String        @default("flutterwave")
   method    PaymentMethod
   status    PaymentStatus @default(PENDING)
@@ -571,7 +579,7 @@ model PaymentProvider {
 model MobileMoneyTransaction {
   id              String   @id @default(cuid())
   orderId         String?
-  order           Order?   @relation(fields: [orderId], references: [id])
+  order           Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
   
   provider        String   // mtn_ug, airtel_ug
   phoneNumber     String
@@ -641,9 +649,9 @@ model ActivityLog {
 model ReturnRequest {
   id            String        @id @default(cuid())
   orderId       String
-  order         Order         @relation(fields: [orderId], references: [id])
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   userId        String?
-  user          User?         @relation(fields: [userId], references: [id])
+  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   
   reason        ReturnReason
   description   String?       @db.Text
@@ -706,7 +714,7 @@ model SupportTicket {
   id            String        @id @default(cuid())
   ticketNumber  String        @unique
   userId        String?
-  user          User?         @relation(fields: [userId], references: [id])
+  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   
   email         String
   name          String
@@ -843,7 +851,7 @@ model Referral {
   referralCode    ReferralCode @relation(fields: [referralCodeId], references: [id], onDelete: Cascade)
   
   referredUserId  String       @unique
-  referredUser    User         @relation("ReferredUser", fields: [referredUserId], references: [id])
+  referredUser    User         @relation("ReferredUser", fields: [referredUserId], references: [id], onDelete: Cascade)
   
   status          ReferralStatus @default(PENDING)
   rewardAmount    Decimal?     @db.Decimal(10, 2)
@@ -1034,7 +1042,7 @@ model AffiliateProduct {
   source          AffiliateSource
   sourceProductId String?  // external product ID (ASIN, AliExpress ID)
   categoryId      String?
-  category        Category? @relation(fields: [categoryId], references: [id])
+  category        Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   tags            String[]
   rating          Decimal? @db.Decimal(3, 2)
   reviewCount     Int      @default(0)
@@ -1071,7 +1079,7 @@ model AffiliateClick {
 model Affiliate {
   id              String   @id @default(cuid())
   userId          String?  @unique
-  user            User?    @relation(fields: [userId], references: [id])
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   name            String
   email           String   @unique
   website         String?
@@ -1166,7 +1174,7 @@ model AliExpressOrder {
   orderId             String
   order               Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId           String
-  product             Product              @relation(fields: [productId], references: [id])
+  product             Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
   aliexpressOrderId   String?              // AliExpress order number
   aliexpressProductId String               // AliExpress product ID
   quantity            Int
@@ -1202,7 +1210,7 @@ model CJOrder {
   orderId         String
   order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId       String
-  product         Product       @relation(fields: [productId], references: [id])
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
   cjOrderId       String?       // CJ Dropshipping order ID
   cjProductId     String        // CJ product ID
   quantity        Int

@@ -7,10 +7,10 @@ import crypto from "crypto";
 export function verifyFlutterwaveHash(hash: string | undefined): boolean {
   const webhookSecret = process.env.FLW_WEBHOOK_HASH;
 
-  // If no webhook secret configured, skip hash verification but log warning
+  // If no webhook secret configured, reject the webhook
   if (!webhookSecret) {
-    console.warn("FLW_WEBHOOK_HASH not configured — skipping webhook hash verification");
-    return true;
+    console.warn("FLW_WEBHOOK_HASH not configured — rejecting webhook for security");
+    return false;
   }
 
   if (!hash) {

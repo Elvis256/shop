@@ -58,22 +58,10 @@ router.post("/apply-processing-fee", async (req: AuthRequest, res: Response) => 
     const multiplier = (1 + newFee / 100) / (1 + oldFee / 100);
 
     // Update all prices using raw SQL (Prisma Decimal workaround)
-    const products = await prisma.$executeRawUnsafe(
-      `UPDATE "Product" SET price = CEIL(price * $1)`,
-      multiplier
-    );
-    const comparePrices = await prisma.$executeRawUnsafe(
-      `UPDATE "Product" SET "comparePrice" = CEIL("comparePrice" * $1) WHERE "comparePrice" IS NOT NULL`,
-      multiplier
-    );
-    const flashPrices = await prisma.$executeRawUnsafe(
-      `UPDATE "Product" SET "flashSalePrice" = CEIL("flashSalePrice" * $1) WHERE "flashSalePrice" IS NOT NULL`,
-      multiplier
-    );
-    const variants = await prisma.$executeRawUnsafe(
-      `UPDATE "ProductVariant" SET price = CEIL(price * $1) WHERE price IS NOT NULL`,
-      multiplier
-    );
+    const products = await prisma.$executeRaw`UPDATE "Product" SET price = CEIL(price * ${multiplier})`;
+    const comparePrices = await prisma.$executeRaw`UPDATE "Product" SET "comparePrice" = CEIL("comparePrice" * ${multiplier}) WHERE "comparePrice" IS NOT NULL`;
+    const flashPrices = await prisma.$executeRaw`UPDATE "Product" SET "flashSalePrice" = CEIL("flashSalePrice" * ${multiplier}) WHERE "flashSalePrice" IS NOT NULL`;
+    const variants = await prisma.$executeRaw`UPDATE "ProductVariant" SET price = CEIL(price * ${multiplier}) WHERE price IS NOT NULL`;
 
     // Persist the new fee setting
     await prisma.setting.upsert({

@@ -255,7 +255,7 @@ router.post("/callback/:provider", async (req, res) => {
         prisma.orderEvent.create({
           data: {
             orderId: transaction.orderId,
-            status: "Payment Received",
+            status: "PAYMENT_RECEIVED",
             note: `Mobile money payment confirmed via ${provider.toUpperCase()}`,
           },
         }),
@@ -306,7 +306,7 @@ router.post("/simulate-complete/:transactionId", async (req, res) => {
         prisma.orderEvent.create({
           data: {
             orderId: transaction.orderId,
-            status: "Payment Received",
+            status: "PAYMENT_RECEIVED",
             note: `Mobile money payment confirmed (${transaction.provider})`,
           },
         }),

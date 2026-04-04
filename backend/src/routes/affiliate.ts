@@ -187,7 +187,14 @@ router.post("/signup", async (req: Request, res: Response) => {
     const code = data.name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6) + Math.random().toString(36).slice(2, 6).toUpperCase();
 
     const affiliate = await prisma.affiliate.create({
-      data: { ...data, code, status: "PENDING" },
+      data: {
+        name: data.name,
+        email: data.email,
+        website: data.website,
+        socialMedia: data.socialMedia,
+        code,
+        status: "PENDING",
+      },
     });
 
     return res.status(201).json({

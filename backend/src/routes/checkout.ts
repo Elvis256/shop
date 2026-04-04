@@ -281,12 +281,13 @@ router.post("/create", async (req: Request, res: Response) => {
           where: { code: body.affiliateCode, status: "APPROVED" },
         });
         if (affiliate) {
-          const commissionAmount = body.amount * (Number(affiliate.commissionRate) / 100);
+          const orderTotal = calculatedTotal + shippingAmount;
+          const commissionAmount = orderTotal * (Number(affiliate.commissionRate) / 100);
           await prisma.affiliateConversion.create({
             data: {
               affiliateId: affiliate.id,
               orderId: result.id,
-              orderAmount: body.amount,
+              orderAmount: orderTotal,
               commission: commissionAmount,
               status: "PENDING",
             },

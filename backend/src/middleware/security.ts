@@ -29,6 +29,30 @@ export const checkoutLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+export const newsletterLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5,
+  message: { error: "Too many subscribe attempts, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const orderTrackingLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  message: { error: "Too many tracking requests, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const couponLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  message: { error: "Too many coupon attempts, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export function setupSecurity(app: Express) {
   // Trust nginx reverse proxy
   app.set("trust proxy", 1);
@@ -67,4 +91,13 @@ export function setupSecurity(app: Express) {
 
   // Checkout rate limiting
   app.use("/api/checkout", checkoutLimiter);
+
+  // Newsletter subscribe rate limiting
+  app.use("/api/newsletter/subscribe", newsletterLimiter);
+
+  // Order tracking rate limiting
+  app.use("/api/orders/track", orderTrackingLimiter);
+
+  // Coupon apply rate limiting
+  app.use("/api/coupons/apply", couponLimiter);
 }

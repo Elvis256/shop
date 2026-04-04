@@ -35,9 +35,11 @@ const storage = multer.diskStorage({
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    // Sanitize filename
-    const safeExt = [".jpg", ".jpeg", ".png", ".gif", ".webp"].includes(ext) ? ext : ".jpg";
-    const filename = `${uuidv4()}${safeExt}`;
+    const allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+    if (!allowedExtensions.includes(ext)) {
+      return cb(new Error("Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp are allowed."), "");
+    }
+    const filename = `${uuidv4()}${ext}`;
     cb(null, filename);
   },
 });

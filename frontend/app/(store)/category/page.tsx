@@ -41,6 +41,7 @@ function CategoryContent() {
   const [category, setCategory] = useState<Category | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalProducts, setTotalProducts] = useState(0);
@@ -67,6 +68,7 @@ function CategoryContent() {
 
   const loadProducts = async () => {
     setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams({
         page: String(page),
@@ -111,6 +113,7 @@ function CategoryContent() {
       }
     } catch (error) {
       console.error("Failed to load products:", error);
+      setError("Failed to load products. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -264,6 +267,13 @@ function CategoryContent() {
                     <div className="h-4 bg-gray-100 rounded w-1/2" />
                   </div>
                 ))}
+              </div>
+            ) : error ? (
+              <div className="text-center py-16">
+                <p className="text-red-500 mb-4">{error}</p>
+                <button onClick={() => { setPage(1); loadProducts(); }} className="text-sm underline">
+                  Try again
+                </button>
               </div>
             ) : products.length > 0 ? (
               <div className={`grid gap-4 ${gridSize === "small" ? "grid-cols-2 sm:grid-cols-3 xl:grid-cols-4" : "grid-cols-2 lg:grid-cols-3"}`}>

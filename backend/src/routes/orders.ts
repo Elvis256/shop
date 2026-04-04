@@ -220,7 +220,7 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/orders/:id/cancel - Customer cancels their own order
-router.post("/:id/cancel", async (req: Request, res: Response) => {
+router.post("/:id/cancel", authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -231,6 +231,11 @@ router.post("/:id/cancel", async (req: Request, res: Response) => {
 
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Verify the authenticated user owns this order
+    if (order.customerEmail !== req.user!.email && order.customerEmail !== req.user!.id) {
+      return res.status(403).json({ error: "You can only cancel your own orders" });
     }
 
     // Only allow cancellation of PENDING or CONFIRMED orders

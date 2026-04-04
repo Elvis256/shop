@@ -31,6 +31,7 @@ interface Cart {
 export default function CartPage() {
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState("");
   const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number } | null>(null);
@@ -43,6 +44,7 @@ export default function CartPage() {
   }, []);
 
   async function loadCart() {
+    setError(null);
     try {
       const cartId = localStorage.getItem("cartId");
       if (!cartId) {
@@ -54,9 +56,12 @@ export default function CartPage() {
       if (res.ok) {
         const data = await res.json();
         setCart(data);
+      } else {
+        setError("Failed to load your cart. Please try again.");
       }
     } catch (error) {
       console.error("Failed to load cart:", error);
+      setError("Failed to load your cart. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -163,6 +168,17 @@ export default function CartPage() {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-2 border-primary border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 py-16">
+        <p className="text-red-500 mb-4">{error}</p>
+        <button onClick={loadCart} className="text-sm underline text-gray-600 hover:text-gray-900">
+          Try again
+        </button>
       </div>
     );
   }
