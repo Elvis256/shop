@@ -145,7 +145,7 @@ export default function HeroBanner({ autoPlayInterval = 5000 }: HeroBannerProps)
   }
 
   const currentBanner = banners[currentIndex];
-  const hasValidImage = currentBanner.imageUrl && !currentBanner.imageUrl.includes('/images/banners/');
+  const hasValidImage = currentBanner.imageUrl && currentBanner.imageUrl.length > 1 && !currentBanner.imageUrl.includes('/images/banners/');
 
   // Gradient backgrounds for banners without images
   const gradients = [
