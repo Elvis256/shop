@@ -205,8 +205,9 @@ export default function SupportPage() {
             <div className="grid gap-6">
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Your Name</label>
+                  <label htmlFor="support-name" className="block text-sm font-medium mb-2">Your Name</label>
                   <input
+                    id="support-name"
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -215,8 +216,9 @@ export default function SupportPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Email *</label>
+                  <label htmlFor="support-email" className="block text-sm font-medium mb-2">Email *</label>
                   <input
+                    id="support-email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -229,8 +231,9 @@ export default function SupportPage() {
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Category</label>
+                  <label htmlFor="support-category" className="block text-sm font-medium mb-2">Category</label>
                   <select
+                    id="support-category"
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
                     className="input"
@@ -243,8 +246,9 @@ export default function SupportPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Order Number (if applicable)</label>
+                  <label htmlFor="support-order" className="block text-sm font-medium mb-2">Order Number (if applicable)</label>
                   <input
+                    id="support-order"
                     type="text"
                     value={orderNumber}
                     onChange={(e) => setOrderNumber(e.target.value)}
@@ -255,8 +259,9 @@ export default function SupportPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Subject *</label>
+                <label htmlFor="support-subject" className="block text-sm font-medium mb-2">Subject *</label>
                 <input
+                  id="support-subject"
                   type="text"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
@@ -267,8 +272,9 @@ export default function SupportPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Message *</label>
+                <label htmlFor="support-message" className="block text-sm font-medium mb-2">Message *</label>
                 <textarea
+                  id="support-message"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   className="input min-h-[150px]"

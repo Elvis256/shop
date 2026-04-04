@@ -155,8 +155,9 @@ export default function GiftCardsPage() {
 
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Your Name</label>
+                    <label htmlFor="gc-purchaser-name" className="block text-sm font-medium mb-2">Your Name</label>
                     <input
+                      id="gc-purchaser-name"
                       type="text"
                       value={formData.purchaserName}
                       onChange={(e) => setFormData({ ...formData, purchaserName: e.target.value })}
@@ -165,8 +166,9 @@ export default function GiftCardsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Your Email *</label>
+                    <label htmlFor="gc-purchaser-email" className="block text-sm font-medium mb-2">Your Email *</label>
                     <input
+                      id="gc-purchaser-email"
                       type="email"
                       value={formData.purchaserEmail}
                       onChange={(e) => setFormData({ ...formData, purchaserEmail: e.target.value })}
@@ -181,8 +183,9 @@ export default function GiftCardsPage() {
                   <h3 className="font-semibold mb-4">Recipient Details</h3>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2">Recipient Name</label>
+                      <label htmlFor="gc-recipient-name" className="block text-sm font-medium mb-2">Recipient Name</label>
                       <input
+                        id="gc-recipient-name"
                         type="text"
                         value={formData.recipientName}
                         onChange={(e) => setFormData({ ...formData, recipientName: e.target.value })}
@@ -191,8 +194,9 @@ export default function GiftCardsPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-2">Recipient Email</label>
+                      <label htmlFor="gc-recipient-email" className="block text-sm font-medium mb-2">Recipient Email</label>
                       <input
+                        id="gc-recipient-email"
                         type="email"
                         value={formData.recipientEmail}
                         onChange={(e) => setFormData({ ...formData, recipientEmail: e.target.value })}
@@ -204,8 +208,9 @@ export default function GiftCardsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Personal Message (Optional)</label>
+                  <label htmlFor="gc-message" className="block text-sm font-medium mb-2">Personal Message (Optional)</label>
                   <textarea
+                    id="gc-message"
                     value={formData.message}
                     onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                     rows={3}

@@ -324,7 +324,7 @@ export default function AdminCJPage() {
             <h2 className="text-lg font-bold">Import from CJ Dropshipping</h2>
             <div className="flex gap-4">
               <div className="relative w-24 h-24 flex-shrink-0">
-                <Image src={importModal.imageUrl} alt="" fill className="object-contain rounded" unoptimized />
+                <Image src={importModal.imageUrl} alt={importModal.title || "Product image"} fill className="object-contain rounded" unoptimized />
               </div>
               <div>
                 <p className="text-sm font-medium line-clamp-2">{importModal.title}</p>
@@ -393,7 +393,7 @@ export default function AdminCJPage() {
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        {p.images?.[0] && <div className="relative w-10 h-10"><Image src={p.images[0].url} alt="" fill className="object-cover rounded" unoptimized /></div>}
+                        {p.images?.[0] && <div className="relative w-10 h-10"><Image src={p.images[0].url} alt={p.name} fill className="object-cover rounded" unoptimized /></div>}
                         <div>
                           <p className="font-medium line-clamp-1">{p.name}</p>
                           <p className="text-xs text-gray-400">CJ#{p.cjProductId}</p>
@@ -476,7 +476,7 @@ export default function AdminCJPage() {
                     <td className="px-4 py-3 font-medium">{o.order?.orderNumber}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {o.product?.images?.[0] && <div className="relative w-8 h-8"><Image src={o.product.images[0].url} alt="" fill className="object-cover rounded" unoptimized /></div>}
+                        {o.product?.images?.[0] && <div className="relative w-8 h-8"><Image src={o.product.images[0].url} alt={o.product?.name || "Product"} fill className="object-cover rounded" unoptimized /></div>}
                         <span className="line-clamp-1">{o.product?.name}</span>
                       </div>
                     </td>

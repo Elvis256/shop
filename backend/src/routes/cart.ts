@@ -5,11 +5,53 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 const router = Router();
 
+async function getFullCart(cartId: string) {
+  const cart = await prisma.cart.findUnique({
+    where: { id: cartId },
+    include: {
+      items: {
+        include: {
+          product: {
+            include: { images: { take: 1, orderBy: { position: 'asc' } } },
+          },
+        },
+      },
+    },
+  });
+  if (!cart) return null;
+
+  const total = cart.items.reduce((sum: number, item) => {
+    return sum + Number(item.product.price) * item.quantity;
+  }, 0);
+
+  return {
+    id: cart.id,
+    items: cart.items.map((item) => ({
+      id: item.id,
+      productId: item.productId,
+      product: {
+        id: item.product.id,
+        name: item.product.name,
+        slug: item.product.slug,
+        price: item.product.price,
+        currency: item.product.currency,
+        imageUrl: item.product.images[0]?.url || null,
+        stock: item.product.stock,
+        shippingBadge: (item.product as any).cjProductId || (item.product as any).aliexpressProductId ? "From Abroad" : "Express",
+      },
+      quantity: item.quantity,
+      subtotal: Number(item.product.price) * item.quantity,
+    })),
+    total,
+    itemCount: cart.items.reduce((sum: number, item) => sum + item.quantity, 0),
+  };
+}
+
 // POST /api/cart/create
 router.post("/create", async (_req: Request, res: Response) => {
   try {
     const cart = await prisma.cart.create({ data: {} });
-    return res.json({ cartId: cart.id });
+    return res.json({ id: cart.id });
   } catch (error) {
     console.error("Create cart error:", error);
     return res.status(500).json({ error: "Failed to create cart" });
@@ -20,51 +62,11 @@ router.post("/create", async (_req: Request, res: Response) => {
 router.get("/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-
-    const cart = await prisma.cart.findUnique({
-      where: { id },
-      include: {
-        items: {
-          include: {
-            product: {
-              include: {
-                images: { take: 1, orderBy: { position: 'asc' } },
-              },
-            },
-          },
-        },
-      },
-    });
-
+    const cart = await getFullCart(id);
     if (!cart) {
       return res.status(404).json({ error: "Cart not found" });
     }
-
-    const total = cart.items.reduce((sum: number, item) => {
-      return sum + Number(item.product.price) * item.quantity;
-    }, 0);
-
-    return res.json({
-      id: cart.id,
-      items: cart.items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        product: {
-          id: item.product.id,
-          name: item.product.name,
-          slug: item.product.slug,
-          price: item.product.price,
-          currency: item.product.currency,
-          imageUrl: item.product.images[0]?.url || null,
-          stock: item.product.stock,
-          shippingBadge: (item.product as any).cjProductId || (item.product as any).aliexpressProductId ? "From Abroad" : "Express",
-        },
-        quantity: item.quantity,
-        subtotal: Number(item.product.price) * item.quantity,
-      })),
-      total,
-      itemCount: cart.items.reduce((sum: number, item) => sum + item.quantity, 0),
-    });
+    return res.json(cart);
   } catch (error) {
     console.error("Get cart error:", error);
     return res.status(500).json({ error: "Failed to fetch cart" });
@@ -122,7 +124,7 @@ router.post("/:id/items", async (req: Request, res: Response) => {
       });
     }
 
-    return res.json({ success: true });
+    return res.json(await getFullCart(id));
   } catch (error) {
     console.error("Add to cart error:", error);
     if (error instanceof z.ZodError) {
@@ -161,7 +163,7 @@ router.put("/:cartId/items/:itemId", async (req: Request, res: Response) => {
       });
     }
 
-    return res.json({ success: true });
+    return res.json(await getFullCart(cartId));
   } catch (error) {
     console.error("Update cart item error:", error);
     if (error instanceof z.ZodError) {
@@ -192,7 +194,7 @@ router.delete("/:cartId/items/:itemId", async (req: Request, res: Response) => {
 
     await prisma.cartItem.delete({ where: { id: itemId } });
 
-    return res.json({ success: true });
+    return res.json(await getFullCart(cartId));
   } catch (error) {
     console.error("Delete cart item error:", error);
     return res.status(500).json({ error: "Failed to delete cart item" });

@@ -725,7 +725,7 @@ export default function ProductPageClient() {
         <div className="hidden lg:block fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-b z-30 animate-in slide-in-from-top-2 duration-200">
           <div className="container flex items-center gap-4 py-2.5">
             {product.imageUrl && (
-              <ProductImage src={product.imageUrl} alt="" width={40} height={40} className="w-10 h-10 rounded-lg object-cover" />
+              <ProductImage src={product.imageUrl} alt={product.name} width={40} height={40} className="w-10 h-10 rounded-lg object-cover" />
             )}
             <div className="flex-1 min-w-0">
               <p className="font-medium text-gray-900 truncate text-sm">{product.name}</p>

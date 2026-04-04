@@ -385,7 +385,7 @@ export default function AdminAliExpressPage() {
             <h2 className="text-lg font-bold">Import Product</h2>
             <div className="flex gap-4">
               <div className="relative w-24 h-24 flex-shrink-0">
-                <Image src={importModal.imageUrl} alt="" fill className="object-contain rounded" unoptimized />
+                <Image src={importModal.imageUrl} alt={importModal.title || "Product image"} fill className="object-contain rounded" unoptimized />
               </div>
               <div>
                 <p className="text-sm font-medium line-clamp-2">{importModal.title}</p>
@@ -503,7 +503,7 @@ export default function AdminAliExpressPage() {
                       <div className="flex items-center gap-3">
                         {p.images?.[0] && (
                           <div className="relative w-10 h-10">
-                            <Image src={p.images[0].url} alt="" fill className="object-cover rounded" unoptimized />
+                            <Image src={p.images[0].url} alt={p.name} fill className="object-cover rounded" unoptimized />
                           </div>
                         )}
                         <div>
@@ -641,7 +641,7 @@ export default function AdminAliExpressPage() {
                       <div className="flex items-center gap-2">
                         {o.product?.images?.[0] && (
                           <div className="relative w-8 h-8">
-                            <Image src={o.product.images[0].url} alt="" fill className="object-cover rounded" unoptimized />
+                            <Image src={o.product.images[0].url} alt={o.product?.name || "Product"} fill className="object-cover rounded" unoptimized />
                           </div>
                         )}
                         <span className="line-clamp-1">{o.product?.name}</span>

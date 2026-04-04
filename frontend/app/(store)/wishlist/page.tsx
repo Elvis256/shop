@@ -285,6 +285,7 @@ export default function WishlistPage() {
                 onClick={handleShare}
                 className="p-2 text-gray-500 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
                 title="Share wishlist"
+                aria-label="Share wishlist"
               >
                 <Share2 className="w-5 h-5" />
               </button>
@@ -292,12 +293,14 @@ export default function WishlistPage() {
                 <button
                   onClick={() => setViewMode("grid")}
                   className={`p-2 rounded-md transition-colors ${viewMode === "grid" ? "bg-white shadow-sm" : "hover:bg-gray-200"}`}
+                  aria-label="Grid view"
                 >
                   <Grid className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setViewMode("list")}
                   className={`p-2 rounded-md transition-colors ${viewMode === "list" ? "bg-white shadow-sm" : "hover:bg-gray-200"}`}
+                  aria-label="List view"
                 >
                   <List className="w-4 h-4" />
                 </button>
@@ -433,6 +436,7 @@ export default function WishlistPage() {
                           onClick={() => handleRemove(item.productId)}
                           className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                           title="Remove"
+                          aria-label="Remove from wishlist"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -489,6 +493,7 @@ export default function WishlistPage() {
                           onClick={() => handleRemove(item.productId)}
                           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                           title="Remove"
+                          aria-label="Remove from wishlist"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

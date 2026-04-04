@@ -460,7 +460,7 @@ export default function NewProductPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {images.map((url, index) => (
               <div key={index} className="relative aspect-square bg-gray-50 rounded-lg overflow-hidden group border border-gray-200">
-                <img src={url} alt="" className="w-full h-full object-cover" />
+                <img src={url} alt={`Product image ${index + 1}`} className="w-full h-full object-cover" />
                 <button
                   type="button"
                   onClick={() => removeImage(index)}

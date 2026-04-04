@@ -47,11 +47,25 @@ export default function ContactPage() {
     e.preventDefault();
     setSubmitting(true);
     
-    // Simulate form submission
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    setSubmitted(true);
-    setSubmitting(false);
+    try {
+      const res = await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          subject: formData.subject,
+          message: formData.message,
+          category: "GENERAL",
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to send message");
+      setSubmitted(true);
+    } catch {
+      alert("Failed to send your message. Please try again or email us directly.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (submitted) {
@@ -170,8 +184,9 @@ export default function ContactPage() {
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Your Name</label>
+                    <label htmlFor="contact-name" className="block text-sm font-medium mb-2">Your Name</label>
                     <input
+                      id="contact-name"
                       type="text"
                       required
                       value={formData.name}
@@ -181,8 +196,9 @@ export default function ContactPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Email Address</label>
+                    <label htmlFor="contact-email" className="block text-sm font-medium mb-2">Email Address</label>
                     <input
+                      id="contact-email"
                       type="email"
                       required
                       value={formData.email}
@@ -194,8 +210,9 @@ export default function ContactPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Subject</label>
+                  <label htmlFor="contact-subject" className="block text-sm font-medium mb-2">Subject</label>
                   <select
+                    id="contact-subject"
                     value={formData.subject}
                     onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                     className="input"
@@ -212,8 +229,9 @@ export default function ContactPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Message</label>
+                  <label htmlFor="contact-message" className="block text-sm font-medium mb-2">Message</label>
                   <textarea
+                    id="contact-message"
                     required
                     rows={5}
                     value={formData.message}

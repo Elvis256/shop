@@ -549,7 +549,7 @@ export default function AdminProductsPage() {
                             {product.imageUrl ? (
                               <img
                                 src={product.imageUrl}
-                                alt=""
+                                alt={product.name}
                                 className="w-full h-full object-cover"
                               />
                             ) : (
@@ -754,7 +754,7 @@ export default function AdminProductsPage() {
                   {product.imageUrl ? (
                     <img
                       src={product.imageUrl}
-                      alt=""
+                      alt={product.name}
                       className="w-full h-full object-cover"
                     />
                   ) : (
