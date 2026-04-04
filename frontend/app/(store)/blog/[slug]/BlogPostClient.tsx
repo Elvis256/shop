@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import DOMPurify from "isomorphic-dompurify";
 import Section from "@/components/Section";
 import { Calendar, User, Tag, ArrowLeft, Share2, Facebook, Twitter } from "lucide-react";
@@ -136,7 +136,7 @@ export default function BlogPostPage() {
           {/* Featured Image */}
           {post.featuredImage && (
             <div className="relative aspect-video rounded-xl overflow-hidden mb-8">
-              <Image
+              <ProductImage
                 src={post.featuredImage}
                 alt={post.title}
                 fill
@@ -209,18 +209,12 @@ export default function BlogPostPage() {
                 className="group bg-white rounded-xl overflow-hidden shadow hover:shadow-lg transition-shadow"
               >
                 <div className="aspect-video bg-gray-100 relative">
-                  {related.featuredImage ? (
-                    <Image
-                      src={related.featuredImage}
-                      alt={related.title}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      <span className="text-4xl">📝</span>
-                    </div>
-                  )}
+                  <ProductImage
+                    src={related.featuredImage}
+                    alt={related.title}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform"
+                  />
                 </div>
                 <div className="p-4">
                   <h3 className="font-bold group-hover:text-accent transition-colors line-clamp-2">

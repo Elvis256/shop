@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import { X, ShoppingCart, Star, ArrowLeft } from "lucide-react";
 import { useCompare } from "@/contexts/CompareContext";
 import { useCurrency } from "@/contexts/CurrencyContext";
@@ -78,18 +78,12 @@ export default function ComparePage() {
                     </button>
                     <Link href={`/product/${product.slug}`}>
                       <div className="w-32 h-32 mx-auto mb-3 relative bg-gray-100 rounded-lg overflow-hidden">
-                        {product.imageUrl ? (
-                          <Image
-                            src={product.imageUrl}
-                            alt={product.name}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-400">
-                            No Image
-                          </div>
-                        )}
+                        <ProductImage
+                          src={product.imageUrl}
+                          alt={product.name}
+                          fill
+                          className="object-cover"
+                        />
                       </div>
                       <h3 className="font-medium text-sm line-clamp-2 hover:text-primary">
                         {product.name}

@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { ShoppingBag } from "lucide-react";
+import ProductImage from "@/components/ProductImage";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
 interface Product {
@@ -75,19 +74,13 @@ export default function RecentlyViewed({ currentProductId }: RecentlyViewedProps
               className="group"
             >
               <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden mb-2">
-                {product.imageUrl ? (
-                  <Image
-                    src={product.imageUrl}
-                    alt={product.name}
-                    width={200}
-                    height={200}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-300">
-                    <ShoppingBag className="w-8 h-8" />
-                  </div>
-                )}
+                <ProductImage
+                  src={product.imageUrl}
+                  alt={product.name}
+                  width={200}
+                  height={200}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                />
               </div>
               <h3 className="text-sm font-medium line-clamp-2 group-hover:text-accent">
                 {product.name}

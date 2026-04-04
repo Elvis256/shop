@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import { Package, Plus, ShoppingCart, Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useCurrency } from "@/contexts/CurrencyContext";
@@ -80,13 +80,7 @@ export default function ProductBundles({ productId }: ProductBundlesProps) {
                     {i > 0 && <Plus className="w-4 h-4 text-gray-400 flex-shrink-0" />}
                     <div className="flex-shrink-0 w-20">
                       <div className="aspect-square rounded-lg overflow-hidden bg-gray-50 mb-1.5">
-                        {p.imageUrl ? (
-                          <Image src={p.imageUrl} alt={p.name} width={80} height={80} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-300">
-                            <Package className="w-6 h-6" />
-                          </div>
-                        )}
+                        <ProductImage src={p.imageUrl} alt={p.name} width={80} height={80} className="w-full h-full object-cover" />
                       </div>
                       <p className="text-xs text-gray-700 truncate">{p.name}</p>
                       <p className="text-xs text-gray-500">{formatPrice(p.price)}</p>

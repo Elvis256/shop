@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import { ArrowRight } from "lucide-react";
 
 type CategoryCardProps = {
@@ -13,20 +13,12 @@ export default function CategoryCard({ title, slug, imageUrl, productCount }: Ca
   return (
     <Link href={`/category?cat=${slug}`}>
       <div className="group relative overflow-hidden rounded-24 bg-surface-secondary aspect-[4/5] sm:aspect-square cursor-pointer transition-all duration-500 hover:shadow-lg hover-lift">
-        {imageUrl ? (
-          <Image
-            src={imageUrl}
-            alt={title}
-            fill
-            className="object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/5 to-violet-500/5">
-            <div className="w-20 h-20 bg-surface rounded-full flex items-center justify-center shadow-soft">
-              <span className="text-3xl font-semibold text-gradient">{title[0]}</span>
-            </div>
-          </div>
-        )}
+        <ProductImage
+          src={imageUrl}
+          alt={title}
+          fill
+          className="object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
+        />
         
         {/* Gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-80 group-hover:opacity-90 transition-opacity duration-300" />

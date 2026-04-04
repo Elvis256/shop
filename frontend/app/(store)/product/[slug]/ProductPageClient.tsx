@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import DOMPurify from "isomorphic-dompurify";
 import ProductGallery from "@/components/ProductGallery";
 import ProductTabs from "@/components/ProductTabs";
@@ -680,11 +680,7 @@ export default function ProductPageClient() {
               {boughtTogether.slice(0, 4).map((p: any) => (
                 <Link key={p.id} href={`/product/${p.slug}`} className="group">
                   <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 mb-2">
-                    {p.imageUrl ? (
-                      <Image src={p.imageUrl} alt={p.name} width={200} height={200} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-300"><Package className="w-8 h-8" /></div>
-                    )}
+                    <ProductImage src={p.imageUrl} alt={p.name} width={200} height={200} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                   </div>
                   <p className="text-sm font-medium text-gray-900 truncate group-hover:text-primary transition-colors">{p.name}</p>
                   <p className="text-sm text-gray-600">{formatPrice(p.price)}</p>
@@ -729,7 +725,7 @@ export default function ProductPageClient() {
         <div className="hidden lg:block fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-b z-30 animate-in slide-in-from-top-2 duration-200">
           <div className="container flex items-center gap-4 py-2.5">
             {product.imageUrl && (
-              <img src={product.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
+              <ProductImage src={product.imageUrl} alt="" width={40} height={40} className="w-10 h-10 rounded-lg object-cover" />
             )}
             <div className="flex-1 min-w-0">
               <p className="font-medium text-gray-900 truncate text-sm">{product.name}</p>

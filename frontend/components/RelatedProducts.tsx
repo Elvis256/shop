@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { ShoppingBag } from "lucide-react";
+import ProductImage from "@/components/ProductImage";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -92,19 +91,13 @@ export default function RelatedProducts({
               className="group"
             >
               <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden mb-3 relative">
-                {product.imageUrl ? (
-                  <Image
-                    src={product.imageUrl}
-                    alt={product.name}
-                    width={300}
-                    height={300}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-300">
-                    <ShoppingBag className="w-12 h-12" />
-                  </div>
-                )}
+                <ProductImage
+                  src={product.imageUrl}
+                  alt={product.name}
+                  width={300}
+                  height={300}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                />
                 
                 {/* Sale badge */}
                 {product.comparePrice && (

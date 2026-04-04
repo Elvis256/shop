@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, X, Loader2 } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import ProductImage from "@/components/ProductImage";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -129,17 +130,13 @@ export default function SearchBar() {
                   className="flex items-center gap-3 p-3 hover:bg-surface-secondary transition-colors first:rounded-t-18"
                 >
                   <div className="w-12 h-12 bg-surface-secondary rounded-12 overflow-hidden flex-shrink-0">
-                    {product.imageUrl ? (
-                      <img
-                        src={product.imageUrl}
-                        alt={product.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-text-muted">
-                        <Search className="w-4 h-4" />
-                      </div>
-                    )}
+                    <ProductImage
+                      src={product.imageUrl}
+                      alt={product.name}
+                      width={48}
+                      height={48}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate text-text">{product.name}</p>

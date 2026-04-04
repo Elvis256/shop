@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import Section from "@/components/Section";
 import {
   Package, Truck, CheckCircle, Clock, Search, AlertCircle,
@@ -402,13 +402,7 @@ export default function TrackOrderPage() {
                     <div key={index} className="p-4 flex items-center gap-4">
                       {/* Product Image */}
                       <div className="w-16 h-16 rounded-xl bg-gray-100 overflow-hidden flex-shrink-0">
-                        {item.imageUrl ? (
-                          <Image src={item.imageUrl} alt={item.name} width={64} height={64} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Package className="w-6 h-6 text-gray-300" />
-                          </div>
-                        )}
+                        <ProductImage src={item.imageUrl} alt={item.name} width={64} height={64} className="w-full h-full object-cover" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <Link

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import {
@@ -128,13 +128,7 @@ export default function AffiliateBrowsePage() {
                   className="group bg-white rounded-xl border overflow-hidden hover:shadow-lg transition"
                 >
                   <div className="relative aspect-square bg-gray-100">
-                    {p.imageUrl ? (
-                      <Image src={p.imageUrl} alt={p.name} fill className="object-cover group-hover:scale-105 transition" sizes="(max-width: 768px) 50vw, 25vw" />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <ShoppingBag className="w-12 h-12 text-gray-300" />
-                      </div>
-                    )}
+                    <ProductImage src={p.imageUrl} alt={p.name} fill className="object-cover group-hover:scale-105 transition" sizes="(max-width: 768px) 50vw, 25vw" />
                     <span className="absolute top-2 left-2 bg-indigo-500 text-white text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1">
                       ✈️ From Abroad
                     </span>
@@ -213,13 +207,7 @@ export default function AffiliateBrowsePage() {
                   className="group bg-white rounded-xl border overflow-hidden hover:shadow-lg transition flex flex-col"
                 >
                   <div className="relative aspect-square bg-gray-100">
-                    {p.imageUrl ? (
-                      <Image src={p.imageUrl} alt={p.name} fill className="object-cover group-hover:scale-105 transition" sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw" />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <ShoppingBag className="w-10 h-10 text-gray-300" />
-                      </div>
-                    )}
+                    <ProductImage src={p.imageUrl} alt={p.name} fill className="object-cover group-hover:scale-105 transition" sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw" />
                     <span className="absolute top-2 left-2 bg-indigo-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
                       ✈️ From Abroad
                     </span>

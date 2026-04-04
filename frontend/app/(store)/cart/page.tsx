@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Tag, Shield, Package, Lock, Check, Truck } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
@@ -254,19 +254,13 @@ export default function CartPage() {
                     href={`/product/${item.product.slug}`}
                     className="w-20 h-20 sm:w-28 sm:h-28 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 group"
                   >
-                    {item.product.images?.[0]?.url ? (
-                      <Image
-                        src={item.product.images[0].url}
-                        alt={item.product.name}
-                        width={112}
-                        height={112}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">
-                        <ShoppingBag className="w-8 h-8" />
-                      </div>
-                    )}
+                    <ProductImage
+                      src={item.product.images?.[0]?.url}
+                      alt={item.product.name}
+                      width={112}
+                      height={112}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    />
                   </Link>
 
                   {/* Product Details */}

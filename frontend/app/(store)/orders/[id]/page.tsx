@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Section from "@/components/Section";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import ProductImage from "@/components/ProductImage";
 import {
   Package, Truck, CheckCircle, Clock, AlertCircle, CreditCard,
   Smartphone, Banknote, MapPin, ShieldCheck, Eye, Copy, Check,
@@ -403,13 +404,7 @@ export default function OrderDetailPage() {
             {order.items.map((item) => (
               <div key={item.id} className="py-4 flex items-center gap-4">
                 <div className="w-16 h-16 bg-gray-50 rounded-lg overflow-hidden flex-shrink-0">
-                  {item.imageUrl ? (
-                    <img src={item.imageUrl} alt={item.productName} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-300">
-                      <Package className="w-6 h-6" />
-                    </div>
-                  )}
+                  <ProductImage src={item.imageUrl} alt={item.productName} width={64} height={64} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <Link

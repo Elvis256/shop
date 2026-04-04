@@ -45,6 +45,7 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.cjdropshipping.com' },
       { protocol: 'https', hostname: '**.aliexpress.com' },
       { protocol: 'https', hostname: 'ae01.alicdn.com' },
+      { protocol: 'https', hostname: '**' },
     ],
   },
 };

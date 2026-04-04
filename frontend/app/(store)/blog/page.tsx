@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import Section from "@/components/Section";
 import { Calendar, User, Tag, ArrowRight, Search, BookOpen } from "lucide-react";
 
@@ -164,18 +164,12 @@ export default function BlogPage() {
           <Link href={`/blog/${featuredPost.slug}`} className="block mb-12">
             <div className="grid lg:grid-cols-2 gap-0 bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow group">
               <div className="aspect-video lg:aspect-auto bg-gray-100 relative min-h-[250px] lg:min-h-[350px]">
-                {featuredPost.featuredImage ? (
-                  <Image
-                    src={featuredPost.featuredImage}
-                    alt={featuredPost.title}
-                    fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-50 to-violet-50">
-                    <BookOpen className="w-16 h-16 text-primary/30" />
-                  </div>
-                )}
+                <ProductImage
+                  src={featuredPost.featuredImage}
+                  alt={featuredPost.title}
+                  fill
+                  className="object-cover group-hover:scale-105 transition-transform duration-500"
+                />
                 <span className="absolute top-4 left-4 bg-primary text-white px-3 py-1.5 rounded-full text-sm font-medium">
                   Featured
                 </span>
@@ -224,18 +218,12 @@ export default function BlogPage() {
                 className="group bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md border border-gray-100 transition-all"
               >
                 <div className="aspect-video bg-gray-100 relative overflow-hidden">
-                  {post.featuredImage ? (
-                    <Image
-                      src={post.featuredImage}
-                      alt={post.title}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-                      <BookOpen className="w-10 h-10 text-gray-300" />
-                    </div>
-                  )}
+                  <ProductImage
+                    src={post.featuredImage}
+                    alt={post.title}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
                 </div>
                 <div className="p-5">
                   {post.category && (

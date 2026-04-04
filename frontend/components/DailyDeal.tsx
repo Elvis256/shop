@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -145,7 +145,7 @@ export default function DailyDeal() {
             <div className="flex items-center justify-center">
               {imageUrl ? (
                 <div className="relative w-48 h-48 sm:w-64 sm:h-64">
-                  <Image
+                  <ProductImage
                     src={imageUrl}
                     alt={deal.product.name}
                     fill

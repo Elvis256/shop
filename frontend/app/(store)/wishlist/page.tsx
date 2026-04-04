@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import Section from "@/components/Section";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import EmptyState from "@/components/EmptyState";
@@ -396,18 +396,12 @@ export default function WishlistPage() {
                   <div key={item.productId + (item.collectionName || "")} className="bg-white rounded-xl border overflow-hidden group hover:shadow-lg transition-shadow">
                     <Link href={`/product/${item.slug}`} className="block">
                       <div className="aspect-square bg-gray-100 relative overflow-hidden">
-                        {item.imageUrl ? (
-                          <Image
-                            src={item.imageUrl}
-                            alt={item.name}
-                            fill
-                            className="object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                            <Heart className="w-12 h-12 text-gray-300" />
-                          </div>
-                        )}
+                        <ProductImage
+                          src={item.imageUrl}
+                          alt={item.name}
+                          fill
+                          className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
                         {item.collectionName && item.collectionName !== "Wishlist" && (
                           <span className="absolute top-2 left-2 px-2 py-0.5 text-xs bg-white/90 rounded-full text-gray-600">
                             {item.collectionName}
@@ -456,18 +450,12 @@ export default function WishlistPage() {
                   <div key={item.productId + (item.collectionName || "")} className="bg-white rounded-xl border p-4 flex gap-4 hover:shadow-lg transition-shadow">
                     <Link href={`/product/${item.slug}`} className="flex-shrink-0">
                       <div className="w-24 h-24 sm:w-32 sm:h-32 bg-gray-100 rounded-lg overflow-hidden relative">
-                        {item.imageUrl ? (
-                          <Image
-                            src={item.imageUrl}
-                            alt={item.name}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Heart className="w-8 h-8 text-gray-300" />
-                          </div>
-                        )}
+                        <ProductImage
+                          src={item.imageUrl}
+                          alt={item.name}
+                          fill
+                          className="object-cover"
+                        />
                       </div>
                     </Link>
                     <div className="flex-1 min-w-0">

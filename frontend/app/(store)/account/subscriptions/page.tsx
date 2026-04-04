@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -178,19 +178,13 @@ export default function SubscriptionsPage() {
                 <div className="flex gap-4">
                   {/* Product Image */}
                   <div className="w-20 h-20 bg-surface-secondary rounded-xl overflow-hidden shrink-0">
-                    {sub.productImage ? (
-                      <Image
-                        src={sub.productImage}
-                        alt={sub.productName}
-                        width={80}
-                        height={80}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-text-muted">
-                        <Package className="w-8 h-8" />
-                      </div>
-                    )}
+                    <ProductImage
+                      src={sub.productImage}
+                      alt={sub.productName}
+                      width={80}
+                      height={80}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
 
                   {/* Details */}
