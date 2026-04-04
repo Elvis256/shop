@@ -12,6 +12,7 @@ import InstallPrompt from "@/components/InstallPrompt";
 import PushNotifications from "@/components/PushNotifications";
 import LivePurchaseFeed from "@/components/LivePurchaseFeed";
 import DailyCheckIn from "@/components/DailyCheckIn";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { OrganizationSchema, WebsiteSchema } from "@/components/StructuredData";
 
 export const metadata: Metadata = {
@@ -46,12 +47,12 @@ export default function StoreLayout({
       <Footer />
       <CartDrawer />
       <MobileNav />
-      <ExitIntent />
-      <SpinWheel />
-      <InstallPrompt />
-      <PushNotifications />
-      <LivePurchaseFeed />
-      <DailyCheckIn />
+      <ErrorBoundary><ExitIntent /></ErrorBoundary>
+      <ErrorBoundary><SpinWheel /></ErrorBoundary>
+      <ErrorBoundary><InstallPrompt /></ErrorBoundary>
+      <ErrorBoundary><PushNotifications /></ErrorBoundary>
+      <ErrorBoundary><LivePurchaseFeed /></ErrorBoundary>
+      <ErrorBoundary><DailyCheckIn /></ErrorBoundary>
     </div>
   );
 }

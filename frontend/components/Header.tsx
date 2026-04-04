@@ -109,15 +109,15 @@ export default function Header() {
 
             {/* Icons */}
             <div className="flex items-center gap-1">
-              {/* Mobile Search Button */}
-              <button 
-                onClick={() => setMobileSearchOpen(true)}
-                className="btn-icon md:hidden"
+              {/* Mobile Search — link fallback to /search if JS not ready */}
+              <a
+                href="/search"
+                onClick={(e) => { e.preventDefault(); setMobileSearchOpen(true); }}
+                className="btn-icon md:hidden inline-flex items-center justify-center"
                 aria-label="Search"
-                suppressHydrationWarning
               >
                 <Search className="w-5 h-5" />
-              </button>
+              </a>
 
               <div className="hidden sm:block">
                 <CurrencySelector variant="compact" />
@@ -127,17 +127,11 @@ export default function Header() {
                 <ThemeToggle />
               </div>
               
-              {user ? (
-                <Link href="/account" className="btn-icon">
-                  <User className="w-5 h-5" />
-                </Link>
-              ) : (
-                <Link href="/auth/login" className="btn-icon">
-                  <User className="w-5 h-5" />
-                </Link>
-              )}
+              <Link href={user ? "/account" : "/auth/login"} className="btn-icon inline-flex items-center justify-center" aria-label="Account">
+                <User className="w-5 h-5" />
+              </Link>
               
-              <Link href="/wishlist" className="btn-icon relative">
+              <Link href="/wishlist" className="btn-icon inline-flex items-center justify-center relative" aria-label="Wishlist">
                 <Heart className="w-5 h-5" />
                 {wishlistCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
@@ -146,17 +140,23 @@ export default function Header() {
                 )}
               </Link>
               
-              <button onClick={openCart} className="btn-icon relative" suppressHydrationWarning>
+              {/* Cart — <a> link fallback to /checkout if JS not hydrated */}
+              <a
+                href="/checkout"
+                onClick={(e) => { e.preventDefault(); openCart(); }}
+                className="btn-icon inline-flex items-center justify-center relative"
+                aria-label="Cart"
+              >
                 <ShoppingBag className="w-5 h-5" />
                 {itemCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-primary text-white text-[10px] font-medium rounded-full flex items-center justify-center">
                     {itemCount > 9 ? "9+" : itemCount}
                   </span>
                 )}
-              </button>
+              </a>
               
               <button
-                className="btn-icon lg:hidden"
+                className="btn-icon inline-flex items-center justify-center lg:hidden"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 aria-label="Menu"
                 suppressHydrationWarning

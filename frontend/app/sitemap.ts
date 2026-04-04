@@ -92,12 +92,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
     if (res.ok) {
       const data = await res.json();
-      productPages = (data.products || []).map((product: Product) => ({
-        url: `${SITE_URL}/product/${product.slug}`,
-        lastModified: new Date(product.updatedAt),
-        changeFrequency: 'weekly' as const,
-        priority: 0.8,
-      }));
+      productPages = (data.products || []).map((product: Product) => {
+        const d = new Date(product.updatedAt);
+        return {
+          url: `${SITE_URL}/product/${product.slug}`,
+          lastModified: isNaN(d.getTime()) ? new Date() : d,
+          changeFrequency: 'weekly' as const,
+          priority: 0.8,
+        };
+      });
     }
   } catch (e) {
     console.error('Failed to fetch products for sitemap:', e);
@@ -130,12 +133,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
     if (res.ok) {
       const data = await res.json();
-      blogPages = (data.posts || []).map((post: BlogPost) => ({
-        url: `${SITE_URL}/blog/${post.slug}`,
-        lastModified: new Date(post.updatedAt),
-        changeFrequency: 'monthly' as const,
-        priority: 0.6,
-      }));
+      blogPages = (data.posts || []).map((post: BlogPost) => {
+        const d = new Date(post.updatedAt);
+        return {
+          url: `${SITE_URL}/blog/${post.slug}`,
+          lastModified: isNaN(d.getTime()) ? new Date() : d,
+          changeFrequency: 'monthly' as const,
+          priority: 0.6,
+        };
+      });
     }
   } catch (e) {
     console.error('Failed to fetch blog posts for sitemap:', e);
