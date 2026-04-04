@@ -52,6 +52,12 @@ services:
       NODE_ENV: production
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   nginx:
     image: nginx:1.25-alpine

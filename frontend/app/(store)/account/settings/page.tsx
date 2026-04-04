@@ -89,12 +89,12 @@ export default function AccountSettingsPage() {
       })
       .catch(() => {});
 
-    fetch(`${API_URL}/api/account/orders?limit=1`, { credentials: "include" })
+    fetch(`${API_URL}/api/orders`, { credentials: "include" })
       .then((r) => r.json())
-      .then((d) => setStats((s) => ({ ...s, orders: d.total || 0 })))
+      .then((d) => setStats((s) => ({ ...s, orders: Array.isArray(d) ? d.length : 0 })))
       .catch(() => {});
 
-    fetch(`${API_URL}/api/account/loyalty`, { credentials: "include" })
+    fetch(`${API_URL}/api/loyalty`, { credentials: "include" })
       .then((r) => r.json())
       .then((d) => {
         if (d.account) {
@@ -115,7 +115,7 @@ export default function AccountSettingsPage() {
     setProfileSuccess(false);
     try {
       const csrf = getCsrfToken();
-      const res = await fetch(`${API_URL}/api/auth/profile`, {
+      const res = await fetch(`${API_URL}/api/auth/me`, {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
