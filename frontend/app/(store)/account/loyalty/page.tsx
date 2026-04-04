@@ -7,6 +7,7 @@ import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { ArrowLeft, Award, Gift, TrendingUp, Star } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import PointsMultiplier from "@/components/PointsMultiplier";
 
 interface LoyaltyAccount {
   id: string;
@@ -127,6 +128,10 @@ export default function LoyaltyPage() {
         </Link>
 
         <h1 className="text-2xl font-semibold mb-8">Loyalty Points</h1>
+
+        <div className="mb-8 rounded-2xl overflow-hidden">
+          <PointsMultiplier />
+        </div>
 
         {loading ? (
           <div className="text-center py-16">Loading...</div>

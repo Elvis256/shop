@@ -16,6 +16,7 @@ import {
   Share2,
   ArrowRight,
 } from "lucide-react";
+import ReferralLeaderboard from "@/components/ReferralLeaderboard";
 
 type DashboardData = {
   affiliate: {
@@ -263,6 +264,11 @@ function AffiliateDashboardInner() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Referral Leaderboard */}
+        <div className="mb-8">
+          <ReferralLeaderboard />
         </div>
 
         {/* CTA */}

@@ -74,7 +74,8 @@ export default function RootLayout({
         <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#0071e3" />
+        <meta name="theme-color" content="#ec4899" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
       <body className="min-h-screen flex flex-col bg-bg text-text transition-colors" suppressHydrationWarning>
         <GoogleAnalytics />

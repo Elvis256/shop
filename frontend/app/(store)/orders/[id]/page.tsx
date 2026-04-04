@@ -91,6 +91,11 @@ export default function OrderDetailPage() {
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
+  const [showModify, setShowModify] = useState(false);
+  const [modifyAddress, setModifyAddress] = useState("");
+  const [modifyNotes, setModifyNotes] = useState("");
+  const [modifying, setModifying] = useState(false);
+  const [modifySuccess, setModifySuccess] = useState(false);
 
   useEffect(() => {
     loadOrder();
@@ -153,6 +158,41 @@ export default function OrderDetailPage() {
   };
 
   const canCancel = order && ["PENDING", "CONFIRMED"].includes(order.status);
+  const canModify = order && order.status === "PENDING";
+
+  const handleModifyOrder = async () => {
+    if (!order) return;
+    setModifying(true);
+    setModifySuccess(false);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/api/orders/${order.id}/modify`, {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          shippingAddress: modifyAddress || undefined,
+          notes: modifyNotes || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to modify order");
+        return;
+      }
+      setModifySuccess(true);
+      setShowModify(false);
+      loadOrder();
+      setTimeout(() => setModifySuccess(false), 4000);
+    } catch {
+      alert("Failed to modify order");
+    } finally {
+      setModifying(false);
+    }
+  };
 
   const handleReorder = async () => {
     if (!order) return;
@@ -497,6 +537,67 @@ export default function OrderDetailPage() {
           </div>
         )}
 
+        {/* Modify Order Success */}
+        {modifySuccess && (
+          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
+            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <p className="text-sm text-green-700 font-medium">Order updated successfully!</p>
+          </div>
+        )}
+
+        {/* Modify Order Section */}
+        {canModify && showModify && (
+          <div className="mb-4 card border border-blue-200 bg-blue-50/30">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-600" />
+              Modify Order
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Shipping Address
+                </label>
+                <textarea
+                  value={modifyAddress}
+                  onChange={(e) => setModifyAddress(e.target.value)}
+                  placeholder="Enter new shipping address..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[80px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Order Notes
+                </label>
+                <textarea
+                  value={modifyNotes}
+                  onChange={(e) => setModifyNotes(e.target.value)}
+                  placeholder="Add delivery instructions or special notes..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[60px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleModifyOrder}
+                  disabled={modifying || (!modifyAddress && !modifyNotes)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {modifying ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Saving...</>
+                  ) : (
+                    "Save Changes"
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowModify(false)}
+                  className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Cancel Order Confirmation */}
         {cancelConfirm && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl">
@@ -527,6 +628,14 @@ export default function OrderDetailPage() {
           <Link href="/track-order" className="btn-secondary flex items-center gap-2">
             <Eye className="w-4 h-4" />Track Order
           </Link>
+          {canModify && !showModify && (
+            <button
+              onClick={() => setShowModify(true)}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <FileText className="w-4 h-4" />Modify Order
+            </button>
+          )}
           <button
             onClick={handleReorder}
             disabled={reordering}

@@ -7,6 +7,7 @@ import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { ArrowLeft, Users, Gift, Copy, Check, Share2 } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import ReferralLeaderboard from "@/components/ReferralLeaderboard";
 
 interface ReferralData {
   code: string;
@@ -189,6 +190,11 @@ export default function ReferralsPage() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Referral Leaderboard */}
+            <div className="mb-8">
+              <ReferralLeaderboard />
             </div>
 
             {/* Referral History */}

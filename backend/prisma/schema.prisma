@@ -45,6 +45,10 @@ model User {
   productAnswers    ProductAnswer[]
   storeCredit       StoreCredit?
   reviewImages      ReviewImage[]
+  subscriptions     Subscription[]
+  pushSubscriptions PushSubscription[]
+  browseHistory     BrowseEvent[]
+  segmentTags       String[]
 }
 
 model RefreshToken {
@@ -120,6 +124,19 @@ model Product {
   flashSalePrice  Decimal?  @db.Decimal(10, 2)
   flashSaleEndsAt DateTime?
 
+  // Daily Deal
+  isDailyDeal     Boolean   @default(false)
+  dailyDealPrice  Decimal?  @db.Decimal(10, 2)
+  dailyDealDate   DateTime?
+
+  // Pre-order
+  isPreOrder      Boolean   @default(false)
+  preOrderDate    DateTime? // Expected availability date
+  
+  // Subscription
+  isSubscribable  Boolean   @default(false)
+  subscriptionDiscount Decimal? @db.Decimal(5, 2) // % off for subscribers
+
   // Video
   videoUrl    String?
   
@@ -190,6 +207,8 @@ model Product {
   questions        ProductQuestion[]
   bundleItems      BundleItem[]
   priceTiers       PriceTier[]
+  subscriptions    Subscription[]
+  browseEvents     BrowseEvent[]
 
   @@index([categoryId])
   @@index([status])
@@ -310,6 +329,7 @@ model Order {
   returnRequests  ReturnRequest[]
   aliexpressOrders AliExpressOrder[]
   cjOrders         CJOrder[]
+  installmentPlan InstallmentPlan?
   
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -1358,4 +1378,92 @@ model StoreCreditTx {
   createdAt     DateTime @default(now())
 
   @@index([storeCreditId])
+}
+
+// ─── Installment / Buy Now Pay Later ──────────────────────────────────────────
+model InstallmentPlan {
+  id           String   @id @default(cuid())
+  orderId      String   @unique
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  totalAmount  Decimal  @db.Decimal(10, 2)
+  installments Int      // 2, 3, or 4
+  paidCount    Int      @default(1) // first installment paid at checkout
+  nextDueDate  DateTime
+  status       String   @default("ACTIVE") // ACTIVE, COMPLETED, OVERDUE, CANCELLED
+  payments     InstallmentPayment[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model InstallmentPayment {
+  id         String   @id @default(cuid())
+  planId     String
+  plan       InstallmentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  number     Int      // installment number (1, 2, 3, 4)
+  amount     Decimal  @db.Decimal(10, 2)
+  status     String   @default("PENDING") // PENDING, PAID, OVERDUE
+  dueDate    DateTime
+  paidAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([planId])
+}
+
+// ─── Subscriptions / Auto-Replenish ───────────────────────────────────────────
+model Subscription {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity    Int      @default(1)
+  intervalDays Int     @default(30) // 14, 30, 60, 90
+  discount    Decimal  @db.Decimal(5, 2) // percentage off
+  nextDelivery DateTime
+  status      String   @default("ACTIVE") // ACTIVE, PAUSED, CANCELLED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([nextDelivery, status])
+}
+
+// ─── Web Push Notifications ───────────────────────────────────────────────────
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─── Browse Events (for abandonment emails & personalization) ─────────────────
+model BrowseEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  viewedAt  DateTime @default(now())
+
+  @@index([userId, viewedAt])
+  @@index([productId])
+}
+
+// ─── Webhook Integrations ─────────────────────────────────────────────────────
+model WebhookEndpoint {
+  id        String   @id @default(cuid())
+  url       String
+  events    String[] // ORDER_CREATED, ORDER_SHIPPED, PAYMENT_RECEIVED, etc.
+  secret    String   // HMAC signing secret
+  isActive  Boolean  @default(true)
+  failCount Int      @default(0)
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
