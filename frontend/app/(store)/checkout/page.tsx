@@ -10,7 +10,8 @@ import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
 import { useToast } from "@/lib/hooks/useToast";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
-import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck, Banknote } from "lucide-react";
+import { parseDaysRange, formatDateRange } from "@/components/DeliveryEstimate";
+import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck, Banknote, Wallet } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -64,6 +65,39 @@ export default function CheckoutPage() {
     discreet: true,
   });
 
+  // Store credit state
+  const [storeCreditBalance, setStoreCreditBalance] = useState(0);
+  const [storeCreditAmount, setStoreCreditAmount] = useState(0);
+  const [storeCreditApplied, setStoreCreditApplied] = useState(false);
+  const [storeCreditLoading, setStoreCreditLoading] = useState(false);
+
+  // Fetch store credit balance for authenticated users
+  useEffect(() => {
+    if (user) {
+      const token = localStorage.getItem("token");
+      fetch(`${API_URL}/api/store-credit`, {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d && d.balance > 0) setStoreCreditBalance(d.balance);
+        })
+        .catch(() => {});
+    }
+  }, [user]);
+
+  const applyStoreCredit = () => {
+    if (storeCreditAmount > 0 && storeCreditAmount <= storeCreditBalance) {
+      setStoreCreditApplied(true);
+    }
+  };
+
+  const removeStoreCredit = () => {
+    setStoreCreditApplied(false);
+    setStoreCreditAmount(0);
+  };
+
   // Enrich cart items missing shippingBadge
   useEffect(() => {
     const missingBadge = items.filter((i) => !i.shippingBadge);
@@ -93,6 +127,8 @@ export default function CheckoutPage() {
   const shippingCalc = calculateShipping(items, shipping.city || "Kampala");
   const shippingCost = shippingCalc.total;
   const orderTotal = cartTotal + shippingCost;
+  const creditDiscount = storeCreditApplied ? Math.min(storeCreditAmount, orderTotal) : 0;
+  const finalTotal = orderTotal - creditDiscount;
 
   // Auto-fill from logged-in user
   useEffect(() => {
@@ -369,6 +405,7 @@ export default function CheckoutPage() {
                   <input
                     className="input"
                     placeholder="John"
+                    autoComplete="given-name"
                     value={shipping.firstName}
                     onChange={(e) => updateShipping("firstName", e.target.value)}
                   />
@@ -378,6 +415,7 @@ export default function CheckoutPage() {
                   <input
                     className="input"
                     placeholder="Doe"
+                    autoComplete="family-name"
                     value={shipping.lastName}
                     onChange={(e) => updateShipping("lastName", e.target.value)}
                   />
@@ -390,6 +428,7 @@ export default function CheckoutPage() {
                   className="input"
                   type="email"
                   placeholder="john@example.com"
+                  autoComplete="email"
                   value={shipping.email}
                   onChange={(e) => updateShipping("email", e.target.value)}
                 />
@@ -401,6 +440,7 @@ export default function CheckoutPage() {
                   className="input"
                   type="tel"
                   placeholder="+256 700 000 000"
+                  autoComplete="tel"
                   value={shipping.phone}
                   onChange={(e) => updateShipping("phone", e.target.value)}
                 />
@@ -411,6 +451,7 @@ export default function CheckoutPage() {
                 <input
                   className="input"
                   placeholder="Street address"
+                  autoComplete="street-address"
                   value={shipping.address}
                   onChange={(e) => updateShipping("address", e.target.value)}
                 />
@@ -422,6 +463,7 @@ export default function CheckoutPage() {
                   <input
                     className="input"
                     placeholder="Kampala"
+                    autoComplete="address-level2"
                     value={shipping.city}
                     onChange={(e) => updateShipping("city", e.target.value)}
                   />
@@ -431,6 +473,7 @@ export default function CheckoutPage() {
                   <input
                     className="input"
                     placeholder="Kampala"
+                    autoComplete="address-level1"
                     value={shipping.county}
                     onChange={(e) => updateShipping("county", e.target.value)}
                   />
@@ -440,6 +483,7 @@ export default function CheckoutPage() {
                   <input
                     className="input"
                     placeholder="e.g. 256"
+                    autoComplete="postal-code"
                     value={shipping.postalCode}
                     onChange={(e) => updateShipping("postalCode", e.target.value)}
                   />
@@ -470,22 +514,34 @@ export default function CheckoutPage() {
                   <h4 className="text-small font-medium flex items-center gap-2">
                     <Truck className="w-4 h-4 text-accent" />Estimated Delivery
                   </h4>
-                  {hasLocal && (
-                    <div className="flex items-center gap-2 text-small">
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                        <Zap className="w-3 h-3" />Express
-                      </span>
-                      <span className="text-text-muted">{shippingConfig.standardDays} (Kampala &amp; nearby)</span>
-                    </div>
-                  )}
-                  {hasInternational && (
-                    <div className="flex items-center gap-2 text-small">
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
-                        <Plane className="w-3 h-3" />From Abroad
-                      </span>
-                      <span className="text-text-muted">{shippingConfig.intlDays} (international shipping)</span>
-                    </div>
-                  )}
+                  {hasLocal && (() => {
+                    const range = parseDaysRange(shippingConfig.standardDays);
+                    return (
+                      <div className="flex items-center gap-2 text-small">
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          <Zap className="w-3 h-3" />Express
+                        </span>
+                        <span className="text-text-muted">
+                          {shippingConfig.standardDays} (Kampala &amp; nearby)
+                          {range && <> — arrives {formatDateRange(range.min, range.max)}</>}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                  {hasInternational && (() => {
+                    const range = parseDaysRange(shippingConfig.intlDays);
+                    return (
+                      <div className="flex items-center gap-2 text-small">
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+                          <Plane className="w-3 h-3" />From Abroad
+                        </span>
+                        <span className="text-text-muted">
+                          {shippingConfig.intlDays} (international shipping)
+                          {range && <> — arrives {formatDateRange(range.min, range.max)}</>}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -749,17 +805,71 @@ export default function CheckoutPage() {
                 <h4 className="font-medium text-small text-blue-900 flex items-center gap-2">
                   <Truck className="w-4 h-4" />Estimated Delivery
                 </h4>
-                {hasLocal && (
-                  <p className="text-small text-blue-800">
-                    ⚡ Local items: <strong>{shippingConfig.standardDays}</strong>
-                  </p>
-                )}
-                {hasInternational && (
-                  <p className="text-small text-blue-800">
-                    ✈️ International items: <strong>{shippingConfig.intlDays}</strong>
-                  </p>
-                )}
+                {hasLocal && (() => {
+                  const range = parseDaysRange(shippingConfig.standardDays);
+                  return (
+                    <p className="text-small text-blue-800">
+                      ⚡ Local items: <strong>{shippingConfig.standardDays}</strong>
+                      {range && <> — arrives {formatDateRange(range.min, range.max)}</>}
+                    </p>
+                  );
+                })()}
+                {hasInternational && (() => {
+                  const range = parseDaysRange(shippingConfig.intlDays);
+                  return (
+                    <p className="text-small text-blue-800">
+                      ✈️ International items: <strong>{shippingConfig.intlDays}</strong>
+                      {range && <> — arrives {formatDateRange(range.min, range.max)}</>}
+                    </p>
+                  );
+                })()}
               </div>
+
+              {/* Store Credit */}
+              {user && storeCreditBalance > 0 && (
+                <div className="p-4 bg-amber-50 border border-amber-100 rounded-8 space-y-3">
+                  <h4 className="font-medium text-small text-amber-900 flex items-center gap-2">
+                    <Wallet className="w-4 h-4" />Store Credit
+                  </h4>
+                  <p className="text-small text-amber-800">
+                    Available balance: <strong>{formatPrice(storeCreditBalance)}</strong>
+                  </p>
+                  {!storeCreditApplied ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        className="input flex-1"
+                        placeholder="Amount to apply"
+                        min={0}
+                        max={Math.min(storeCreditBalance, orderTotal)}
+                        value={storeCreditAmount || ""}
+                        onChange={(e) => setStoreCreditAmount(Math.min(Number(e.target.value), storeCreditBalance, orderTotal))}
+                      />
+                      <button
+                        onClick={applyStoreCredit}
+                        disabled={storeCreditAmount <= 0}
+                        className="btn-secondary"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-small text-green-700">
+                        ✓ Credit applied: −{formatPrice(creditDiscount)}
+                      </span>
+                      <button onClick={removeStoreCredit} className="text-small text-red-600 hover:underline">
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  {storeCreditApplied && (
+                    <p className="text-small font-semibold text-amber-900">
+                      New total: {formatPrice(finalTotal)}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {shipping.discreet && (
                 <div className="p-4 bg-green-50 border border-green-200 rounded-8">
@@ -796,7 +906,7 @@ export default function CheckoutPage() {
                   ) : (
                     <>
                       <Lock className="w-4 h-4" />
-                      {`Pay ${formatPrice(orderTotal)}`}
+                      {`Pay ${formatPrice(finalTotal)}`}
                     </>
                   )}
                 </button>

@@ -8,6 +8,7 @@ import { useCurrency } from "@/contexts/CurrencyContext";
 import {
   Package, Truck, CheckCircle, Clock, AlertCircle, CreditCard,
   Smartphone, Banknote, MapPin, ShieldCheck, Eye, Copy, Check,
+  FileText, RefreshCw, Loader2,
 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -88,6 +89,8 @@ export default function OrderDetailPage() {
   const [copied, setCopied] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [reordering, setReordering] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
 
   useEffect(() => {
     loadOrder();
@@ -150,6 +153,44 @@ export default function OrderDetailPage() {
   };
 
   const canCancel = order && ["PENDING", "CONFIRMED"].includes(order.status);
+
+  const handleReorder = async () => {
+    if (!order) return;
+    setReordering(true);
+    setReorderError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/api/orders/${order.id}/reorder`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReorderError(data.error || "Some products may no longer be available");
+        return;
+      }
+      window.location.href = "/cart";
+    } catch {
+      setReorderError("Failed to reorder. Please try again.");
+    } finally {
+      setReordering(false);
+    }
+  };
+
+  const handleDownloadInvoice = () => {
+    if (!order) return;
+    const token = localStorage.getItem("token");
+    const url = `${API_URL}/api/invoices/${order.id}?format=html`;
+    const win = window.open(url, "_blank");
+    if (win) {
+      // Attempt to trigger print dialog after the page loads
+      win.addEventListener("load", () => win.print());
+    }
+  };
 
   const getCurrentStep = () => {
     if (!order) return -1;
@@ -472,12 +513,37 @@ export default function OrderDetailPage() {
           </div>
         )}
 
+        {/* Reorder Error */}
+        {reorderError && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+            <p className="text-sm text-red-700">{reorderError}</p>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex flex-wrap gap-3">
           <Link href="/account/orders" className="btn-secondary">← My Orders</Link>
           <Link href="/track-order" className="btn-secondary flex items-center gap-2">
             <Eye className="w-4 h-4" />Track Order
           </Link>
+          <button
+            onClick={handleReorder}
+            disabled={reordering}
+            className="btn-secondary flex items-center gap-2"
+          >
+            {reordering ? (
+              <><Loader2 className="w-4 h-4 animate-spin" />Reordering...</>
+            ) : (
+              <><RefreshCw className="w-4 h-4" />Reorder</>
+            )}
+          </button>
+          <button
+            onClick={handleDownloadInvoice}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <FileText className="w-4 h-4" />Download Invoice
+          </button>
           {canCancel && !cancelConfirm && (
             <button onClick={() => setCancelConfirm(true)} className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm hover:bg-red-100">
               Cancel Order

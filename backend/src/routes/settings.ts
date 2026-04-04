@@ -108,6 +108,30 @@ router.get("/shipping", async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/settings/shipping-zones — public endpoint returning active shipping zones
+router.get("/shipping-zones", async (_req: Request, res: Response) => {
+  try {
+    const zones = await prisma.shippingZone.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    });
+
+    return res.json({
+      zones: zones.map((z) => ({
+        id: z.id,
+        name: z.name,
+        cities: z.cities,
+        rate: Number(z.rate),
+        freeAbove: z.freeAbove ? Number(z.freeAbove) : null,
+        estimatedDays: z.estimatedDays,
+      })),
+    });
+  } catch (error) {
+    console.error("Shipping zones error:", error);
+    return res.status(500).json({ error: "Failed to fetch shipping zones" });
+  }
+});
+
 // POST /api/settings/shipping/calculate — calculate shipping for a given cart + address
 router.post("/shipping/calculate", async (req: Request, res: Response) => {
   try {

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { api } from "@/lib/api";
-import { Package, Eye, ChevronLeft } from "lucide-react";
+import { Package, Eye, ChevronLeft, RefreshCw, Loader2 } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
 interface Order {
@@ -24,6 +24,34 @@ export default function OrdersPage() {
   const { formatPrice } = useCurrency();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
+  const handleReorder = async (orderId: string) => {
+    setReorderingId(orderId);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/api/orders/${orderId}/reorder`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to reorder");
+        return;
+      }
+      router.push("/cart");
+    } catch {
+      alert("Failed to reorder. Please try again.");
+    } finally {
+      setReorderingId(null);
+    }
+  };
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -107,7 +135,18 @@ export default function OrdersPage() {
                     </span>
                   </div>
                 </div>
-                <div className="mt-4 pt-4 border-t border-border flex justify-end">
+                <div className="mt-4 pt-4 border-t border-border flex justify-end gap-2">
+                  <button
+                    onClick={() => handleReorder(order.id)}
+                    disabled={reorderingId === order.id}
+                    className="btn-secondary text-small gap-2"
+                  >
+                    {reorderingId === order.id ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" />Reordering...</>
+                    ) : (
+                      <><RefreshCw className="w-4 h-4" />Reorder</>
+                    )}
+                  </button>
                   <Link
                     href={`/orders/${order.id}`}
                     className="btn-secondary text-small gap-2"

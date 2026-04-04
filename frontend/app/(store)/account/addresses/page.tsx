@@ -134,6 +134,7 @@ export default function AddressesPage() {
                   <label className="block text-small font-medium mb-2">Full Name</label>
                   <input
                     className="input"
+                    autoComplete="name"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     required
@@ -143,6 +144,7 @@ export default function AddressesPage() {
                   <label className="block text-small font-medium mb-2">Phone</label>
                   <input
                     className="input"
+                    autoComplete="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     required
@@ -153,6 +155,7 @@ export default function AddressesPage() {
                 <label className="block text-small font-medium mb-2">Street Address</label>
                 <input
                   className="input"
+                  autoComplete="street-address"
                   value={formData.street}
                   onChange={(e) => setFormData({ ...formData, street: e.target.value })}
                   required
@@ -163,6 +166,7 @@ export default function AddressesPage() {
                   <label className="block text-small font-medium mb-2">City</label>
                   <input
                     className="input"
+                    autoComplete="address-level2"
                     value={formData.city}
                     onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                     required
@@ -172,6 +176,7 @@ export default function AddressesPage() {
                   <label className="block text-small font-medium mb-2">County</label>
                   <input
                     className="input"
+                    autoComplete="address-level1"
                     value={formData.county}
                     onChange={(e) => setFormData({ ...formData, county: e.target.value })}
                   />
@@ -180,6 +185,7 @@ export default function AddressesPage() {
                   <label className="block text-small font-medium mb-2">Postal Code</label>
                   <input
                     className="input"
+                    autoComplete="postal-code"
                     value={formData.postalCode}
                     onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
                   />
