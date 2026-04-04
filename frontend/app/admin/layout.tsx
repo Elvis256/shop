@@ -31,28 +31,74 @@ import {
   ShoppingBag,
   Layers,
   Wallet,
+  Sparkles,
 } from "lucide-react";
 
-const navItems = [
-  { href: "/admin", icon: LayoutDashboard, label: "Dashboard", exact: true },
-  { href: "/admin/analytics", icon: BarChart3, label: "Analytics" },
-  { href: "/admin/products", icon: Package, label: "Products" },
-  { href: "/admin/inventory", icon: Warehouse, label: "Inventory" },
-  { href: "/admin/orders", icon: ShoppingCart, label: "Orders" },
-  { href: "/admin/customers", icon: Users, label: "Customers" },
-  { href: "/admin/categories", icon: FolderTree, label: "Categories" },
-  { href: "/admin/coupons", icon: Tag, label: "Coupons" },
-  { href: "/admin/bundles", icon: Layers, label: "Bundles" },
-  { href: "/admin/store-credit", icon: Wallet, label: "Store Credit" },
-  { href: "/admin/shipping", icon: Truck, label: "Shipping" },
-  { href: "/admin/aliexpress", icon: ShoppingBag, label: "AliExpress" },
-  { href: "/admin/cjdropshipping", icon: Truck, label: "CJ Dropshipping" },
-  { href: "/admin/affiliates", icon: Globe, label: "Affiliates" },
-  { href: "/admin/content", icon: FileText, label: "Content" },
-  { href: "/admin/staff", icon: UserCog, label: "Staff" },
-  { href: "/admin/activity", icon: Activity, label: "Activity Log" },
-  { href: "/admin/settings", icon: Settings, label: "Settings" },
+interface NavItem {
+  href: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  exact?: boolean;
+}
+
+interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    title: "MAIN",
+    items: [
+      { href: "/admin", icon: LayoutDashboard, label: "Dashboard", exact: true },
+      { href: "/admin/analytics", icon: BarChart3, label: "Analytics" },
+    ],
+  },
+  {
+    title: "CATALOG",
+    items: [
+      { href: "/admin/products", icon: Package, label: "Products" },
+      { href: "/admin/inventory", icon: Warehouse, label: "Inventory" },
+      { href: "/admin/categories", icon: FolderTree, label: "Categories" },
+      { href: "/admin/bundles", icon: Layers, label: "Bundles" },
+    ],
+  },
+  {
+    title: "SALES",
+    items: [
+      { href: "/admin/orders", icon: ShoppingCart, label: "Orders" },
+      { href: "/admin/customers", icon: Users, label: "Customers" },
+      { href: "/admin/coupons", icon: Tag, label: "Coupons" },
+      { href: "/admin/store-credit", icon: Wallet, label: "Store Credit" },
+    ],
+  },
+  {
+    title: "MARKETING",
+    items: [
+      { href: "/admin/social", icon: Sparkles, label: "Social Shopping" },
+      { href: "/admin/affiliates", icon: Globe, label: "Affiliates" },
+      { href: "/admin/content", icon: FileText, label: "Content" },
+    ],
+  },
+  {
+    title: "SUPPLY",
+    items: [
+      { href: "/admin/aliexpress", icon: ShoppingBag, label: "AliExpress" },
+      { href: "/admin/cjdropshipping", icon: Truck, label: "CJ Dropshipping" },
+      { href: "/admin/shipping", icon: Truck, label: "Shipping" },
+    ],
+  },
+  {
+    title: "SYSTEM",
+    items: [
+      { href: "/admin/staff", icon: UserCog, label: "Staff" },
+      { href: "/admin/activity", icon: Activity, label: "Activity Log" },
+      { href: "/admin/settings", icon: Settings, label: "Settings" },
+    ],
+  },
 ];
+
+const allNavItems = navGroups.flatMap(g => g.items);
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -153,31 +199,38 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto" style={{ height: "calc(100vh - 180px)" }}>
-          {navItems.map((item) => {
-            const isActive = item.exact 
-              ? pathname === item.href 
-              : pathname === item.href || pathname.startsWith(item.href + "/");
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch={false}
-                onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
-                  isActive
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                }`}
-              >
-                <item.icon className={`w-5 h-5 ${isActive ? "text-primary" : "text-gray-400"}`} />
-                <span className="text-sm">{item.label}</span>
-                {isActive && (
-                  <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
-                )}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 px-3 pb-3 overflow-y-auto" style={{ height: "calc(100vh - 180px)" }}>
+          {navGroups.map((group) => (
+            <div key={group.title}>
+              <p className="text-[10px] uppercase tracking-wider text-gray-400 px-3 pt-4 pb-1 font-medium select-none">{group.title}</p>
+              <div className="space-y-0.5">
+                {group.items.map((item) => {
+                  const isActive = item.exact 
+                    ? pathname === item.href 
+                    : pathname === item.href || pathname.startsWith(item.href + "/");
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      prefetch={false}
+                      onClick={() => setSidebarOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
+                        isActive
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                      }`}
+                    >
+                      <item.icon className={`w-5 h-5 ${isActive ? "text-primary" : "text-gray-400"}`} />
+                      <span className="text-sm">{item.label}</span>
+                      {isActive && (
+                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* User Section */}
@@ -216,7 +269,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <div className="hidden lg:flex fixed top-0 left-64 right-0 h-14 bg-white border-b z-[50] items-center justify-between px-6">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-semibold text-gray-900">
-            {navItems.find(item => item.exact ? pathname === item.href : pathname.startsWith(item.href))?.label || "Admin"}
+            {allNavItems.find(item => item.exact ? pathname === item.href : pathname.startsWith(item.href))?.label || "Admin"}
           </h1>
         </div>
         <div className="flex items-center gap-2">

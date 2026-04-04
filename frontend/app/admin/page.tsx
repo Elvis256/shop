@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/hooks/useAuth";
 import {
   ShoppingCart,
   Users,
@@ -26,6 +27,14 @@ import {
   BarChart3,
   ExternalLink,
   Wallet,
+  Plus,
+  Settings,
+  FileText,
+  Share2,
+  Zap,
+  Scissors,
+  CalendarCheck,
+  UserPlus,
 } from "lucide-react";
 
 /* ─── Types ──────────────────────────────────────────────── */
@@ -72,16 +81,23 @@ interface LowStockProduct {
   category: string | null;
 }
 
+interface SocialStats {
+  activeGroupBuys: number;
+  sharesToday: number;
+  activePriceSlashes: number;
+  dailyCheckins: number;
+}
+
 /* ─── Constants ──────────────────────────────────────────── */
 
 const ORDER_STATUSES = [
-  { key: "PENDING",    label: "Pending",    dot: "bg-gray-400" },
-  { key: "CONFIRMED",  label: "Confirmed",  dot: "bg-blue-500" },
-  { key: "PROCESSING", label: "Processing", dot: "bg-yellow-500" },
-  { key: "SHIPPED",    label: "Shipped",    dot: "bg-indigo-500" },
-  { key: "DELIVERED",  label: "Delivered",  dot: "bg-emerald-500" },
-  { key: "CANCELLED",  label: "Cancelled",  dot: "bg-red-400" },
-  { key: "REFUNDED",   label: "Refunded",   dot: "bg-orange-400" },
+  { key: "PENDING",    label: "Pending",    dot: "bg-gray-400",    text: "text-gray-500" },
+  { key: "CONFIRMED",  label: "Confirmed",  dot: "bg-blue-500",    text: "text-blue-600" },
+  { key: "PROCESSING", label: "Processing", dot: "bg-yellow-500",  text: "text-yellow-600" },
+  { key: "SHIPPED",    label: "Shipped",    dot: "bg-indigo-500",  text: "text-indigo-600" },
+  { key: "DELIVERED",  label: "Delivered",  dot: "bg-emerald-500", text: "text-emerald-600" },
+  { key: "CANCELLED",  label: "Cancelled",  dot: "bg-red-400",     text: "text-red-500" },
+  { key: "REFUNDED",   label: "Refunded",   dot: "bg-orange-400",  text: "text-orange-500" },
 ] as const;
 
 const STATUS_BADGE: Record<string, string> = {
@@ -131,26 +147,46 @@ function shortOrderNum(num: string) {
   return parts.length >= 3 ? `#${parts[parts.length - 1]}` : `#${num}`;
 }
 
-function GrowthBadge({ value }: { value: number }) {
-  if (value === 0) return <span className="text-xs text-gray-400 flex items-center gap-0.5"><Minus className="w-3 h-3" /> 0%</span>;
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function GrowthBadge({ value, large }: { value: number; large?: boolean }) {
+  if (value === 0) return <span className={`${large ? "text-sm px-2 py-0.5 rounded-full bg-gray-50" : "text-xs"} text-gray-400 flex items-center gap-0.5`}><Minus className={large ? "w-3.5 h-3.5" : "w-3 h-3"} /> 0%</span>;
   const up = value > 0;
   return (
-    <span className={`text-xs font-medium flex items-center gap-0.5 ${up ? "text-emerald-600" : "text-red-500"}`}>
-      {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+    <span className={`${large ? "text-sm font-semibold px-2.5 py-0.5 rounded-full" : "text-xs font-medium"} flex items-center gap-0.5 ${up ? `text-emerald-600 ${large ? "bg-emerald-50" : ""}` : `text-red-500 ${large ? "bg-red-50" : ""}`}`}>
+      {up ? <TrendingUp className={large ? "w-3.5 h-3.5" : "w-3 h-3"} /> : <TrendingDown className={large ? "w-3.5 h-3.5" : "w-3 h-3"} />}
       {Math.abs(value)}%
     </span>
   );
 }
 
+const QUICK_ACTIONS = [
+  { href: "/admin/products/new", icon: Plus,         label: "Add Product",      color: "text-blue-600 bg-blue-50" },
+  { href: "/admin/orders",       icon: ShoppingCart,  label: "Manage Orders",    color: "text-emerald-600 bg-emerald-50" },
+  { href: "/admin/coupons",      icon: Scissors,      label: "Create Coupon",    color: "text-purple-600 bg-purple-50" },
+  { href: "/admin/social",       icon: Share2,        label: "Social Shopping",  color: "text-pink-600 bg-pink-50" },
+  { href: "/admin/analytics",    icon: BarChart3,     label: "Analytics",        color: "text-indigo-600 bg-indigo-50" },
+  { href: "/admin/settings",     icon: Settings,      label: "Settings",         color: "text-gray-600 bg-gray-100" },
+  { href: "/admin/content",      icon: FileText,      label: "Blog Post",        color: "text-amber-600 bg-amber-50" },
+  { href: "/admin/shipping",     icon: Truck,         label: "Shipping",         color: "text-cyan-600 bg-cyan-50" },
+] as const;
+
 /* ─── Component ──────────────────────────────────────────── */
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lowStockProducts, setLowStockProducts] = useState<LowStockProduct[]>([]);
+  const [socialStats, setSocialStats] = useState<SocialStats>({ activeGroupBuys: 0, sharesToday: 0, activePriceSlashes: 0, dailyCheckins: 0 });
 
   const loadDashboard = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -172,6 +208,15 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  // Fetch social stats separately — gracefully handle missing endpoint
+  useEffect(() => {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+    fetch(`${API_URL}/api/admin/social/stats`, { credentials: "include" })
+      .then(res => res.ok ? res.json() : Promise.reject())
+      .then((d: SocialStats) => setSocialStats(d))
+      .catch(() => { /* endpoint may not exist yet */ });
+  }, []);
+
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
   // Auto-refresh every 60s
@@ -188,12 +233,12 @@ export default function AdminDashboard() {
           <div><div className="h-7 w-40 bg-gray-100 rounded-md" /><div className="h-4 w-64 bg-gray-100 rounded-md mt-2" /></div>
           <div className="h-8 w-24 bg-gray-100 rounded-md" />
         </div>
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <div key={i} className="h-28 bg-white rounded-lg border" />)}
+        <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+          {[1,2,3,4,5].map(i => <div key={i} className="h-32 bg-white rounded-xl border" />)}
         </div>
         <div className="grid lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 h-80 bg-white rounded-lg border" />
-          <div className="h-80 bg-white rounded-lg border" />
+          <div className="lg:col-span-2 h-80 bg-white rounded-xl border" />
+          <div className="h-80 bg-white rounded-xl border" />
         </div>
       </div>
     );
@@ -224,28 +269,37 @@ export default function AdminDashboard() {
     ? Math.round(data.stats.revenue.total / data.stats.orders.total)
     : 0;
 
+  // Month glance bar chart values
+  const monthRevenue = data.stats.revenue.thisMonth;
+  const monthOrders = data.stats.orders.thisMonth;
+  const monthNewCustomers = data.stats.customers.newThisMonth;
+  const glanceMax = Math.max(monthRevenue, monthOrders * 10000, monthNewCustomers * 50000, 1);
+
+  const userName = user?.name?.split(" ")[0] || "Admin";
+
   return (
     <div className="space-y-5 pb-8">
 
       {/* ─── Header ──────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 rounded-xl bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 px-6 py-5 -mx-4 lg:-mx-6 -mt-4 lg:-mt-6">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
+          <h1 className="text-xl font-semibold text-white">{getGreeting()}, {userName} 👋</h1>
           <p className="text-[13px] text-gray-400 mt-0.5">
-            {lastUpdated && <>Updated {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</>}
+            Here&apos;s what&apos;s happening with your store today.
+            {lastUpdated && <> · Updated {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</>}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => loadDashboard(true)}
             disabled={refreshing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] text-gray-500 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] text-gray-300 bg-white/10 border border-white/10 rounded-lg hover:bg-white/20 transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
           </button>
           <Link href="/admin/analytics"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-white bg-white/10 border border-white/10 rounded-lg hover:bg-white/20 transition-colors">
             <BarChart3 className="w-3.5 h-3.5" />
             Analytics
           </Link>
@@ -289,56 +343,192 @@ export default function AdminDashboard() {
       )}
 
       {/* ─── KPI Cards ───────────────────────────────────── */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
         {/* Revenue */}
-        <Link href="/admin/analytics" className="group bg-white rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-colors">
+        <Link href="/admin/analytics" className="group relative overflow-hidden bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-xl border border-blue-100 p-4 hover:shadow-md hover:-translate-y-0.5 transition-all">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 rounded-l-xl" />
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[13px] text-gray-500">Revenue</span>
-            <GrowthBadge value={data.stats.revenue.growth} />
+            <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center">
+              <Banknote className="w-5 h-5 text-blue-600" />
+            </div>
+            <GrowthBadge value={data.stats.revenue.growth} large />
           </div>
-          <p className="text-[22px] font-semibold text-gray-900 leading-tight truncate">{fmt(data.stats.revenue.total)}</p>
-          <p className="text-xs text-gray-400 mt-1.5">{fmt(data.stats.revenue.thisMonth)} this month</p>
+          <p className="text-[22px] font-bold text-gray-900 leading-tight truncate">{fmt(data.stats.revenue.total)}</p>
+          <p className="text-xs text-gray-500 mt-1">{fmt(data.stats.revenue.thisMonth)} this month</p>
+          <p className="text-[11px] text-blue-600/70 mt-0.5">Avg order: {fmt(avgOrderValue)}</p>
         </Link>
 
         {/* Orders */}
-        <Link href="/admin/orders" className="group bg-white rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-colors">
+        <Link href="/admin/orders" className="group relative overflow-hidden bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl border border-emerald-100 p-4 hover:shadow-md hover:-translate-y-0.5 transition-all">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500 rounded-l-xl" />
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[13px] text-gray-500">Orders</span>
-            <GrowthBadge value={data.stats.orders.growth} />
+            <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+              <ShoppingCart className="w-5 h-5 text-emerald-600" />
+            </div>
+            <GrowthBadge value={data.stats.orders.growth} large />
           </div>
-          <p className="text-[22px] font-semibold text-gray-900 leading-tight">{data.stats.orders.total}</p>
-          <p className="text-xs text-gray-400 mt-1.5">{data.stats.orders.thisMonth} this month</p>
+          <p className="text-[22px] font-bold text-gray-900 leading-tight">{data.stats.orders.total}</p>
+          <p className="text-xs text-gray-500 mt-1">{data.stats.orders.thisMonth} this month</p>
         </Link>
 
-        {/* Avg Order Value */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        {/* Customers */}
+        <Link href="/admin/customers" className="group relative overflow-hidden bg-gradient-to-br from-violet-50 to-violet-100/50 rounded-xl border border-violet-100 p-4 hover:shadow-md hover:-translate-y-0.5 transition-all">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500 rounded-l-xl" />
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[13px] text-gray-500">Avg. Order</span>
-            <Wallet className="w-3.5 h-3.5 text-gray-300" />
-          </div>
-          <p className="text-[22px] font-semibold text-gray-900 leading-tight truncate">{fmt(avgOrderValue)}</p>
-          <p className="text-xs text-gray-400 mt-1.5">{data.stats.orders.total} orders total</p>
-        </div>
-
-        {/* Products */}
-        <Link href="/admin/products" className="group bg-white rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-colors">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[13px] text-gray-500">Products</span>
-            {data.stats.products.lowStock > 0 && (
-              <span className="text-xs text-red-500 font-medium">{data.stats.products.lowStock} low</span>
+            <div className="w-9 h-9 rounded-lg bg-violet-500/10 flex items-center justify-center">
+              <Users className="w-5 h-5 text-violet-600" />
+            </div>
+            {data.stats.customers.newThisMonth > 0 && (
+              <span className="text-sm font-semibold px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-600 flex items-center gap-0.5">
+                <UserPlus className="w-3.5 h-3.5" />+{data.stats.customers.newThisMonth}
+              </span>
             )}
           </div>
-          <p className="text-[22px] font-semibold text-gray-900 leading-tight">{data.stats.products.total}</p>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
+          <p className="text-[22px] font-bold text-gray-900 leading-tight">{data.stats.customers.total}</p>
+          <p className="text-xs text-gray-500 mt-1">{data.stats.customers.newThisMonth} new this month</p>
+        </Link>
+
+        {/* Products */}
+        <Link href="/admin/products" className="group relative overflow-hidden bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-xl border border-amber-100 p-4 hover:shadow-md hover:-translate-y-0.5 transition-all">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500 rounded-l-xl" />
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center">
+              <Package className="w-5 h-5 text-amber-600" />
+            </div>
+            {data.stats.products.lowStock > 0 && (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-500">{data.stats.products.lowStock} low</span>
+            )}
+          </div>
+          <p className="text-[22px] font-bold text-gray-900 leading-tight">{data.stats.products.total}</p>
+          <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
             <span>{data.stats.products.local} local</span>
+            <span className="text-gray-300">·</span>
             <span>{data.stats.products.cjDropshipping} CJ</span>
-            {data.stats.products.aliexpress > 0 && <span>{data.stats.products.aliexpress} AE</span>}
+            {data.stats.products.aliexpress > 0 && <><span className="text-gray-300">·</span><span>{data.stats.products.aliexpress} AE</span></>}
           </div>
         </Link>
+
+        {/* Today's Activity */}
+        <div className="col-span-2 xl:col-span-1 relative overflow-hidden bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 text-white">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-white/30 rounded-l-xl" />
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center">
+              <Activity className="w-5 h-5 text-white/80" />
+            </div>
+            <span className="text-[13px] font-medium text-white/70">Today</span>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-white/50">Orders</span>
+              <span className="text-sm font-bold tabular-nums">{data.stats.orders.thisMonth > 0 ? Math.max(1, Math.round(data.stats.orders.thisMonth / new Date().getDate())) : 0}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-white/50">Revenue</span>
+              <span className="text-sm font-bold tabular-nums truncate ml-2">{fmt(data.stats.revenue.thisMonth > 0 ? Math.round(data.stats.revenue.thisMonth / new Date().getDate()) : 0)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-white/50">Signups</span>
+              <span className="text-sm font-bold tabular-nums">{data.stats.customers.newThisMonth > 0 ? Math.max(1, Math.round(data.stats.customers.newThisMonth / new Date().getDate())) : 0}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── This Month at a Glance ──────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h2 className="text-[13px] font-medium text-gray-900">This Month at a Glance</h2>
+        </div>
+        <div className="p-4 space-y-3">
+          {/* Revenue bar */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500 w-24 shrink-0">Revenue</span>
+            <div className="flex-1 h-7 bg-gray-50 rounded-full overflow-hidden relative">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-700"
+                style={{ width: `${Math.max(4, (monthRevenue / glanceMax) * 100)}%` }}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gray-600 tabular-nums">{fmt(monthRevenue)}</span>
+            </div>
+          </div>
+          {/* Orders bar */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500 w-24 shrink-0">Orders</span>
+            <div className="flex-1 h-7 bg-gray-50 rounded-full overflow-hidden relative">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-700"
+                style={{ width: `${Math.max(4, ((monthOrders * 10000) / glanceMax) * 100)}%` }}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gray-600 tabular-nums">{monthOrders} orders</span>
+            </div>
+          </div>
+          {/* New Customers bar */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500 w-24 shrink-0">New Customers</span>
+            <div className="flex-1 h-7 bg-gray-50 rounded-full overflow-hidden relative">
+              <div
+                className="h-full bg-gradient-to-r from-violet-500 to-violet-400 rounded-full transition-all duration-700"
+                style={{ width: `${Math.max(4, ((monthNewCustomers * 50000) / glanceMax) * 100)}%` }}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gray-600 tabular-nums">{monthNewCustomers} customers</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Social Shopping Stats ────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Share2 className="w-4 h-4 text-pink-500" />
+            <h2 className="text-[13px] font-medium text-gray-900">Social Shopping</h2>
+          </div>
+          <Link href="/admin/social" className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
+            Manage <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-gray-100">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="w-8 h-8 rounded-lg bg-pink-50 flex items-center justify-center shrink-0">
+              <Users className="w-4 h-4 text-pink-500" />
+            </div>
+            <div>
+              <p className="text-lg font-bold text-gray-900 leading-tight">{socialStats.activeGroupBuys}</p>
+              <p className="text-[11px] text-gray-400">Active Group Buys</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+              <Share2 className="w-4 h-4 text-blue-500" />
+            </div>
+            <div>
+              <p className="text-lg font-bold text-gray-900 leading-tight">{socialStats.sharesToday}</p>
+              <p className="text-[11px] text-gray-400">Shares Today</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 text-orange-500" />
+            </div>
+            <div>
+              <p className="text-lg font-bold text-gray-900 leading-tight">{socialStats.activePriceSlashes}</p>
+              <p className="text-[11px] text-gray-400">Active Price Slashes</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+              <CalendarCheck className="w-4 h-4 text-emerald-500" />
+            </div>
+            <div>
+              <p className="text-lg font-bold text-gray-900 leading-tight">{socialStats.dailyCheckins}</p>
+              <p className="text-[11px] text-gray-400">Daily Check-ins</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ─── Order Pipeline ──────────────────────────────── */}
-      <div className="bg-white rounded-lg border border-gray-200">
+      <div className="bg-white rounded-xl border border-gray-200">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <h2 className="text-[13px] font-medium text-gray-900">Order Pipeline</h2>
           <Link href="/admin/orders" className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
@@ -346,13 +536,13 @@ export default function AdminDashboard() {
           </Link>
         </div>
         <div className="grid grid-cols-4 lg:grid-cols-7 divide-x divide-gray-100">
-          {ORDER_STATUSES.map(({ key, label, dot }) => {
+          {ORDER_STATUSES.map(({ key, label, dot, text }) => {
             const count = data.ordersByStatus[key] || 0;
             return (
               <Link key={key} href={`/admin/orders?status=${key}`}
-                className="flex flex-col items-center py-4 hover:bg-gray-50 transition-colors">
-                <div className={`w-2 h-2 rounded-full ${dot} mb-2`} />
-                <span className="text-lg font-semibold text-gray-900">{count}</span>
+                className="flex flex-col items-center py-5 hover:bg-gray-50 hover:scale-[1.02] transition-all">
+                <div className={`w-2.5 h-2.5 rounded-full ${dot} mb-2.5`} />
+                <span className={`text-xl font-bold ${text}`}>{count}</span>
                 <span className="text-[11px] text-gray-400 mt-0.5">{label}</span>
               </Link>
             );
@@ -364,7 +554,7 @@ export default function AdminDashboard() {
       <div className="grid lg:grid-cols-5 gap-4">
 
         {/* ── Recent Orders (3/5) ── */}
-        <div className="lg:col-span-3 bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <h2 className="text-[13px] font-medium text-gray-900">Recent Orders</h2>
             <Link href="/admin/orders" className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
@@ -380,7 +570,7 @@ export default function AdminDashboard() {
           ) : (
             <>
               {/* Table header */}
-              <div className="grid grid-cols-[1fr_100px_80px_60px] gap-2 px-4 py-2 text-[11px] text-gray-400 uppercase tracking-wider border-b border-gray-50 font-medium">
+              <div className="grid grid-cols-[1fr_100px_90px_60px] gap-2 px-4 py-2 text-[11px] text-gray-400 uppercase tracking-wider border-b border-gray-50 font-medium">
                 <span>Order</span>
                 <span className="text-right">Amount</span>
                 <span className="text-center">Status</span>
@@ -388,27 +578,32 @@ export default function AdminDashboard() {
               </div>
               {/* Table rows */}
               <div className="divide-y divide-gray-50">
-                {data.recentOrders.slice(0, 8).map((order) => {
+                {data.recentOrders.slice(0, 8).map((order, idx) => {
                   const badgeCls = STATUS_BADGE[order.status] || STATUS_BADGE.PENDING;
                   const payColor = order.paymentStatus ? PAYMENT_BADGE[order.paymentStatus] || "text-gray-400" : "text-gray-400";
                   const payLabel = order.paymentStatus ? PAYMENT_LABEL[order.paymentStatus] || order.paymentStatus : "";
                   return (
-                    <div key={order.id} className="grid grid-cols-[1fr_100px_80px_60px] gap-2 items-center px-4 py-2.5 hover:bg-gray-50/50 transition-colors">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[13px] font-medium text-gray-900">{shortOrderNum(order.orderNumber)}</span>
-                          {payLabel && <span className={`text-[11px] ${payColor}`}>· {payLabel}</span>}
+                    <div key={order.id} className={`grid grid-cols-[1fr_100px_90px_60px] gap-2 items-center px-4 py-2.5 hover:bg-blue-50/30 transition-colors ${idx % 2 === 1 ? "bg-gray-50/40" : ""}`}>
+                      <div className="min-w-0 flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                          <Package className="w-3.5 h-3.5 text-gray-400" />
                         </div>
-                        <p className="text-xs text-gray-400 truncate">{order.customerName} · {timeAgo(order.createdAt)}</p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[13px] font-medium text-gray-900">{shortOrderNum(order.orderNumber)}</span>
+                            {payLabel && <span className={`text-[11px] ${payColor}`}>· {payLabel}</span>}
+                          </div>
+                          <p className="text-xs text-gray-400 truncate">{order.customerName} · {timeAgo(order.createdAt)}</p>
+                        </div>
                       </div>
                       <span className="text-[13px] font-medium text-gray-900 text-right tabular-nums">{fmt(Number(order.totalAmount))}</span>
                       <div className="flex justify-center">
-                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${badgeCls}`}>
+                        <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-md ${badgeCls}`}>
                           {order.status.charAt(0) + order.status.slice(1).toLowerCase()}
                         </span>
                       </div>
                       <div className="flex justify-end">
-                        <Link href={`/admin/orders/${order.id}`} className="text-gray-300 hover:text-gray-600 transition-colors">
+                        <Link href={`/admin/orders/${order.id}`} className="text-gray-300 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-100">
                           <ArrowUpRight className="w-4 h-4" />
                         </Link>
                       </div>
@@ -432,7 +627,7 @@ export default function AdminDashboard() {
         <div className="lg:col-span-2 space-y-4">
 
           {/* Top Products */}
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
               <h2 className="text-[13px] font-medium text-gray-900">Top Products</h2>
               <Link href="/admin/products" className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
@@ -447,7 +642,7 @@ export default function AdminDashboard() {
             ) : (
               <div className="divide-y divide-gray-50">
                 {data.topProducts.slice(0, 5).map((product, i) => (
-                  <div key={product.productId} className="flex items-center gap-3 px-4 py-2.5">
+                  <div key={product.productId} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
                     <span className="text-xs text-gray-300 w-4 text-right tabular-nums font-medium shrink-0">{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] text-gray-900 truncate">{product.name}</p>
@@ -465,7 +660,7 @@ export default function AdminDashboard() {
 
           {/* Low Stock */}
           {lowStockProducts.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
@@ -498,7 +693,7 @@ export default function AdminDashboard() {
 
           {/* Categories */}
           {data.stats.products.categoryBreakdown?.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <h2 className="text-[13px] font-medium text-gray-900">Categories</h2>
                 <Link href="/admin/categories" className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
@@ -525,20 +720,20 @@ export default function AdminDashboard() {
           )}
 
           {/* Month Summary */}
-          <div className="bg-gray-900 rounded-lg p-4 text-white">
-            <h3 className="text-[13px] font-medium text-gray-400 mb-3">This Month</h3>
+          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-indigo-900 rounded-xl p-5 text-white">
+            <h3 className="text-[13px] font-medium text-gray-400 mb-4">This Month</h3>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <p className="text-lg font-semibold">{data.stats.orders.thisMonth}</p>
-                <p className="text-[11px] text-gray-400">Orders</p>
+                <p className="text-2xl font-bold">{data.stats.orders.thisMonth}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">Orders</p>
               </div>
               <div>
-                <p className="text-lg font-semibold truncate">{fmt(data.stats.revenue.thisMonth)}</p>
-                <p className="text-[11px] text-gray-400">Revenue</p>
+                <p className="text-2xl font-bold truncate">{fmt(data.stats.revenue.thisMonth)}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">Revenue</p>
               </div>
               <div>
-                <p className="text-lg font-semibold">{data.stats.customers.newThisMonth}</p>
-                <p className="text-[11px] text-gray-400">New customers</p>
+                <p className="text-2xl font-bold">{data.stats.customers.newThisMonth}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">New customers</p>
               </div>
             </div>
           </div>
@@ -546,21 +741,25 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ─── Quick Links ─────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-gray-400 pt-2">
-        <span className="text-gray-300 font-medium mr-1">Quick links</span>
-        <Link href="/admin/products/new" className="hover:text-gray-600 transition-colors">Add product</Link>
-        <Link href="/admin/orders" className="hover:text-gray-600 transition-colors flex items-center gap-1">
-          Orders
-          {pendingCount > 0 && <span className="text-[10px] bg-gray-200 text-gray-600 px-1 rounded">{pendingCount}</span>}
-        </Link>
-        <Link href="/admin/customers" className="hover:text-gray-600 transition-colors">Customers</Link>
-        <Link href="/admin/coupons" className="hover:text-gray-600 transition-colors">Coupons</Link>
-        <Link href="/admin/inventory" className="hover:text-gray-600 transition-colors flex items-center gap-1">
-          Inventory
-          {data.stats.products.lowStock > 0 && <span className="text-[10px] bg-gray-200 text-gray-600 px-1 rounded">{data.stats.products.lowStock}</span>}
-        </Link>
-        <Link href="/admin/settings" className="hover:text-gray-600 transition-colors">Settings</Link>
+      {/* ─── Quick Actions ────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h2 className="text-[13px] font-medium text-gray-900">Quick Actions</h2>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-gray-100">
+          {QUICK_ACTIONS.map((action) => (
+            <Link
+              key={action.href}
+              href={action.href}
+              className="flex items-center gap-3 px-4 py-3.5 bg-white hover:bg-gray-50 hover:translate-x-0.5 transition-all"
+            >
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${action.color}`}>
+                <action.icon className="w-4.5 h-4.5" />
+              </div>
+              <span className="text-[13px] font-medium text-gray-700">{action.label}</span>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );
