@@ -98,8 +98,8 @@ function CategoryContent() {
       if (res.ok) {
         const data = await res.json();
         setProducts(data.products || []);
-        setTotalPages(data.totalPages || 1);
-        setTotalProducts(data.total || 0);
+        setTotalPages(data.pagination?.totalPages || data.totalPages || 1);
+        setTotalProducts(data.pagination?.total || data.total || 0);
       }
 
       if (categorySlug) {
