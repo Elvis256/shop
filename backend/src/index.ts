@@ -66,6 +66,7 @@ import adminUpload from "./routes/admin/upload";
 import adminStaff from "./routes/adminStaff";
 import adminActivity from "./routes/adminActivity";
 import adminAuthRoutes from "./routes/adminAuth";
+import adminSocialRoutes from "./routes/adminSocial";
 import settingsRoutes from "./routes/settings";
 
 // Middleware
@@ -183,6 +184,7 @@ app.use("/api/admin/upload", adminUpload);
 app.use("/api/admin/staff", adminStaff);
 app.use("/api/admin/activity", adminActivity);
 app.use("/api/admin/auth", adminAuthRoutes);
+app.use("/api/admin/social", adminSocialRoutes);
 app.use("/api/settings", settingsRoutes);
 
 // Health check
