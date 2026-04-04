@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import ProductImage from "@/components/ProductImage";
 import { Star, Heart, Plus, Check } from "lucide-react";
 import { useState } from "react";
@@ -49,7 +48,6 @@ export default function ProductCard({
   flashSaleEndsAt,
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false);
-  const router = useRouter();
   const { addItem } = useCart();
   const { showToast } = useToast();
   const { formatPrice } = useCurrency();
@@ -60,6 +58,8 @@ export default function ProductCard({
   const effectivePrice = hasFlashSale ? flashSalePrice : price;
   const originalPrice = hasFlashSale ? price : (comparePrice || 0);
   const discount = originalPrice > effectivePrice ? Math.round((1 - Number(effectivePrice) / Number(originalPrice)) * 100) : 0;
+
+  const productUrl = `/product/${slug}`;
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -93,23 +93,16 @@ export default function ProductCard({
     showToast(added ? "Added to wishlist" : "Removed from wishlist", added ? "success" : "info");
   };
 
-  const productUrl = `/product/${slug}`;
-
-  const handleCardClick = () => {
-    router.push(productUrl);
-  };
-
   return (
-    <div className="group hover-lift cursor-pointer" onClick={handleCardClick} role="link" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && handleCardClick()}>
+    <a href={productUrl} className="group hover-lift block cursor-pointer no-underline text-inherit">
       {/* Image Container */}
-      <a href={productUrl} className="block relative" onClick={(e) => { e.preventDefault(); }}>
-        <div className="aspect-[4/5] bg-surface-secondary rounded-24 overflow-hidden relative transition-all duration-500 group-hover:shadow-lg">
-          <ProductImage
-            src={imageUrl}
-            alt={name}
-            fill
-            className="object-cover transition-transform duration-700 group-hover:scale-105"
-          />
+      <div className="aspect-[4/5] bg-surface-secondary rounded-24 overflow-hidden relative transition-all duration-500 group-hover:shadow-lg">
+        <ProductImage
+          src={imageUrl}
+          alt={name}
+          fill
+          className="object-cover transition-transform duration-700 group-hover:scale-105"
+        />
 
           {/* Badges */}
           <div className="absolute top-3 left-3 flex flex-col gap-2">
@@ -192,7 +185,6 @@ export default function ProductCard({
             </div>
           )}
         </div>
-      </a>
 
       {/* Product Info */}
       <div className="mt-4 px-1">
@@ -237,6 +229,6 @@ export default function ProductCard({
           </span>
         )}
       </div>
-    </div>
+    </a>
   );
 }
