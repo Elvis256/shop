@@ -145,6 +145,15 @@ export default function HeroBanner({ autoPlayInterval = 5000 }: HeroBannerProps)
   }
 
   const currentBanner = banners[currentIndex];
+  const hasValidImage = currentBanner.imageUrl && !currentBanner.imageUrl.includes('/images/banners/');
+
+  // Gradient backgrounds for banners without images
+  const gradients = [
+    "bg-gradient-to-br from-primary via-primary-hover to-violet-600",
+    "bg-gradient-to-br from-rose-600 via-pink-600 to-purple-700",
+    "bg-gradient-to-br from-violet-700 via-purple-600 to-fuchsia-500",
+    "bg-gradient-to-br from-indigo-600 via-blue-600 to-purple-600",
+  ];
 
   return (
     <div className="relative w-full h-[60vh] sm:h-[70vh] lg:h-[80vh] min-h-[400px] overflow-hidden group">
@@ -158,20 +167,37 @@ export default function HeroBanner({ autoPlayInterval = 5000 }: HeroBannerProps)
           transition={{ duration: 0.7, ease: "easeInOut" }}
           className="absolute inset-0"
         >
-          <Image
-            src={currentBanner.imageUrl}
-            alt={currentBanner.title}
-            fill
-            className="object-cover hidden md:block"
-            priority
-          />
-          <Image
-            src={currentBanner.mobileImageUrl || currentBanner.imageUrl}
-            alt={currentBanner.title}
-            fill
-            className="object-cover md:hidden"
-            priority
-          />
+          {hasValidImage ? (
+            <>
+              <Image
+                src={currentBanner.imageUrl}
+                alt={currentBanner.title}
+                fill
+                className="object-cover hidden md:block"
+                priority
+              />
+              <Image
+                src={currentBanner.mobileImageUrl || currentBanner.imageUrl}
+                alt={currentBanner.title}
+                fill
+                className="object-cover md:hidden"
+                priority
+              />
+            </>
+          ) : (
+            <div className={`absolute inset-0 ${gradients[currentIndex % gradients.length]}`}>
+              <motion.div
+                animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }}
+                transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute top-20 left-10 w-72 h-72 bg-white/10 rounded-full blur-3xl"
+              />
+              <motion.div
+                animate={{ scale: [1.2, 1, 1.2], opacity: [0.15, 0.25, 0.15] }}
+                transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute bottom-10 right-20 w-96 h-96 bg-violet-400/20 rounded-full blur-3xl"
+              />
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
         </motion.div>
       </AnimatePresence>
