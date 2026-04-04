@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, ZoomIn, X, Play } from "lucide-react";
 
@@ -26,6 +26,9 @@ export default function ProductGallery({ images, productName = "Product", videoU
   const [isZoomed, setIsZoomed] = useState(false);
   const [showVideo, setShowVideo] = useState(false);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [isHovering, setIsHovering] = useState(false);
+  const [zoomPos, setZoomPos] = useState({ x: 0, y: 0 });
+  const imageRef = useRef<HTMLDivElement>(null);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
 
@@ -75,14 +78,48 @@ export default function ProductGallery({ images, productName = "Product", videoU
     touchStartY.current = null;
   };
 
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!imageRef.current) return;
+    const rect = imageRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setZoomPos({ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) });
+  }, []);
+
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+  }, []);
+
+  const showHoverZoom = isHovering && !isZoomed && !showVideo && currentSrc && !currentFailed;
+
+  // Lens size as percentage of image dimensions
+  const lensSize = 40;
+  const lensStyle = useMemo(() => ({
+    width: `${lensSize}%`,
+    height: `${lensSize}%`,
+    left: `${zoomPos.x}%`,
+    top: `${zoomPos.y}%`,
+    transform: "translate(-50%, -50%)",
+    pointerEvents: "none" as const,
+  }), [zoomPos.x, zoomPos.y]);
+
   return (
     <div className="space-y-3">
       {/* Main Image / Video */}
-      <div
-        className="relative aspect-square bg-gray-50 rounded-xl overflow-hidden group select-none"
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-      >
+      <div className="relative">
+        <div
+          ref={imageRef}
+          className="relative aspect-square bg-gray-50 rounded-xl overflow-hidden group select-none"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onMouseMove={handleMouseMove}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
         {showVideo && videoUrl ? (
           <div className="absolute inset-0 bg-black flex items-center justify-center">
             {youTubeEmbedUrl ? (
@@ -124,6 +161,13 @@ export default function ProductGallery({ images, productName = "Product", videoU
             >
               <ZoomIn className="w-4 h-4 text-gray-700" />
             </button>
+            {/* Hover zoom lens indicator */}
+            {showHoverZoom && (
+              <div
+                className="absolute bg-white/30 border-2 border-white/60 rounded-sm hidden lg:block"
+                style={lensStyle}
+              />
+            )}
           </>
         ) : (
           <PlaceholderImage />
@@ -160,6 +204,24 @@ export default function ProductGallery({ images, productName = "Product", videoU
         )}
       </div>
 
+        {/* Hover zoom panel — desktop only, positioned to the right */}
+        {showHoverZoom && (
+          <div
+            className="hidden lg:block absolute top-0 left-full ml-4 w-[400px] h-[400px] border border-gray-200 shadow-2xl rounded-xl overflow-hidden z-30 bg-white"
+            style={{
+              backgroundImage: `url(${currentSrc})`,
+              backgroundPosition: `${zoomPos.x}% ${zoomPos.y}%`,
+              backgroundSize: "250%",
+              backgroundRepeat: "no-repeat",
+            }}
+          />
+        )}
+      </div>
+
+      {/* Hover to zoom hint */}
+      {currentSrc && !currentFailed && !showVideo && (
+        <p className="text-xs text-gray-400 text-center mt-2 hidden lg:block">Hover to zoom</p>
+      )}
       {/* Thumbnails */}
       {hasMultiple && (
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">

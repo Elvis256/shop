@@ -12,12 +12,10 @@ import { ProductSchema, BreadcrumbSchema } from "@/components/StructuredData";
 import VariantSelector from "@/components/VariantSelector";
 import RecentlyViewed, { useRecentlyViewed } from "@/components/RecentlyViewed";
 import RelatedProducts from "@/components/RelatedProducts";
-import SocialShare from "@/components/SocialShare";
 import NotifyMe from "@/components/NotifyMe";
 import ProductQA from "@/components/ProductQA";
 import PriceTiers from "@/components/PriceTiers";
 import ProductBundles from "@/components/ProductBundles";
-import LiveViewers from "@/components/LiveViewers";
 import SubscribeAndSave from "@/components/SubscribeAndSave";
 import {
   Star, Heart, Shield, Truck, Package, ArrowLeft, Share2, Check, Eye,
@@ -364,89 +362,22 @@ export default function ProductPageClient() {
 
           {/* Product Info */}
           <div className="h-fit">
-            {/* Category & Actions */}
-            <div className="flex items-start justify-between mb-3">
-              {product.category && (
+            {/* Category badge */}
+            {product.category && (
+              <div className="mb-3">
                 <Link
                   href={`/category?cat=${product.category.slug}`}
                   className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-primary transition-colors bg-gray-50 px-2.5 py-1 rounded-md"
                 >
                   {product.category.name}
                 </Link>
-              )}
-              <div className="flex items-center gap-1">
-                {/* Share button with dropdown */}
-                <div className="relative" ref={shareMenuRef}>
-                  <button
-                    onClick={() => setShowShareMenu(!showShareMenu)}
-                    className="p-2 text-gray-400 hover:text-gray-900 rounded-lg hover:bg-gray-50 transition-colors"
-                    title="Share"
-                  >
-                    <Share2 className="w-5 h-5" />
-                  </button>
-                  {showShareMenu && (
-                    <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl border shadow-lg z-30 py-1 animate-in fade-in slide-in-from-top-1">
-                      <button onClick={handleCopyLink} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                        {linkCopied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                        {linkCopied ? "Copied!" : "Copy Link"}
-                      </button>
-                      <button onClick={handleShareWhatsApp} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                        <MessageCircle className="w-4 h-4 text-green-500" />
-                        WhatsApp
-                      </button>
-                      <button onClick={handleShareFacebook} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                        <svg className="w-4 h-4 text-blue-600" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                        Facebook
-                      </button>
-                      <button onClick={handleShareTwitter} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-                        Twitter / X
-                      </button>
-                      {typeof navigator !== "undefined" && typeof navigator.share === "function" && (
-                        <button onClick={handleShareNative} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t">
-                          <Share2 className="w-4 h-4" />
-                          More options...
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    if (!product) return;
-                    const added = toggleWishlist({
-                      productId: product.id,
-                      name: product.name,
-                      slug: product.slug,
-                      price: Number(effectivePrice),
-                      imageUrl: product.imageUrl,
-                    });
-                    showToast(added ? "Added to wishlist" : "Removed from wishlist", added ? "success" : "info");
-                  }}
-                  className={`p-2 rounded-lg transition-colors ${
-                    isInWishlist(product.id) ? "text-red-500 bg-red-50" : "text-gray-400 hover:text-red-500 hover:bg-gray-50"
-                  }`}
-                  title={isInWishlist(product.id) ? "Remove from wishlist" : "Add to wishlist"}
-                >
-                  <Heart className={`w-5 h-5 ${isInWishlist(product.id) ? "fill-current" : ""}`} />
-                </button>
               </div>
-            </div>
+            )}
 
             {/* Title */}
             <h1 className="text-2xl lg:text-3xl font-semibold text-gray-900 mb-2">{product.name}</h1>
 
-            {/* Live Viewers */}
-            <div className="mb-3">
-              <LiveViewers />
-            </div>
-
-            {/* Social Share */}
-            <div className="mb-3">
-              <SocialShare url={shareUrl} title={shareText} image={product.imageUrl || undefined} />
-            </div>
-
-            {/* Rating */}
+            {/* Rating + Review count */}
             <div className="flex items-center gap-3 mb-4">
               <div className="flex items-center gap-0.5">
                 {[1, 2, 3, 4, 5].map((i) => (
@@ -503,40 +434,40 @@ export default function ProductPageClient() {
             {/* Price Tiers */}
             <PriceTiers productId={product.id} />
 
-            {/* Stock Status */}
-            <div className="flex items-center gap-2 mb-3 flex-wrap">
-              {effectiveStock > 0 ? (
-                <>
-                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  <span className="text-green-600 text-sm font-medium">In Stock</span>
-                  {isLowStock && (
-                    <span className="text-orange-600 text-sm font-medium animate-pulse ml-1">
-                      · Only {effectiveStock} left — order soon!
-                    </span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                  <span className="text-red-600 text-sm font-medium">Out of Stock</span>
-                </>
+            {/* Stock & Delivery */}
+            <div className="mb-4 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                {effectiveStock > 0 ? (
+                  <>
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    <span className="text-green-600 text-sm font-medium">In Stock</span>
+                    {isLowStock && (
+                      <span className="text-orange-600 text-sm font-medium animate-pulse ml-1">
+                        · Only {effectiveStock} left — order soon!
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                    <span className="text-red-600 text-sm font-medium">Out of Stock</span>
+                  </>
+                )}
+              </div>
+              {effectiveStock > 0 && (
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Clock className="w-4 h-4 text-gray-400" />
+                  <span>
+                    Delivery by{" "}
+                    <strong className="text-gray-900">
+                      {product.shippingBadge === "From Abroad"
+                        ? getEstimatedDelivery(3, 14)
+                        : getEstimatedDelivery()}
+                    </strong>
+                  </span>
+                </div>
               )}
             </div>
-
-            {/* Estimated delivery */}
-            {effectiveStock > 0 && (
-              <div className="flex items-center gap-2 mb-4 text-sm text-gray-600">
-                <Clock className="w-4 h-4 text-gray-400" />
-                <span>
-                  Order now, get it by{" "}
-                  <strong className="text-gray-900">
-                    {product.shippingBadge === "From Abroad"
-                      ? getEstimatedDelivery(3, 14)
-                      : getEstimatedDelivery()}
-                  </strong>
-                </span>
-              </div>
-            )}
 
             {/* Social proof */}
             {viewerCount > 1 && (
@@ -555,22 +486,6 @@ export default function ProductPageClient() {
                   onSelect={handleVariantChange as any}
                   productPrice={Number(product.price)}
                 />
-              </div>
-            )}
-
-            {/* Description */}
-            {product.description && (
-              <div className="text-gray-600 text-sm mb-5 leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(product.description) }} />
-            )}
-
-            {/* Tags */}
-            {product.tags && product.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-5">
-                {product.tags.map((tag) => (
-                  <span key={tag} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md">
-                    {tag}
-                  </span>
-                ))}
               </div>
             )}
 
@@ -633,6 +548,65 @@ export default function ProductPageClient() {
               {effectiveStock <= 0 && !product.isPreOrder && (
                 <NotifyMe productId={product.id} />
               )}
+
+              {/* Wishlist + Share */}
+              <div className="flex items-center justify-center gap-4 pt-1">
+                <button
+                  onClick={() => {
+                    if (!product) return;
+                    const added = toggleWishlist({
+                      productId: product.id,
+                      name: product.name,
+                      slug: product.slug,
+                      price: Number(effectivePrice),
+                      imageUrl: product.imageUrl,
+                    });
+                    showToast(added ? "Added to wishlist" : "Removed from wishlist", added ? "success" : "info");
+                  }}
+                  className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${
+                    isInWishlist(product.id) ? "text-red-500" : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  <Heart className={`w-4 h-4 ${isInWishlist(product.id) ? "fill-current" : ""}`} />
+                  {isInWishlist(product.id) ? "In Wishlist" : "Add to Wishlist"}
+                </button>
+                <span className="text-gray-200">|</span>
+                <div className="relative" ref={shareMenuRef}>
+                  <button
+                    onClick={() => setShowShareMenu(!showShareMenu)}
+                    className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    Share
+                  </button>
+                  {showShareMenu && (
+                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 bg-white rounded-xl border shadow-lg z-30 py-1 animate-in fade-in slide-in-from-bottom-1">
+                      <button onClick={handleCopyLink} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        {linkCopied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                        {linkCopied ? "Copied!" : "Copy Link"}
+                      </button>
+                      <button onClick={handleShareWhatsApp} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <MessageCircle className="w-4 h-4 text-green-500" />
+                        WhatsApp
+                      </button>
+                      <button onClick={handleShareFacebook} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg className="w-4 h-4 text-blue-600" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                        Facebook
+                      </button>
+                      <button onClick={handleShareTwitter} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                        Twitter / X
+                      </button>
+                      {typeof navigator !== "undefined" && typeof navigator.share === "function" && (
+                        <button onClick={handleShareNative} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t">
+                          <Share2 className="w-4 h-4" />
+                          More options...
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Trust badges */}
@@ -666,6 +640,17 @@ export default function ProductPageClient() {
                 </div>
               </div>
             </div>
+
+            {/* Payment methods */}
+            <div className="mt-4 pt-4 border-t">
+              <p className="text-xs text-gray-500 mb-2">We accept</p>
+              <div className="flex flex-wrap gap-2">
+                <span className="text-xs font-medium text-gray-700 bg-yellow-50 border border-yellow-200 px-2.5 py-1 rounded-md">MTN MoMo</span>
+                <span className="text-xs font-medium text-gray-700 bg-red-50 border border-red-200 px-2.5 py-1 rounded-md">Airtel Money</span>
+                <span className="text-xs font-medium text-gray-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md">Visa</span>
+                <span className="text-xs font-medium text-gray-700 bg-orange-50 border border-orange-200 px-2.5 py-1 rounded-md">Mastercard</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -676,16 +661,69 @@ export default function ProductPageClient() {
               <ShoppingBag className="w-5 h-5 text-primary" />
               <h2 className="text-xl font-semibold text-gray-900">Frequently Bought Together</h2>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {boughtTogether.slice(0, 4).map((p: any) => (
-                <Link key={p.id} href={`/product/${p.slug}`} className="group">
-                  <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 mb-2">
-                    <ProductImage src={p.imageUrl} alt={p.name} width={200} height={200} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-900 truncate group-hover:text-primary transition-colors">{p.name}</p>
-                  <p className="text-sm text-gray-600">{formatPrice(p.price)}</p>
-                </Link>
+            <div className="flex items-start gap-4 overflow-x-auto pb-4">
+              {/* Current product */}
+              <Link href={`/product/${product.slug}`} className="group shrink-0 w-36">
+                <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 mb-2 ring-2 ring-primary/20">
+                  <ProductImage src={product.imageUrl} alt={product.name} width={200} height={200} className="w-full h-full object-cover" />
+                </div>
+                <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+                <p className="text-sm text-gray-600">{formatPrice(Number(effectivePrice))}</p>
+              </Link>
+
+              {boughtTogether.slice(0, 3).map((p: any) => (
+                <div key={p.id} className="contents">
+                  <div className="flex items-center shrink-0 self-center text-2xl font-bold text-gray-300">+</div>
+                  <Link href={`/product/${p.slug}`} className="group shrink-0 w-36">
+                    <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 mb-2">
+                      <ProductImage src={p.imageUrl} alt={p.name} width={200} height={200} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 truncate group-hover:text-primary transition-colors">{p.name}</p>
+                    <p className="text-sm text-gray-600">{formatPrice(p.price)}</p>
+                  </Link>
+                </div>
               ))}
+
+              <div className="flex items-center shrink-0 self-center text-2xl font-bold text-gray-300">=</div>
+              <div className="shrink-0 flex flex-col items-center justify-center self-center bg-gray-50 rounded-xl p-4 min-w-[160px]">
+                <p className="text-sm text-gray-500 mb-1">Buy all {Math.min(boughtTogether.length, 3) + 1} for</p>
+                <p className="text-lg font-bold text-gray-900 mb-3">
+                  {formatPrice(
+                    boughtTogether.slice(0, 3).reduce((sum: number, p: any) => sum + Number(p.price), 0) + Number(effectivePrice)
+                  )}
+                </p>
+                <button
+                  onClick={() => {
+                    addToCart({
+                      id: product.id,
+                      productId: product.id,
+                      name: product.name,
+                      slug: product.slug,
+                      price: Number(effectivePrice),
+                      imageUrl: product.imageUrl || null,
+                      stock: effectiveStock,
+                      quantity: 1,
+                      shippingBadge: product.shippingBadge,
+                    });
+                    boughtTogether.slice(0, 3).forEach((p: any) => {
+                      addToCart({
+                        id: p.id,
+                        productId: p.id,
+                        name: p.name,
+                        slug: p.slug,
+                        price: Number(p.price),
+                        imageUrl: p.imageUrl || null,
+                        stock: p.stock ?? 99,
+                        quantity: 1,
+                      });
+                    });
+                    showToast("All items added to cart", "success");
+                  }}
+                  className="w-full px-4 py-2.5 text-sm font-medium bg-primary text-white rounded-full hover:bg-primary/90 transition-all active:scale-[0.98]"
+                >
+                  Add All to Cart
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -701,6 +739,17 @@ export default function ProductPageClient() {
             specifications={product.specifications}
           />
         </div>
+
+        {/* Tags */}
+        {product.tags && product.tags.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {product.tags.map((tag) => (
+              <span key={tag} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Q&A Section */}
         <ProductQA productId={product.id} />
