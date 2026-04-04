@@ -130,6 +130,7 @@ export default function AdminSocialPage() {
   const [discountPercent, setDiscountPercent] = useState(20);
   const [expiresInHours, setExpiresInHours] = useState(48);
   const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const fetchStats = useCallback(async () => {
     try {
@@ -184,13 +185,19 @@ export default function AdminSocialPage() {
       try {
         const data = await apiFetch(`/api/admin/products?search=${encodeURIComponent(productSearch)}&limit=8`);
         setProductResults((data.products || []).map((p: any) => ({ id: p.id, name: p.name, price: Number(p.price), slug: p.slug })));
-      } catch {}
+      } catch (err) {
+        console.error("Product search failed:", err);
+      }
     }, 300);
     return () => clearTimeout(t);
   }, [productSearch]);
 
   const handleCreateGroupBuy = async () => {
-    if (!selectedProduct) return;
+    if (!selectedProduct) {
+      setFormError("Please search and select a product first");
+      return;
+    }
+    setFormError("");
     setCreating(true);
     try {
       await apiFetch("/api/admin/social/group-buys", {
@@ -205,7 +212,9 @@ export default function AdminSocialPage() {
       setExpiresInHours(48);
       fetchGroupBuys();
       fetchStats();
-    } catch {}
+    } catch (err: any) {
+      setFormError(err?.message || "Failed to create group buy. Please try again.");
+    }
     setCreating(false);
   };
 
@@ -215,7 +224,9 @@ export default function AdminSocialPage() {
       await apiFetch(`/api/admin/social/group-buys/${id}`, { method: "DELETE" });
       fetchGroupBuys();
       fetchStats();
-    } catch {}
+    } catch (err: any) {
+      alert(err?.message || "Failed to cancel group buy");
+    }
   };
 
   /* ─── Skeleton ─────────────────────────────────────── */
@@ -399,9 +410,13 @@ export default function AdminSocialPage() {
                 </p>
               )}
 
+              {formError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>
+              )}
+
               <div className="flex justify-end gap-2">
-                <button onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-                <button onClick={handleCreateGroupBuy} disabled={!selectedProduct || creating}
+                <button onClick={() => { setShowCreate(false); setFormError(""); }} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button onClick={handleCreateGroupBuy} disabled={creating}
                   className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors">
                   {creating ? "Creating..." : "Create Group Buy"}
                 </button>
