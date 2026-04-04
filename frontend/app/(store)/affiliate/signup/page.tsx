@@ -14,6 +14,8 @@ import {
   BarChart3,
 } from "lucide-react";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://ugsex.com';
+
 export default function AffiliateSignupPage() {
   const [step, setStep] = useState<"info" | "form" | "success">("info");
   const [loading, setLoading] = useState(false);
@@ -76,7 +78,7 @@ export default function AffiliateSignupPage() {
             <p className="text-sm text-gray-500 mb-1">Your Affiliate Code</p>
             <p className="text-2xl font-mono font-bold text-blue-600">{result.code}</p>
             <p className="text-xs text-gray-400 mt-2">
-              Your referral link: <span className="font-mono">ugsex.com?ref={result.code}</span>
+              Your referral link: <span className="font-mono">{SITE_URL}?ref={result.code}</span>
             </p>
           </div>
           <p className="text-sm text-gray-500 mb-6">

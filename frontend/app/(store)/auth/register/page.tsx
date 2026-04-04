@@ -136,11 +136,11 @@ export default function RegisterPage() {
               <input type="checkbox" className="mt-0.5" required />
               <span className="text-text-muted">
                 I agree to the{" "}
-                <Link href="/terms" className="link">
+                <Link href="/policies/terms" className="link">
                   Terms of Service
                 </Link>{" "}
                 and{" "}
-                <Link href="/privacy" className="link">
+                <Link href="/policies/privacy" className="link">
                   Privacy Policy
                 </Link>
               </span>

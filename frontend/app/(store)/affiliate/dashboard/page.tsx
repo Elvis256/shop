@@ -42,6 +42,8 @@ export default function AffiliateDashboardPage() {
   );
 }
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://ugsex.com';
+
 function AffiliateDashboardInner() {
   const searchParams = useSearchParams();
   const [code, setCode] = useState(searchParams.get("code") || "");
@@ -74,7 +76,7 @@ function AffiliateDashboardInner() {
   }
 
   function copyLink() {
-    const link = `https://ugsex.com?ref=${data?.affiliate.code}`;
+    const link = `${SITE_URL}?ref=${data?.affiliate.code}`;
     navigator.clipboard.writeText(link);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -157,7 +159,7 @@ function AffiliateDashboardInner() {
           <p className="text-sm text-white/70 mb-2">Your Referral Link</p>
           <div className="flex items-center gap-3">
             <div className="flex-1 bg-white/10 backdrop-blur rounded-lg px-4 py-2.5 font-mono text-sm truncate">
-              https://ugsex.com?ref={affiliate.code}
+              {SITE_URL}?ref={affiliate.code}
             </div>
             <button
               onClick={copyLink}

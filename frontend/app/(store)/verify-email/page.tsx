@@ -39,7 +39,7 @@ function VerifyEmailContent() {
         setStatus("success");
         setMessage(data.message || "Email verified successfully!");
         // Redirect to login after 3 seconds
-        setTimeout(() => router.push("/login"), 3000);
+        setTimeout(() => router.push("/auth/login"), 3000);
       } else {
         setStatus("error");
         setMessage(data.error || "Verification failed");
@@ -71,7 +71,7 @@ function VerifyEmailContent() {
           <p className="text-gray-600 mb-6">
             No verification token provided. Please check your email for the verification link.
           </p>
-          <Link href="/login" className="btn-primary">
+          <Link href="/auth/login" className="btn-primary">
             Go to Login
           </Link>
         </div>
@@ -87,7 +87,7 @@ function VerifyEmailContent() {
           <h1 className="text-2xl font-bold mb-4">Email Verified!</h1>
           <p className="text-gray-600 mb-6">{message}</p>
           <p className="text-sm text-gray-500 mb-6">Redirecting to login...</p>
-          <Link href="/login" className="btn-primary">
+          <Link href="/auth/login" className="btn-primary">
             Continue to Login
           </Link>
         </div>
@@ -102,13 +102,13 @@ function VerifyEmailContent() {
         <h1 className="text-2xl font-bold mb-4">Verification Failed</h1>
         <p className="text-gray-600 mb-6">{message}</p>
         <div className="space-y-4">
-          <Link href="/login" className="btn-primary block">
+          <Link href="/auth/login" className="btn-primary block">
             Go to Login
           </Link>
           <p className="text-sm text-gray-500">
-            Need a new verification link?{" "}
-            <Link href="/resend-verification" className="text-accent hover:underline">
-              Resend verification email
+            Need a new verification link? Log in to{" "}
+            <Link href="/auth/login" className="text-accent hover:underline">
+              resend verification email
             </Link>
           </p>
         </div>
