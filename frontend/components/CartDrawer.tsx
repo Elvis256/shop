@@ -2,6 +2,7 @@
 
 import { useCart } from "@/lib/hooks/useCart";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import FreeShippingBar from "@/components/FreeShippingBar";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -34,6 +35,13 @@ export default function CartDrawer() {
             </svg>
           </button>
         </div>
+
+        {/* Free Shipping Bar */}
+        {items.length > 0 && (
+          <div className="px-4 pt-3">
+            <FreeShippingBar cartTotal={total} formatPrice={formatPrice} />
+          </div>
+        )}
 
         {/* Items */}
         <div className="flex-1 overflow-y-auto p-4">

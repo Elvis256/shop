@@ -17,6 +17,8 @@ import NotifyMe from "@/components/NotifyMe";
 import ProductQA from "@/components/ProductQA";
 import PriceTiers from "@/components/PriceTiers";
 import ProductBundles from "@/components/ProductBundles";
+import LiveViewers from "@/components/LiveViewers";
+import SubscribeAndSave from "@/components/SubscribeAndSave";
 import {
   Star, Heart, Shield, Truck, Package, ArrowLeft, Share2, Check, Eye,
   Users, ShoppingBag, Copy, MessageCircle, Clock, Tag, Zap, RotateCcw,
@@ -27,6 +29,7 @@ import { useCurrency } from "@/contexts/CurrencyContext";
 import { useWishlist } from "@/lib/hooks/useWishlist";
 import { useToast } from "@/lib/hooks/useToast";
 import { useCart } from "@/lib/hooks/useCart";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 interface ProductVariant {
   id: string;
@@ -71,6 +74,10 @@ interface Product {
   flashSaleEndsAt?: string;
   tags?: string[];
   videoUrl?: string;
+  isPreOrder?: boolean;
+  preOrderDate?: string;
+  isSubscribable?: boolean;
+  subscriptionDiscount?: number;
 }
 
 /** Compute estimated delivery date string */
@@ -97,12 +104,25 @@ export default function ProductPageClient() {
   const { isInWishlist, toggleItem: toggleWishlist } = useWishlist();
   const { showToast } = useToast();
   const { addItem: addToCart } = useCart();
+  const { user } = useAuth();
   const addToCartRef = useRef<HTMLDivElement>(null);
   const shareMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (slug) loadProduct();
   }, [slug]);
+
+  // Track browse event for logged-in users
+  useEffect(() => {
+    if (!product?.id || !user) return;
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+    fetch(`${API_URL}/api/browse/track`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ productId: product.id }),
+    }).catch(() => {});
+  }, [product?.id, user]);
 
   // Sticky desktop bar: show when Add to Cart scrolls out of view
   useEffect(() => {
@@ -416,6 +436,11 @@ export default function ProductPageClient() {
             {/* Title */}
             <h1 className="text-2xl lg:text-3xl font-semibold text-gray-900 mb-2">{product.name}</h1>
 
+            {/* Live Viewers */}
+            <div className="mb-3">
+              <LiveViewers />
+            </div>
+
             {/* Social Share */}
             <div className="mb-3">
               <SocialShare url={shareUrl} title={shareText} image={product.imageUrl || undefined} />
@@ -549,6 +574,32 @@ export default function ProductPageClient() {
               </div>
             )}
 
+            {/* Pre-Order Info */}
+            {product.isPreOrder && (
+              <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-700">
+                <Package className="w-4 h-4 shrink-0" />
+                <span>
+                  Pre-order item
+                  {product.preOrderDate && (
+                    <> — Expected by <strong>{new Date(product.preOrderDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></>
+                  )}
+                </span>
+              </div>
+            )}
+
+            {/* Subscribe & Save */}
+            {product.isSubscribable && product.subscriptionDiscount && (
+              <div className="mb-4">
+                <SubscribeAndSave
+                  productId={product.id}
+                  productName={product.name}
+                  price={Number(effectivePrice)}
+                  subscriptionDiscount={product.subscriptionDiscount}
+                  stock={effectiveStock}
+                />
+              </div>
+            )}
+
             {/* Add to Cart + Buy Now */}
             <div ref={addToCartRef} className="mb-4 space-y-2.5">
               {isLowStock && (
@@ -568,6 +619,7 @@ export default function ProductPageClient() {
                 }}
                 showQuantity
                 className="w-full"
+                label={product.isPreOrder ? "Pre-Order Now 📦" : undefined}
               />
               {effectiveStock > 0 && (
                 <button
@@ -578,7 +630,7 @@ export default function ProductPageClient() {
                   Buy Now
                 </button>
               )}
-              {effectiveStock <= 0 && (
+              {effectiveStock <= 0 && !product.isPreOrder && (
                 <NotifyMe productId={product.id} />
               )}
             </div>

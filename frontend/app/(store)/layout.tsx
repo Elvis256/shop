@@ -7,6 +7,9 @@ import MobileNav from "@/components/MobileNav";
 import PageTracker from "@/components/PageTracker";
 import AffiliateTracker from "@/components/AffiliateTracker";
 import ExitIntent from "@/components/ExitIntent";
+import SpinWheel from "@/components/SpinWheel";
+import InstallPrompt from "@/components/InstallPrompt";
+import PushNotifications from "@/components/PushNotifications";
 import { OrganizationSchema, WebsiteSchema } from "@/components/StructuredData";
 
 export const metadata: Metadata = {
@@ -42,6 +45,9 @@ export default function StoreLayout({
       <CartDrawer />
       <MobileNav />
       <ExitIntent />
+      <SpinWheel />
+      <InstallPrompt />
+      <PushNotifications />
     </div>
   );
 }

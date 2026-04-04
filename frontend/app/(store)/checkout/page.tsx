@@ -52,6 +52,10 @@ export default function CheckoutPage() {
   const [paymentPending, setPaymentPending] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [paymentSettings, setPaymentSettings] = useState<Record<string, string>>({});
+
+  // Installments state
+  const [installmentsEnabled, setInstallmentsEnabled] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState(2);
   
   const [shipping, setShipping] = useState<ShippingData>({
     firstName: "",
@@ -271,6 +275,28 @@ export default function CheckoutPage() {
       }
 
       setOrderId(data.orderId);
+
+      // Create installment plan if enabled
+      if (installmentsEnabled && data.orderId) {
+        try {
+          const installHeaders: Record<string, string> = { "Content-Type": "application/json" };
+          if (token) installHeaders["Authorization"] = `Bearer ${token}`;
+          if (csrf) installHeaders["x-csrf-token"] = csrf;
+          await fetch(`${API_URL}/api/installments/create`, {
+            method: "POST",
+            headers: installHeaders,
+            credentials: "include",
+            body: JSON.stringify({
+              orderId: data.orderId,
+              totalAmount: finalTotal,
+              installments: installmentCount,
+              currency: "UGX",
+            }),
+          });
+        } catch {
+          // Installment creation failure is non-blocking
+        }
+      }
 
       if (data.paymentLink) {
         // Redirect to PayPal or Flutterwave
@@ -720,6 +746,58 @@ export default function CheckoutPage() {
                   </div>
                 </div>
               )}
+
+              {/* Pay in Installments */}
+              <div className="border border-border rounded-8 overflow-hidden">
+                <label className="flex items-center gap-3 p-4 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={installmentsEnabled}
+                    onChange={(e) => setInstallmentsEnabled(e.target.checked)}
+                    className="accent-accent"
+                  />
+                  <div>
+                    <span className="font-medium text-sm">Pay in Installments</span>
+                    <p className="text-xs text-text-muted">Split your payment into smaller amounts</p>
+                  </div>
+                </label>
+
+                {installmentsEnabled && (
+                  <div className="px-4 pb-4 space-y-3 border-t border-border pt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Number of payments
+                    </label>
+                    <div className="flex gap-2">
+                      {[2, 3, 4].map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => setInstallmentCount(n)}
+                          className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                            installmentCount === n
+                              ? "border-accent bg-accent/10 text-accent"
+                              : "border-gray-200 hover:border-gray-300"
+                          }`}
+                        >
+                          {n} payments
+                        </button>
+                      ))}
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                      <p className="text-sm font-medium text-gray-900">Payment schedule:</p>
+                      {Array.from({ length: installmentCount }).map((_, i) => {
+                        const amount = Math.ceil(finalTotal / installmentCount);
+                        const isFirst = i === 0;
+                        return (
+                          <p key={i} className="text-xs text-gray-600 flex justify-between">
+                            <span>{isFirst ? "Today" : `In ${i * 2} weeks`}</span>
+                            <span className="font-medium">{formatPrice(i === installmentCount - 1 ? finalTotal - amount * (installmentCount - 1) : amount)}</span>
+                          </p>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {paymentSettings.payment_instructions && (
                 <p className="text-xs text-text-muted italic">{paymentSettings.payment_instructions}</p>

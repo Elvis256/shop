@@ -43,6 +43,24 @@ const CurrencyContext = createContext<CurrencyContextType>({
   lastUpdated: null,
 });
 
+function detectCurrencyByTimezone(): string {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!tz) return "USD";
+
+    if (tz === "Africa/Kampala") return "UGX";
+
+    if (tz.startsWith("Africa/")) return "USD";
+
+    if (tz.startsWith("Europe/London") || tz === "Europe/Belfast") return "GBP";
+    if (tz.startsWith("Europe/")) return "EUR";
+
+    return "USD";
+  } catch {
+    return "USD";
+  }
+}
+
 export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [currencies, setCurrencies] = useState<Currency[]>([defaultCurrency]);
   const [currency, setCurrencyState] = useState<Currency>(defaultCurrency);
@@ -56,14 +74,14 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
       try { setCurrencyState(JSON.parse(saved)); } catch { /* ignore */ }
     }
 
-    loadCurrencies();
+    loadCurrencies(!!saved);
 
     // Refresh rates every 6 hours
-    const interval = setInterval(loadCurrencies, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => loadCurrencies(true), REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
 
-  const loadCurrencies = async () => {
+  const loadCurrencies = async (hasPreference: boolean) => {
     try {
       const res = await fetch(`${API_URL}/api/currencies`);
       if (!res.ok) return;
@@ -76,9 +94,17 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
       const savedCode = (() => {
         try { return JSON.parse(localStorage.getItem("preferredCurrency") || "{}").code; } catch { return null; }
       })();
-      const code = savedCode || "UGX";
+
+      // Auto-detect currency on first visit (no saved preference)
+      const detectedCode = !hasPreference && !savedCode ? detectCurrencyByTimezone() : null;
+      const code = savedCode || detectedCode || "UGX";
       const updated = fetched.find((c) => c.code === code);
-      if (updated) setCurrencyState(updated);
+      if (updated) {
+        setCurrencyState(updated);
+        if (detectedCode && !savedCode) {
+          localStorage.setItem("preferredCurrency", JSON.stringify(updated));
+        }
+      }
     } catch (error) {
       console.error("Failed to load currencies:", error);
     } finally {

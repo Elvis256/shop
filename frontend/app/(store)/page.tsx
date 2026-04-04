@@ -11,9 +11,12 @@ import PrivacySection from "@/components/PrivacySection";
 import NewsletterSignup from "@/components/NewsletterSignup";
 import RecentlyViewed from "@/components/RecentlyViewed";
 import FlashSaleCountdown from "@/components/FlashSaleCountdown";
+import DailyDeal from "@/components/DailyDeal";
 import ScrollProgress from "@/components/ScrollProgress";
 import AnimateOnScroll, { StaggerGrid, StaggerItem } from "@/components/AnimateOnScroll";
 import ProductCarousel, { CarouselItem } from "@/components/ProductCarousel";
+import PersonalizedProducts from "@/components/PersonalizedProducts";
+import PointsMultiplier from "@/components/PointsMultiplier";
 import { Zap, TrendingUp, Star, Sparkles, ArrowRight, Shield, Truck, Clock, Gift } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -161,10 +164,12 @@ export default function Home() {
 
   return (
     <div className="bg-bg min-h-screen">
+      <PointsMultiplier />
       <ScrollProgress />
       <HeroBanner />
       <TrustStrip />
       <ValueProposition />
+      <DailyDeal />
 
       {/* Flash Sale Section — horizontal carousel for urgency */}
       {(loading || flashSaleProducts.length > 0) && (
@@ -398,6 +403,7 @@ export default function Home() {
       </Section>
 
       <PrivacySection />
+      <PersonalizedProducts />
       <RecentlyViewed />
 
       {/* Newsletter Section */}

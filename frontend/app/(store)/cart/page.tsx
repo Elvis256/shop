@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Tag, Shield, Package, Lock, Check, Truck } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
+import FreeShippingBar from "@/components/FreeShippingBar";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -229,33 +230,13 @@ export default function CartPage() {
         </div>
 
         {/* Free Shipping Progress Bar */}
-        {(() => {
-          const FREE_SHIPPING_THRESHOLD = shippingCfg.freeThreshold;
-          const remaining = FREE_SHIPPING_THRESHOLD - subtotal;
-          const progress = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
-          return (
-            <div className="mb-8 p-4 bg-white rounded-xl border">
-              {remaining > 0 ? (
-                <>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Truck className="w-4 h-4 text-primary" />
-                    <p className="text-sm text-gray-700">
-                      Add <strong>{formatPrice(remaining)}</strong> more for <strong className="text-green-600">FREE shipping!</strong>
-                    </p>
-                  </div>
-                  <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <div className="p-1 bg-green-100 rounded-full"><Check className="w-4 h-4 text-green-600" /></div>
-                  <p className="text-sm font-medium text-green-700">🎉 You've qualified for FREE shipping!</p>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        <div className="mb-8">
+          <FreeShippingBar
+            cartTotal={subtotal}
+            freeAbove={shippingCfg.freeThreshold}
+            formatPrice={formatPrice}
+          />
+        </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Cart Items */}
