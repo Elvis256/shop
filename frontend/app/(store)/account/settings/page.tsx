@@ -7,7 +7,7 @@ import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import {
   ArrowLeft, User, Mail, Phone, Loader2, CheckCircle, Lock, Eye, EyeOff,
-  Shield, Bell, MapPin, Star, Package, Calendar, AlertTriangle
+  Shield, Bell, MapPin, Star, Package, Calendar, AlertTriangle, MessageSquare
 } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
@@ -66,7 +66,7 @@ export default function AccountSettingsPage() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [stats, setStats] = useState({ orders: 0, points: 0, tier: "BRONZE", memberSince: "" });
-  const [activeSection, setActiveSection] = useState<"profile" | "password" | "notifications" | "privacy">("profile");
+  const [activeSection, setActiveSection] = useState<"profile" | "password" | "notifications" | "sms" | "privacy">("profile");
   const [notifications, setNotifications] = useState({
     orderUpdates: true,
     promotions: false,
@@ -74,6 +74,13 @@ export default function AccountSettingsPage() {
     loyaltyUpdates: true,
   });
   const [notifSaved, setNotifSaved] = useState(false);
+
+  // SMS Notifications
+  const [smsOptIn, setSmsOptIn] = useState(false);
+  const [smsPhone, setSmsPhone] = useState("");
+  const [smsSaving, setSmsSaving] = useState(false);
+  const [smsSuccess, setSmsSuccess] = useState(false);
+  const [smsError, setSmsError] = useState("");
 
   useEffect(() => {
     if (!isLoading && !user) router.push("/auth/login");
@@ -86,6 +93,8 @@ export default function AccountSettingsPage() {
       .then((data) => {
         setName(data.name || "");
         setPhone(data.phone || "");
+        setSmsOptIn(data.smsOptIn || false);
+        setSmsPhone(data.phone || "");
       })
       .catch(() => {});
 
@@ -164,6 +173,34 @@ export default function AccountSettingsPage() {
     setTimeout(() => setNotifSaved(false), 3000);
   };
 
+  const handleSaveSms = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSmsError("");
+    setSmsSuccess(false);
+    if (smsOptIn && !smsPhone) {
+      setSmsError("Phone number is required when opting in to SMS notifications");
+      return;
+    }
+    setSmsSaving(true);
+    try {
+      const csrf = getCsrfToken();
+      const res = await fetch(`${API_URL}/api/auth/me`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
+        body: JSON.stringify({ smsOptIn, phone: smsPhone }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update SMS preferences");
+      setSmsSuccess(true);
+      setTimeout(() => setSmsSuccess(false), 4000);
+    } catch (err: unknown) {
+      setSmsError(err instanceof Error ? err.message : "Failed to save SMS preferences");
+    } finally {
+      setSmsSaving(false);
+    }
+  };
+
   const initials = name ? name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) : "?";
   const tierColors: Record<string, string> = {
     BRONZE: "text-orange-600 bg-orange-50",
@@ -186,6 +223,7 @@ export default function AccountSettingsPage() {
     { id: "profile", label: "Profile", icon: User },
     { id: "password", label: "Security", icon: Shield },
     { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "sms", label: "SMS", icon: MessageSquare },
     { id: "privacy", label: "Privacy", icon: Lock },
   ] as const;
 
@@ -463,6 +501,85 @@ export default function AccountSettingsPage() {
                 <button onClick={handleSaveNotifications} className="btn-primary mt-6 flex items-center gap-2">
                   <Bell className="w-4 h-4" />Save Preferences
                 </button>
+              </div>
+            )}
+
+            {/* SMS Notifications Section */}
+            {activeSection === "sms" && (
+              <div className="card">
+                <div className="mb-6">
+                  <h2 className="text-lg font-semibold">SMS Notifications</h2>
+                  <p className="text-sm text-text-muted">Receive order updates and promotions via SMS</p>
+                </div>
+
+                <form onSubmit={handleSaveSms} className="space-y-5">
+                  {/* Opt-in toggle */}
+                  <label className="flex items-start justify-between gap-4 p-4 border border-border rounded-lg cursor-pointer hover:bg-surface-secondary transition-colors">
+                    <div>
+                      <p className="font-medium text-sm">Enable SMS Notifications</p>
+                      <p className="text-xs text-text-muted mt-0.5">Get order updates, delivery alerts, and exclusive deals via text message</p>
+                    </div>
+                    <div className="relative shrink-0 mt-0.5">
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={smsOptIn}
+                        onChange={(e) => setSmsOptIn(e.target.checked)}
+                      />
+                      <div
+                        onClick={() => setSmsOptIn(!smsOptIn)}
+                        className={`w-10 h-5 rounded-full transition-colors cursor-pointer ${smsOptIn ? "bg-accent" : "bg-gray-300"}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${smsOptIn ? "translate-x-5" : "translate-x-0.5"}`} />
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Phone number input */}
+                  {smsOptIn && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1.5">Phone Number</label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                        <input
+                          type="tel"
+                          className="input pl-9"
+                          value={smsPhone}
+                          onChange={(e) => setSmsPhone(e.target.value)}
+                          placeholder="+256 700 000 000"
+                          required
+                        />
+                      </div>
+                      <p className="text-xs text-text-muted mt-1.5">
+                        SMS delivery requires phone number and is available for Uganda (+256) numbers
+                      </p>
+                    </div>
+                  )}
+
+                  {smsError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      {smsError}
+                    </div>
+                  )}
+                  {smsSuccess && (
+                    <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+                      <CheckCircle className="w-4 h-4 shrink-0" />
+                      SMS preferences saved successfully!
+                    </div>
+                  )}
+
+                  <button type="submit" disabled={smsSaving} className="btn-primary flex items-center gap-2">
+                    {smsSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><MessageSquare className="w-4 h-4" />Save SMS Preferences</>}
+                  </button>
+                </form>
+
+                <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg">
+                  <p className="text-xs text-blue-700">
+                    <MessageSquare className="w-3 h-3 inline mr-1" />
+                    Standard SMS rates may apply. You can opt out at any time. We will never share your phone number with third parties.
+                  </p>
+                </div>
               </div>
             )}
 

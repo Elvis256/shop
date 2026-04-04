@@ -49,6 +49,7 @@ const ResetPasswordSchema = z.object({
 const UpdateProfileSchema = z.object({
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
+  smsOptIn: z.boolean().optional(),
 });
 
 const ChangePasswordSchema = z.object({
@@ -360,6 +361,7 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
         phone: true,
         role: true,
         emailVerified: true,
+        smsOptIn: true,
         createdAt: true,
         _count: { select: { orders: true, wishlist: true } },
       },

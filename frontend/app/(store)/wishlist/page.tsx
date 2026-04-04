@@ -13,7 +13,15 @@ import { useToast } from "@/lib/hooks/useToast";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { api } from "@/lib/api";
-import { Heart, Trash2, ShoppingCart, Lock, X, Share2, Grid, List } from "lucide-react";
+import { Heart, Trash2, ShoppingCart, Lock, X, Share2, Grid, List, Plus, FolderPlus } from "lucide-react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : null;
+}
 
 export default function WishlistPage() {
   const router = useRouter();
@@ -35,6 +43,12 @@ export default function WishlistPage() {
   const [pinError, setPinError] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  // Collections
+  const [collections, setCollections] = useState<string[]>([]);
+  const [activeCollection, setActiveCollection] = useState<string | null>(null);
+  const [showNewCollection, setShowNewCollection] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState("");
+
   // Check if user has PIN-protected wishlist
   useEffect(() => {
     if (user) {
@@ -49,6 +63,7 @@ export default function WishlistPage() {
       setHasPin(hasPinSet);
       if (!hasPinSet) {
         setPinVerified(true);
+        await loadCollections();
         await loadServerWishlist();
       }
     } catch (error) {
@@ -58,13 +73,61 @@ export default function WishlistPage() {
     }
   };
 
-  const loadServerWishlist = async () => {
+  const loadCollections = async () => {
     try {
-      const data = await api.getWishlist();
-      setServerItems(data.items || []);
+      const csrf = getCsrfToken();
+      const headers: Record<string, string> = {};
+      if (csrf) headers["x-csrf-token"] = csrf;
+      const res = await fetch(`${API_URL}/api/wishlist/collections`, {
+        credentials: "include",
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCollections(data.collections || []);
+      }
+    } catch (error) {
+      console.error("Error loading collections:", error);
+    }
+  };
+
+  const loadServerWishlist = async (collection?: string | null) => {
+    try {
+      const params = collection ? `?collection=${encodeURIComponent(collection)}` : "";
+      const csrf = getCsrfToken();
+      const headers: Record<string, string> = {};
+      if (csrf) headers["x-csrf-token"] = csrf;
+      const res = await fetch(`${API_URL}/api/wishlist${params}`, {
+        credentials: "include",
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setServerItems(data.items || []);
+      }
     } catch (error) {
       console.error("Error loading wishlist:", error);
     }
+  };
+
+  const handleCollectionChange = async (collection: string | null) => {
+    setActiveCollection(collection);
+    await loadServerWishlist(collection);
+  };
+
+  const handleCreateCollection = async () => {
+    const trimmed = newCollectionName.trim();
+    if (!trimmed) return;
+    if (collections.includes(trimmed)) {
+      showToast("Collection already exists", "error");
+      return;
+    }
+    setCollections((prev) => [...prev, trimmed]);
+    setActiveCollection(trimmed);
+    setNewCollectionName("");
+    setShowNewCollection(false);
+    await loadServerWishlist(trimmed);
+    showToast(`Collection "${trimmed}" created`, "success");
   };
 
   const handlePinInput = (index: number, value: string) => {
@@ -89,6 +152,7 @@ export default function WishlistPage() {
     try {
       await api.verifyWishlistPin(enteredPin);
       setPinVerified(true);
+      await loadCollections();
       await loadServerWishlist();
     } catch {
       setPinError("Invalid PIN. Please try again.");
@@ -131,7 +195,17 @@ export default function WishlistPage() {
   };
 
   // Use local items for non-authenticated users, server items for authenticated
-  const displayItems = user && hasPin ? serverItems.map(item => ({
+  const displayItems: Array<{
+    productId: string;
+    name: string;
+    slug: string;
+    price: number;
+    imageUrl: string | null;
+    addedAt: string;
+    inStock?: boolean;
+    comparePrice?: number;
+    collectionName?: string;
+  }> = user && hasPin ? serverItems.map(item => ({
     productId: item.product.id,
     name: item.product.name,
     slug: item.product.slug,
@@ -140,7 +214,20 @@ export default function WishlistPage() {
     addedAt: item.addedAt,
     inStock: item.product.inStock,
     comparePrice: item.product.comparePrice ? parseFloat(item.product.comparePrice) : undefined,
-  })) : localItems;
+    collectionName: item.collectionName,
+  })) : user ? serverItems.map(item => ({
+    productId: item.product.id,
+    name: item.product.name,
+    slug: item.product.slug,
+    price: parseFloat(item.product.price),
+    imageUrl: item.product.imageUrl,
+    addedAt: item.addedAt,
+    inStock: item.product.inStock,
+    comparePrice: item.product.comparePrice ? parseFloat(item.product.comparePrice) : undefined,
+    collectionName: item.collectionName,
+  })) : localItems.map(item => ({ ...item, collectionName: undefined }));
+
+  const showCollections = user && collections.length > 0;
 
   // PIN Entry Screen for authenticated users
   if (user && hasPin && !pinVerified) {
@@ -225,6 +312,70 @@ export default function WishlistPage() {
           )}
         </div>
 
+        {/* Collections Tabs (for authenticated users) */}
+        {user && (
+          <div className="mb-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleCollectionChange(null)}
+                className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
+                  activeCollection === null
+                    ? "bg-gray-900 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                All
+              </button>
+              {collections.map((col) => (
+                <button
+                  key={col}
+                  onClick={() => handleCollectionChange(col)}
+                  className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
+                    activeCollection === col
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {col}
+                </button>
+              ))}
+              {showNewCollection ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Collection name"
+                    value={newCollectionName}
+                    onChange={(e) => setNewCollectionName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleCreateCollection()}
+                    className="px-3 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleCreateCollection}
+                    className="px-3 py-1.5 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                  >
+                    Create
+                  </button>
+                  <button
+                    onClick={() => { setShowNewCollection(false); setNewCollectionName(""); }}
+                    className="p-1.5 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowNewCollection(true)}
+                  className="flex items-center gap-1 px-4 py-2 text-sm rounded-lg border border-dashed border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors"
+                >
+                  <FolderPlus className="w-4 h-4" />
+                  New Collection
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Empty State */}
         {displayItems.length === 0 ? (
           <div className="bg-white rounded-2xl border p-8">
@@ -242,7 +393,7 @@ export default function WishlistPage() {
             {viewMode === "grid" && (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
                 {displayItems.map((item) => (
-                  <div key={item.productId} className="bg-white rounded-xl border overflow-hidden group hover:shadow-lg transition-shadow">
+                  <div key={item.productId + (item.collectionName || "")} className="bg-white rounded-xl border overflow-hidden group hover:shadow-lg transition-shadow">
                     <Link href={`/product/${item.slug}`} className="block">
                       <div className="aspect-square bg-gray-100 relative overflow-hidden">
                         {item.imageUrl ? (
@@ -256,6 +407,11 @@ export default function WishlistPage() {
                           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
                             <Heart className="w-12 h-12 text-gray-300" />
                           </div>
+                        )}
+                        {item.collectionName && item.collectionName !== "Wishlist" && (
+                          <span className="absolute top-2 left-2 px-2 py-0.5 text-xs bg-white/90 rounded-full text-gray-600">
+                            {item.collectionName}
+                          </span>
                         )}
                       </div>
                     </Link>
@@ -297,7 +453,7 @@ export default function WishlistPage() {
             {viewMode === "list" && (
               <div className="space-y-4">
                 {displayItems.map((item) => (
-                  <div key={item.productId} className="bg-white rounded-xl border p-4 flex gap-4 hover:shadow-lg transition-shadow">
+                  <div key={item.productId + (item.collectionName || "")} className="bg-white rounded-xl border p-4 flex gap-4 hover:shadow-lg transition-shadow">
                     <Link href={`/product/${item.slug}`} className="flex-shrink-0">
                       <div className="w-24 h-24 sm:w-32 sm:h-32 bg-gray-100 rounded-lg overflow-hidden relative">
                         {item.imageUrl ? (
@@ -315,11 +471,18 @@ export default function WishlistPage() {
                       </div>
                     </Link>
                     <div className="flex-1 min-w-0">
-                      <Link href={`/product/${item.slug}`}>
-                        <h3 className="font-medium text-gray-900 hover:text-primary transition-colors mb-1">
-                          {item.name}
-                        </h3>
-                      </Link>
+                      <div className="flex items-start justify-between gap-2">
+                        <Link href={`/product/${item.slug}`}>
+                          <h3 className="font-medium text-gray-900 hover:text-primary transition-colors mb-1">
+                            {item.name}
+                          </h3>
+                        </Link>
+                        {item.collectionName && item.collectionName !== "Wishlist" && (
+                          <span className="flex-shrink-0 px-2 py-0.5 text-xs bg-gray-100 rounded-full text-gray-500">
+                            {item.collectionName}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 mb-3">
                         <span className="font-bold text-lg text-gray-900">{formatPrice(item.price)}</span>
                         {item.comparePrice && (

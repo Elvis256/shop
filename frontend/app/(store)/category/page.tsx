@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
-import { Grid3X3, LayoutGrid, ChevronLeft, ChevronRight, X, Filter } from "lucide-react";
+import { Grid3X3, LayoutGrid, ChevronLeft, ChevronRight, X, Filter, Star, SlidersHorizontal } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -33,8 +33,16 @@ interface Category {
   _count?: { products: number };
 }
 
+interface Filters {
+  minPrice: string;
+  maxPrice: string;
+  minRating: number | null;
+  inStock: boolean;
+}
+
 function CategoryContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const categorySlug = searchParams.get("cat");
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -48,11 +56,27 @@ function CategoryContent() {
   const [sort, setSort] = useState("featured");
   const [gridSize, setGridSize] = useState<"small" | "large">("large");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+
+  // Advanced filters
+  const [filters, setFilters] = useState<Filters>({
+    minPrice: searchParams.get("minPrice") || "",
+    maxPrice: searchParams.get("maxPrice") || "",
+    minRating: searchParams.get("minRating") ? Number(searchParams.get("minRating")) : null,
+    inStock: searchParams.get("inStock") === "true",
+  });
+  const [pendingPrice, setPendingPrice] = useState({ min: filters.minPrice, max: filters.maxPrice });
+
+  const activeFilterCount = [
+    filters.minPrice || filters.maxPrice,
+    filters.minRating,
+    filters.inStock,
+  ].filter(Boolean).length;
 
   useEffect(() => {
     loadProducts();
     loadCategories();
-  }, [categorySlug, page, sort]);
+  }, [categorySlug, page, sort, filters]);
 
   const loadCategories = async () => {
     try {
@@ -94,6 +118,12 @@ function CategoryContent() {
         params.append("sortOrder", "desc");
       }
 
+      // Advanced filters
+      if (filters.minPrice) params.append("minPrice", filters.minPrice);
+      if (filters.maxPrice) params.append("maxPrice", filters.maxPrice);
+      if (filters.minRating) params.append("minRating", String(filters.minRating));
+      if (filters.inStock) params.append("inStock", "true");
+
       const res = await fetch(`${API_URL}/api/products?${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -119,8 +149,37 @@ function CategoryContent() {
     }
   };
 
-  const CategorySidebar = ({ onClose }: { onClose?: () => void }) => (
-    <div>
+  const updateFilters = (newFilters: Partial<Filters>) => {
+    const updated = { ...filters, ...newFilters };
+    setFilters(updated);
+    setPage(1);
+
+    // Update URL query params
+    const params = new URLSearchParams();
+    if (categorySlug) params.set("cat", categorySlug);
+    if (updated.minPrice) params.set("minPrice", updated.minPrice);
+    if (updated.maxPrice) params.set("maxPrice", updated.maxPrice);
+    if (updated.minRating) params.set("minRating", String(updated.minRating));
+    if (updated.inStock) params.set("inStock", "true");
+    router.replace(`/category?${params.toString()}`, { scroll: false });
+  };
+
+  const clearFilters = () => {
+    const cleared: Filters = { minPrice: "", maxPrice: "", minRating: null, inStock: false };
+    setFilters(cleared);
+    setPendingPrice({ min: "", max: "" });
+    setPage(1);
+    const params = new URLSearchParams();
+    if (categorySlug) params.set("cat", categorySlug);
+    router.replace(`/category?${params.toString()}`, { scroll: false });
+  };
+
+  const handleApplyPrice = () => {
+    updateFilters({ minPrice: pendingPrice.min, maxPrice: pendingPrice.max });
+  };
+
+  const FilterPanel = ({ onClose }: { onClose?: () => void }) => (
+    <div className="space-y-6">
       {/* Header for mobile */}
       {onClose && (
         <div className="flex items-center justify-between pb-4 border-b mb-4 lg:hidden">
@@ -162,6 +221,101 @@ function CategoryContent() {
           ))}
         </nav>
       </div>
+
+      {/* Price Range */}
+      <div>
+        <h4 className="font-medium text-gray-900 mb-3 text-sm">Price Range (UGX)</h4>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            placeholder="Min"
+            value={pendingPrice.min}
+            onChange={(e) => setPendingPrice((p) => ({ ...p, min: e.target.value }))}
+            className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-200"
+            min="0"
+          />
+          <span className="text-gray-400 text-sm">—</span>
+          <input
+            type="number"
+            placeholder="Max"
+            value={pendingPrice.max}
+            onChange={(e) => setPendingPrice((p) => ({ ...p, max: e.target.value }))}
+            className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-200"
+            min="0"
+          />
+        </div>
+        <button
+          onClick={handleApplyPrice}
+          className="mt-2 w-full px-3 py-1.5 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+        >
+          Apply
+        </button>
+      </div>
+
+      {/* Rating Filter */}
+      <div>
+        <h4 className="font-medium text-gray-900 mb-3 text-sm">Minimum Rating</h4>
+        <div className="space-y-1">
+          {[4, 3, 2, 1].map((rating) => (
+            <button
+              key={rating}
+              onClick={() => {
+                updateFilters({ minRating: filters.minRating === rating ? null : rating });
+                onClose?.();
+              }}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                filters.minRating === rating
+                  ? "bg-yellow-50 border border-yellow-200 text-yellow-700"
+                  : "text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <div className="flex items-center gap-0.5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star
+                    key={i}
+                    className={`w-3.5 h-3.5 ${i < rating ? "text-yellow-400 fill-yellow-400" : "text-gray-200"}`}
+                  />
+                ))}
+              </div>
+              <span>{rating}+ stars</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* In Stock Toggle */}
+      <div>
+        <label className="flex items-center justify-between px-3 py-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+          <span className="text-sm font-medium text-gray-900">In Stock Only</span>
+          <div className="relative">
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={filters.inStock}
+              onChange={(e) => updateFilters({ inStock: e.target.checked })}
+            />
+            <div
+              onClick={() => updateFilters({ inStock: !filters.inStock })}
+              className={`w-10 h-5 rounded-full transition-colors cursor-pointer ${filters.inStock ? "bg-green-500" : "bg-gray-300"}`}
+            >
+              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${filters.inStock ? "translate-x-5" : "translate-x-0.5"}`} />
+            </div>
+          </div>
+        </label>
+      </div>
+
+      {/* Clear Filters */}
+      {activeFilterCount > 0 && (
+        <button
+          onClick={() => {
+            clearFilters();
+            onClose?.();
+          }}
+          className="w-full px-3 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+        >
+          Clear All Filters ({activeFilterCount})
+        </button>
+      )}
     </div>
   );
 
@@ -190,18 +344,47 @@ function CategoryContent() {
       <div className="container py-8">
         <div className="flex gap-8">
           {/* Desktop Sidebar */}
-          <aside className="hidden md:block md:w-48 lg:w-56 flex-shrink-0">
+          <aside className={`hidden md:block flex-shrink-0 transition-all ${filtersCollapsed ? "md:w-0 overflow-hidden" : "md:w-48 lg:w-56"}`}>
             <div className="sticky top-24">
-              <CategorySidebar />
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <SlidersHorizontal className="w-4 h-4" />
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="bg-gray-900 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </h3>
+                <button
+                  onClick={() => setFiltersCollapsed(true)}
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                  title="Collapse filters"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <FilterPanel />
             </div>
           </aside>
+
+          {/* Collapsed sidebar re-open button (desktop) */}
+          {filtersCollapsed && (
+            <button
+              onClick={() => setFiltersCollapsed(false)}
+              className="hidden md:flex items-center gap-1 self-start sticky top-24 px-2 py-2 text-sm border rounded-lg hover:bg-gray-50"
+              title="Show filters"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Mobile Filters Drawer */}
           {mobileFiltersOpen && (
             <div className="fixed inset-0 z-50 lg:hidden">
               <div className="absolute inset-0 bg-black/40" onClick={() => setMobileFiltersOpen(false)} />
-              <div className="absolute right-0 top-0 bottom-0 w-72 max-w-full bg-white p-5 overflow-y-auto shadow-xl">
-                <CategorySidebar onClose={() => setMobileFiltersOpen(false)} />
+              <div className="absolute right-0 top-0 bottom-0 w-80 max-w-full bg-white p-5 overflow-y-auto shadow-xl">
+                <FilterPanel onClose={() => setMobileFiltersOpen(false)} />
               </div>
             </div>
           )}
@@ -214,10 +397,15 @@ function CategoryContent() {
                 {/* Mobile Filter Button */}
                 <button
                   onClick={() => setMobileFiltersOpen(true)}
-                  className="lg:hidden flex items-center gap-2 px-3 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50"
+                  className="lg:hidden flex items-center gap-2 px-3 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 relative"
                 >
                   <Filter className="w-4 h-4" />
                   Filters
+                  {activeFilterCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-gray-900 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                      {activeFilterCount}
+                    </span>
+                  )}
                 </button>
                 <p className="text-sm text-gray-500">
                   {loading ? "Loading..." : `${totalProducts} products`}
@@ -256,6 +444,40 @@ function CategoryContent() {
                 </select>
               </div>
             </div>
+
+            {/* Active Filters Bar */}
+            {activeFilterCount > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <span className="text-xs text-gray-500">Active filters:</span>
+                {(filters.minPrice || filters.maxPrice) && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 rounded-full">
+                    Price: {filters.minPrice || "0"} — {filters.maxPrice || "∞"} UGX
+                    <button onClick={() => { updateFilters({ minPrice: "", maxPrice: "" }); setPendingPrice({ min: "", max: "" }); }} className="hover:text-red-500">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {filters.minRating && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-yellow-50 rounded-full">
+                    {filters.minRating}+ stars
+                    <button onClick={() => updateFilters({ minRating: null })} className="hover:text-red-500">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {filters.inStock && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-50 rounded-full">
+                    In Stock
+                    <button onClick={() => updateFilters({ inStock: false })} className="hover:text-red-500">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                <button onClick={clearFilters} className="text-xs text-red-500 hover:underline ml-1">
+                  Clear all
+                </button>
+              </div>
+            )}
 
             {/* Products */}
             {loading ? (
@@ -300,9 +522,15 @@ function CategoryContent() {
             ) : (
               <div className="text-center py-16">
                 <p className="text-gray-500 mb-4">No products found</p>
-                <Link href="/category" className="text-sm underline">
-                  View all products
-                </Link>
+                {activeFilterCount > 0 ? (
+                  <button onClick={clearFilters} className="text-sm underline">
+                    Clear filters
+                  </button>
+                ) : (
+                  <Link href="/category" className="text-sm underline">
+                    View all products
+                  </Link>
+                )}
               </div>
             )}
 

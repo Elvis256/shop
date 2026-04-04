@@ -6,6 +6,7 @@ import CartDrawer from "@/components/CartDrawer";
 import MobileNav from "@/components/MobileNav";
 import PageTracker from "@/components/PageTracker";
 import AffiliateTracker from "@/components/AffiliateTracker";
+import ExitIntent from "@/components/ExitIntent";
 import { OrganizationSchema, WebsiteSchema } from "@/components/StructuredData";
 
 export const metadata: Metadata = {
@@ -40,6 +41,7 @@ export default function StoreLayout({
       <Footer />
       <CartDrawer />
       <MobileNav />
+      <ExitIntent />
     </div>
   );
 }
