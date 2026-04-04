@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { apiFetch } from "@/lib/api";
 import {
   Users,
   Gift,
@@ -132,46 +133,37 @@ export default function AdminSocialPage() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const r = await fetch("/api/admin/social/stats", { credentials: "include" });
-      if (r.ok) setStats(await r.json());
+      const data = await apiFetch("/api/admin/social/stats");
+      setStats(data);
     } catch {}
   }, []);
 
   const fetchGroupBuys = useCallback(async () => {
     try {
       const q = gbFilter ? `?status=${gbFilter}` : "";
-      const r = await fetch(`/api/admin/social/group-buys${q}`, { credentials: "include" });
-      if (r.ok) {
-        const data = await r.json();
-        setGroupBuys(data.groupBuys);
-      }
+      const data = await apiFetch(`/api/admin/social/group-buys${q}`);
+      setGroupBuys(data.groupBuys);
     } catch {}
   }, [gbFilter]);
 
   const fetchShares = useCallback(async () => {
     try {
-      const r = await fetch("/api/admin/social/shares", { credentials: "include" });
-      if (r.ok) {
-        const data = await r.json();
-        setShares(data.shares);
-      }
+      const data = await apiFetch("/api/admin/social/shares");
+      setShares(data.shares);
     } catch {}
   }, []);
 
   const fetchSlashes = useCallback(async () => {
     try {
-      const r = await fetch("/api/admin/social/price-slashes", { credentials: "include" });
-      if (r.ok) {
-        const data = await r.json();
-        setSlashes(data.slashes);
-      }
+      const data = await apiFetch("/api/admin/social/price-slashes");
+      setSlashes(data.slashes);
     } catch {}
   }, []);
 
   const fetchCheckIns = useCallback(async () => {
     try {
-      const r = await fetch("/api/admin/social/check-ins", { credentials: "include" });
-      if (r.ok) setCheckInData(await r.json());
+      const data = await apiFetch("/api/admin/social/check-ins");
+      setCheckInData(data);
     } catch {}
   }, []);
 
@@ -190,11 +182,8 @@ export default function AdminSocialPage() {
     if (productSearch.length < 2) { setProductResults([]); return; }
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(`/api/admin/products?search=${encodeURIComponent(productSearch)}&limit=8`, { credentials: "include" });
-        if (r.ok) {
-          const data = await r.json();
-          setProductResults((data.products || []).map((p: any) => ({ id: p.id, name: p.name, price: Number(p.price), slug: p.slug })));
-        }
+        const data = await apiFetch(`/api/admin/products?search=${encodeURIComponent(productSearch)}&limit=8`);
+        setProductResults((data.products || []).map((p: any) => ({ id: p.id, name: p.name, price: Number(p.price), slug: p.slug })));
       } catch {}
     }, 300);
     return () => clearTimeout(t);
@@ -204,22 +193,18 @@ export default function AdminSocialPage() {
     if (!selectedProduct) return;
     setCreating(true);
     try {
-      const r = await fetch("/api/admin/social/group-buys", {
+      await apiFetch("/api/admin/social/group-buys", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ productId: selectedProduct.id, targetCount, discountPercent, expiresInHours }),
       });
-      if (r.ok) {
-        setShowCreate(false);
-        setSelectedProduct(null);
-        setProductSearch("");
-        setTargetCount(3);
-        setDiscountPercent(20);
-        setExpiresInHours(48);
-        fetchGroupBuys();
-        fetchStats();
-      }
+      setShowCreate(false);
+      setSelectedProduct(null);
+      setProductSearch("");
+      setTargetCount(3);
+      setDiscountPercent(20);
+      setExpiresInHours(48);
+      fetchGroupBuys();
+      fetchStats();
     } catch {}
     setCreating(false);
   };
@@ -227,7 +212,7 @@ export default function AdminSocialPage() {
   const handleCancelGroupBuy = async (id: string) => {
     if (!confirm("Cancel this group buy?")) return;
     try {
-      await fetch(`/api/admin/social/group-buys/${id}`, { method: "DELETE", credentials: "include" });
+      await apiFetch(`/api/admin/social/group-buys/${id}`, { method: "DELETE" });
       fetchGroupBuys();
       fetchStats();
     } catch {}

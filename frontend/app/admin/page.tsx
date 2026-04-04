@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import {
   ShoppingCart,
@@ -210,9 +210,7 @@ export default function AdminDashboard() {
 
   // Fetch social stats separately — gracefully handle missing endpoint
   useEffect(() => {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-    fetch(`${API_URL}/api/admin/social/stats`, { credentials: "include" })
-      .then(res => res.ok ? res.json() : Promise.reject())
+    apiFetch("/api/admin/social/stats")
       .then((d: SocialStats) => setSocialStats(d))
       .catch(() => { /* endpoint may not exist yet */ });
   }, []);
