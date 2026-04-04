@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { PrismaClient, LoyaltyTxType } from "@prisma/client";
-import { authenticate, AuthRequest } from "../middleware/auth";
+import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -242,5 +242,57 @@ export const awardPurchasePoints = async (userId: string, orderTotal: number, or
     return 0;
   }
 };
+
+// POST /api/loyalty/admin/multiplier — Set a global points multiplier event (admin)
+router.post("/admin/multiplier", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { multiplier, endsAt, description } = req.body;
+
+    if (!multiplier || !endsAt || !description) {
+      return res.status(400).json({ error: "multiplier, endsAt, and description are required" });
+    }
+
+    if (typeof multiplier !== "number" || multiplier < 1) {
+      return res.status(400).json({ error: "multiplier must be a number >= 1" });
+    }
+
+    const value = JSON.stringify({ multiplier, endsAt, description });
+
+    await prisma.setting.upsert({
+      where: { key: "loyalty_multiplier" },
+      update: { value },
+      create: { key: "loyalty_multiplier", value },
+    });
+
+    return res.json({ message: "Points multiplier set", multiplier, endsAt, description });
+  } catch (error) {
+    console.error("Set loyalty multiplier error:", error);
+    return res.status(500).json({ error: "Failed to set multiplier" });
+  }
+});
+
+// GET /api/loyalty/multiplier — Get current active multiplier
+router.get("/multiplier", async (_req: any, res: Response) => {
+  try {
+    const setting = await prisma.setting.findUnique({ where: { key: "loyalty_multiplier" } });
+
+    if (!setting) {
+      return res.json({ active: false, multiplier: 1 });
+    }
+
+    const data = JSON.parse(setting.value);
+    const isActive = new Date(data.endsAt) > new Date();
+
+    return res.json({
+      active: isActive,
+      multiplier: isActive ? data.multiplier : 1,
+      endsAt: data.endsAt,
+      description: isActive ? data.description : null,
+    });
+  } catch (error) {
+    console.error("Get loyalty multiplier error:", error);
+    return res.status(500).json({ error: "Failed to fetch multiplier" });
+  }
+});
 
 export default router;

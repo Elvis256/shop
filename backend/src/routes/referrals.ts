@@ -245,4 +245,37 @@ export const processReferralReward = async (userId: string, orderId: string) => 
   }
 };
 
+// GET /api/referrals/leaderboard — Top 10 referrers (public, anonymized)
+router.get("/leaderboard", async (_req, res) => {
+  try {
+    const topReferrers = await prisma.referralCode.findMany({
+      where: { usageCount: { gt: 0 } },
+      orderBy: { usageCount: "desc" },
+      take: 10,
+      include: {
+        user: { select: { name: true } },
+      },
+    });
+
+    const leaderboard = topReferrers.map((r, index) => {
+      const name = r.user.name || "Anonymous";
+      const parts = name.trim().split(/\s+/);
+      const anonymized = parts.length > 1
+        ? `${parts[0]} ${parts[parts.length - 1][0]}.`
+        : `${parts[0]}`;
+
+      return {
+        rank: index + 1,
+        name: anonymized,
+        referralCount: r.usageCount,
+      };
+    });
+
+    return res.json({ leaderboard });
+  } catch (error) {
+    console.error("Get referral leaderboard error:", error);
+    return res.status(500).json({ error: "Failed to fetch leaderboard" });
+  }
+});
+
 export default router;

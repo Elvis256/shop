@@ -185,6 +185,33 @@ router.get("/", async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/admin/customers/segments — Get all unique segment tags with user counts
+// Must be defined before /:id to avoid route conflict
+router.get("/segments", async (_req: AuthRequest, res: Response) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { segmentTags: { isEmpty: false } },
+      select: { segmentTags: true },
+    });
+
+    const tagCounts = new Map<string, number>();
+    for (const user of users) {
+      for (const tag of user.segmentTags) {
+        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      }
+    }
+
+    const segments = Array.from(tagCounts.entries())
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return res.json({ segments });
+  } catch (error) {
+    console.error("Get segments error:", error);
+    return res.status(500).json({ error: "Failed to fetch segments" });
+  }
+});
+
 // GET /api/admin/customers/:id
 router.get("/:id", async (req: AuthRequest, res: Response) => {
   try {
@@ -274,5 +301,107 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: "Failed to update customer" });
   }
 });
+
+// POST /api/admin/customers/:id/segment — Set segment tags
+router.post("/:id/segment", async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { tags } = req.body;
+
+    if (!tags || !Array.isArray(tags)) {
+      return res.status(400).json({ error: "tags array is required" });
+    }
+
+    const customer = await prisma.user.findUnique({ where: { id } });
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: { segmentTags: tags },
+      select: { id: true, email: true, name: true, segmentTags: true },
+    });
+
+    return res.json({ message: "Segment tags updated", customer: updated });
+  } catch (error) {
+    console.error("Set segment tags error:", error);
+    return res.status(500).json({ error: "Failed to set segment tags" });
+  }
+});
+
+/**
+ * Auto-segment users based on behavior:
+ * - "new": registered < 30 days ago
+ * - "vip": total orders > 5
+ * - "at_risk": last order > 60 days ago
+ * - "high_value": total spend > 500000 UGX
+ */
+export async function autoSegmentUsers(): Promise<number> {
+  let updated = 0;
+  try {
+    const users = await prisma.user.findMany({
+      where: { role: "CUSTOMER" },
+      select: { id: true, createdAt: true, segmentTags: true },
+    });
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+    for (const user of users) {
+      const tags = new Set<string>(user.segmentTags);
+
+      // "new" check
+      if (user.createdAt > thirtyDaysAgo) {
+        tags.add("new");
+      } else {
+        tags.delete("new");
+      }
+
+      // Get order stats
+      const orderStats = await prisma.order.aggregate({
+        where: { userId: user.id, status: { notIn: ["CANCELLED", "REFUNDED"] } },
+        _count: { id: true },
+        _sum: { totalAmount: true },
+        _max: { createdAt: true },
+      });
+
+      // "vip" check
+      if ((orderStats._count.id || 0) > 5) {
+        tags.add("vip");
+      } else {
+        tags.delete("vip");
+      }
+
+      // "at_risk" check
+      if (orderStats._max.createdAt && orderStats._max.createdAt < sixtyDaysAgo) {
+        tags.add("at_risk");
+      } else {
+        tags.delete("at_risk");
+      }
+
+      // "high_value" check
+      if (Number(orderStats._sum.totalAmount || 0) > 500000) {
+        tags.add("high_value");
+      } else {
+        tags.delete("high_value");
+      }
+
+      const newTags = Array.from(tags);
+      const oldTags = new Set(user.segmentTags);
+      if (newTags.length !== oldTags.size || newTags.some((t) => !oldTags.has(t))) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { segmentTags: newTags },
+        });
+        updated++;
+      }
+    }
+  } catch (error) {
+    console.error("Auto-segment users error:", error);
+  }
+  return updated;
+}
 
 export default router;

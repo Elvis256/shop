@@ -41,6 +41,12 @@ import bundleRoutes from "./routes/bundles";
 import storeCreditRoutes from "./routes/storeCredit";
 import backInStockRoutes from "./routes/backInStock";
 import productQARoutes from "./routes/productQA";
+import installmentsRoutes from "./routes/installments";
+import subscriptionsRoutes from "./routes/subscriptions";
+import pushNotificationsRoutes from "./routes/pushNotifications";
+import browseTrackingRoutes from "./routes/browseTracking";
+import webhookEndpointsRoutes from "./routes/webhookEndpoints";
+import dailyDealRoutes from "./routes/dailyDeal";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -151,6 +157,12 @@ app.use("/api/qa", productQARoutes);
 app.use("/api/bundles", bundleRoutes);
 app.use("/api/store-credit", storeCreditRoutes);
 app.use("/api/price-tiers", priceTierRoutes);
+app.use("/api/installments", installmentsRoutes);
+app.use("/api/subscriptions", subscriptionsRoutes);
+app.use("/api/push", pushNotificationsRoutes);
+app.use("/api/browse", browseTrackingRoutes);
+app.use("/api/webhooks/endpoints", webhookEndpointsRoutes);
+app.use("/api/daily-deal", dailyDealRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);
@@ -224,5 +236,10 @@ app.listen(Number(PORT), "0.0.0.0", () => {
   // Start CJ Dropshipping price/stock sync job (daily)
   import("./services/cjSync").then(({ startCJPriceSyncJob }) => {
     startCJPriceSyncJob();
+  });
+
+  // Start review request job (every 6 hours)
+  import("./services/reviewRequests").then(({ startReviewRequestJob }) => {
+    startReviewRequestJob();
   });
 });

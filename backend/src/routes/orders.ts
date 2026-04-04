@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, optionalAuth } from "../middleware/auth";
 import { sendCancelledNotification } from "../lib/email";
+import { Decimal } from "@prisma/client/runtime/library";
 
 const router = Router();
 
@@ -375,6 +376,97 @@ router.post("/:id/cancel", authenticate, async (req: AuthRequest, res: Response)
   } catch (error) {
     console.error("Cancel order error:", error);
     return res.status(500).json({ error: "Failed to cancel order" });
+  }
+});
+
+// PUT /api/orders/:id/modify — Modify order before processing
+router.put("/:id/modify", authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+    const { shippingAddress, notes, addItems, removeItems } = req.body;
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    if (order.userId !== userId && order.customerEmail !== req.user!.email) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+    if (order.status !== "PENDING") {
+      return res.status(400).json({ error: "Only PENDING orders can be modified" });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Update shipping address and notes
+      const updateData: any = {};
+      if (shippingAddress) updateData.shippingAddress = typeof shippingAddress === "string" ? shippingAddress : JSON.stringify(shippingAddress);
+      if (notes !== undefined) updateData.notes = notes;
+
+      if (Object.keys(updateData).length > 0) {
+        await tx.order.update({ where: { id }, data: updateData });
+      }
+
+      // Remove items
+      if (removeItems && Array.isArray(removeItems) && removeItems.length > 0) {
+        await tx.orderItem.deleteMany({
+          where: { id: { in: removeItems }, orderId: id },
+        });
+      }
+
+      // Add items
+      if (addItems && Array.isArray(addItems) && addItems.length > 0) {
+        for (const item of addItems) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product) continue;
+          await tx.orderItem.create({
+            data: {
+              orderId: id,
+              productId: item.productId,
+              name: product.name,
+              price: product.price,
+              quantity: item.quantity || 1,
+            },
+          });
+        }
+      }
+
+      // Recalculate totals
+      const updatedItems = await tx.orderItem.findMany({ where: { orderId: id } });
+      const subtotal = updatedItems.reduce(
+        (sum, item) => sum + Number(item.price) * item.quantity,
+        0
+      );
+      const currentOrder = await tx.order.findUnique({ where: { id } });
+      const totalAmount = subtotal - Number(currentOrder!.discount) + Number(currentOrder!.shippingCost) + Number(currentOrder!.tax);
+
+      await tx.order.update({
+        where: { id },
+        data: {
+          subtotal: new Decimal(subtotal),
+          totalAmount: new Decimal(Math.max(totalAmount, 0)),
+        },
+      });
+
+      await tx.orderEvent.create({
+        data: { orderId: id, status: "MODIFIED", note: "Order modified by customer" },
+      });
+    });
+
+    // Return updated order
+    const updated = await prisma.order.findUnique({
+      where: { id },
+      include: { items: { include: { product: { select: { name: true, slug: true } } } } },
+    });
+
+    return res.json({ message: "Order modified", order: updated });
+  } catch (error) {
+    console.error("Modify order error:", error);
+    return res.status(500).json({ error: "Failed to modify order" });
   }
 });
 

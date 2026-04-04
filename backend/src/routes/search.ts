@@ -26,14 +26,27 @@ router.get("/", async (req: Request, res: Response) => {
     const take = Math.min(parseInt(limit as string) || 20, 50);
     const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
 
+    // Build fuzzy search: split query into words for OR matching
+    const words = q.trim().split(/\s+/).filter((w) => w.length >= 2);
+    const searchConditions: any[] = [
+      { name: { contains: q, mode: "insensitive" } },
+      { description: { contains: q, mode: "insensitive" } },
+      { tags: { hasSome: [q.toLowerCase()] } },
+    ];
+
+    // Add per-word partial matching
+    for (const word of words) {
+      if (word !== q) {
+        searchConditions.push({ name: { contains: word, mode: "insensitive" } });
+        searchConditions.push({ description: { contains: word, mode: "insensitive" } });
+        searchConditions.push({ tags: { hasSome: [word.toLowerCase()] } });
+      }
+    }
+
     // Build where clause
     const where: any = {
       status: "ACTIVE",
-      OR: [
-        { name: { contains: q, mode: "insensitive" } },
-        { description: { contains: q, mode: "insensitive" } },
-        { tags: { hasSome: [q.toLowerCase()] } },
-      ],
+      OR: searchConditions,
     };
 
     if (category) {
@@ -107,8 +120,27 @@ router.get("/", async (req: Request, res: Response) => {
     // Track search query
     trackSearch(q).catch(() => {});
 
+    // If no results, try removing last character for "did you mean" suggestions
+    let didYouMean: string | null = null;
+    if (total === 0 && q.length > 3) {
+      const truncated = q.slice(0, -1);
+      const altCount = await prisma.product.count({
+        where: {
+          status: "ACTIVE",
+          OR: [
+            { name: { contains: truncated, mode: "insensitive" } },
+            { description: { contains: truncated, mode: "insensitive" } },
+          ],
+        },
+      });
+      if (altCount > 0) {
+        didYouMean = truncated;
+      }
+    }
+
     return res.json({
       query: q,
+      didYouMean,
       products: products.map((p) => ({
         id: p.id,
         name: p.name,
