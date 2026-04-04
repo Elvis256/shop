@@ -141,6 +141,7 @@ export default function EditProductPage() {
   const [images, setImages] = useState<ProductImage[]>([]);
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [specifications, setSpecifications] = useState<SpecRow[]>([]);
+  const [priceTiers, setPriceTiers] = useState<Array<{ id: string; minQty: string; discount: string; label: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -212,9 +213,10 @@ export default function EditProductPage() {
     setNotFound(false);
 
     try {
-      const [productData, categoriesData]: [any, any] = await Promise.all([
+      const [productData, categoriesData, tiersData]: [any, any, any] = await Promise.all([
         api.admin.getProduct(productId),
         api.admin.getCategories(),
+        api.admin.getPriceTiers(productId).catch(() => ({ tiers: [] })),
       ]);
 
       setCategories(
@@ -285,6 +287,15 @@ export default function EditProductPage() {
         Array.isArray(p.specifications)
           ? p.specifications.map((s: any) => ({ id: crypto.randomUUID(), key: s.key || "", value: s.value || "" }))
           : [],
+      );
+
+      setPriceTiers(
+        (tiersData.tiers || []).map((t: any) => ({
+          id: crypto.randomUUID(),
+          minQty: String(t.minQty),
+          discount: String(t.discount),
+          label: t.label || "",
+        }))
       );
     } catch (err: any) {
       console.error("Failed to load product:", err);
@@ -486,6 +497,20 @@ export default function EditProductPage() {
           setSaving(false);
           return;
         }
+      }
+
+      // Save price tiers
+      try {
+        const tiersPayload = priceTiers
+          .filter((t) => t.minQty && t.discount)
+          .map((t) => ({
+            minQty: parseInt(t.minQty),
+            discount: parseFloat(t.discount),
+            label: t.label || null,
+          }));
+        await api.admin.savePriceTiers(productId, tiersPayload);
+      } catch (tierErr: any) {
+        console.error("Price tiers save failed:", tierErr);
       }
 
       setSuccess(true);
@@ -1117,6 +1142,87 @@ export default function EditProductPage() {
         </div>
 
         {/* ------------------------------------------------------------------ */}
+        {/* 4c. Bulk Pricing / Price Tiers                                      */}
+        {/* ------------------------------------------------------------------ */}
+        <div className={cardClass}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Bulk Pricing / Price Tiers</h2>
+            {priceTiers.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm("Delete all price tiers?")) setPriceTiers([]);
+                }}
+                className="text-xs text-red-500 hover:text-red-700 transition-colors"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
+          {priceTiers.length > 0 && (
+            <div className="mb-4">
+              <div className="grid grid-cols-[1fr_1fr_2fr_auto] gap-2 mb-2 text-[11px] text-gray-400 uppercase tracking-wider font-medium px-1">
+                <span>Min Quantity</span>
+                <span>Discount %</span>
+                <span>Label</span>
+                <span />
+              </div>
+              <div className="space-y-2">
+                {priceTiers.map((tier) => (
+                  <div key={tier.id} className="grid grid-cols-[1fr_1fr_2fr_auto] gap-2 items-center">
+                    <input
+                      type="number"
+                      className={inputClass}
+                      value={tier.minQty}
+                      onChange={(e) => setPriceTiers((prev) => prev.map((t) => t.id === tier.id ? { ...t, minQty: e.target.value } : t))}
+                      placeholder="e.g., 3"
+                      min="2"
+                    />
+                    <input
+                      type="number"
+                      className={inputClass}
+                      value={tier.discount}
+                      onChange={(e) => setPriceTiers((prev) => prev.map((t) => t.id === tier.id ? { ...t, discount: e.target.value } : t))}
+                      placeholder="e.g., 10"
+                      min="0.01"
+                      max="100"
+                      step="0.01"
+                    />
+                    <input
+                      type="text"
+                      className={inputClass}
+                      value={tier.label}
+                      onChange={(e) => setPriceTiers((prev) => prev.map((t) => t.id === tier.id ? { ...t, label: e.target.value } : t))}
+                      placeholder="e.g., Buy 3+ save 10%"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPriceTiers((prev) => prev.filter((t) => t.id !== tier.id))}
+                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setPriceTiers((prev) => [...prev, { id: crypto.randomUUID(), minQty: "", discount: "", label: "" }])}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Tier
+          </button>
+          {priceTiers.length === 0 && (
+            <p className="text-sm text-gray-400 mt-2">
+              Add quantity-based discounts. For example, &ldquo;Buy 3+ get 10% off.&rdquo;
+            </p>
+          )}
+        </div>
+
+        {/* ------------------------------------------------------------------ */}
         {/* 5. Organization                                                     */}
         {/* ------------------------------------------------------------------ */}
         <div className={cardClass}>
@@ -1213,6 +1319,33 @@ export default function EditProductPage() {
                 onChange={(e) => setField("videoUrl", e.target.value)}
                 placeholder="https://youtube.com/watch?v=..."
               />
+              <p className="text-xs text-gray-400 mt-1">YouTube or direct video link</p>
+              {formData.videoUrl && (() => {
+                const ytMatch = formData.videoUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+                if (ytMatch) {
+                  return (
+                    <div className="mt-3 rounded-lg overflow-hidden border border-gray-200">
+                      <img
+                        src={`https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`}
+                        alt="Video thumbnail"
+                        className="w-full h-auto"
+                      />
+                      <div className="px-3 py-2 bg-gray-50 text-xs text-gray-500 flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5 text-red-500" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.4 31.4 0 0 0 0 12c0 2 .2 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.3-1.9.5-3.8.5-5.8 0-2-.2-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+                        YouTube Preview
+                      </div>
+                    </div>
+                  );
+                }
+                if (/\.(mp4|webm|ogg)(\?|$)/i.test(formData.videoUrl)) {
+                  return (
+                    <div className="mt-3 rounded-lg overflow-hidden border border-gray-200">
+                      <video src={formData.videoUrl} controls className="w-full max-h-48" preload="metadata" />
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           </div>
         </div>

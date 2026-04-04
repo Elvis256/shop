@@ -9,6 +9,7 @@ dotenv.config();
 
 // Routes
 import authRoutes from "./routes/auth";
+import socialAuthRoutes from "./routes/socialAuth";
 import checkoutRoutes from "./routes/checkout";
 import webhookRoutes from "./routes/webhooks";
 import ordersRoutes from "./routes/orders";
@@ -35,6 +36,11 @@ import invoicesRoutes from "./routes/invoices";
 import analyticsRoutes from "./routes/analytics";
 import recommendationsRoutes from "./routes/recommendations";
 import affiliateRoutes from "./routes/affiliate";
+import priceTierRoutes from "./routes/priceTiers";
+import bundleRoutes from "./routes/bundles";
+import storeCreditRoutes from "./routes/storeCredit";
+import backInStockRoutes from "./routes/backInStock";
+import productQARoutes from "./routes/productQA";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -113,6 +119,7 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // API Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/auth", socialAuthRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/orders", ordersRoutes);
@@ -139,6 +146,11 @@ app.use("/api/invoices", invoicesRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/recommendations", recommendationsRoutes);
 app.use("/api/affiliate", affiliateRoutes);
+app.use("/api/notify", backInStockRoutes);
+app.use("/api/qa", productQARoutes);
+app.use("/api/bundles", bundleRoutes);
+app.use("/api/store-credit", storeCreditRoutes);
+app.use("/api/price-tiers", priceTierRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);

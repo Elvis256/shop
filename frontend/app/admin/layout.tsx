@@ -29,6 +29,8 @@ import {
   Truck,
   Globe,
   ShoppingBag,
+  Layers,
+  Wallet,
 } from "lucide-react";
 
 const navItems = [
@@ -40,6 +42,8 @@ const navItems = [
   { href: "/admin/customers", icon: Users, label: "Customers" },
   { href: "/admin/categories", icon: FolderTree, label: "Categories" },
   { href: "/admin/coupons", icon: Tag, label: "Coupons" },
+  { href: "/admin/bundles", icon: Layers, label: "Bundles" },
+  { href: "/admin/store-credit", icon: Wallet, label: "Store Credit" },
   { href: "/admin/shipping", icon: Truck, label: "Shipping" },
   { href: "/admin/aliexpress", icon: ShoppingBag, label: "AliExpress" },
   { href: "/admin/cjdropshipping", icon: Truck, label: "CJ Dropshipping" },

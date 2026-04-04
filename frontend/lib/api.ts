@@ -354,6 +354,8 @@ export const api = {
       form.append("file", file);
       return apiFetch("/api/admin/products/import-csv", { method: "POST", body: form });
     },
+    getLowStockProducts: (limit = 20): Promise<{ products: any[]; total: number }> =>
+      apiFetch(`/api/admin/products/low-stock?limit=${limit}`),
 
     // Categories
     getCategories: (): Promise<Category[]> => apiFetch("/api/admin/categories"),
@@ -440,6 +442,32 @@ export const api = {
     getCJSettings: (): Promise<any> => apiFetch("/api/admin/cj/settings"),
     updateCJSettings: (data: { email: string; apiKey: string }): Promise<any> =>
       apiFetch("/api/admin/cj/settings", { method: "PUT", body: JSON.stringify(data) }),
+
+    // Price Tiers
+    getPriceTiers: (productId: string): Promise<{ tiers: any[] }> =>
+      apiFetch(`/api/price-tiers/${productId}`),
+    savePriceTiers: (productId: string, tiers: any[]): Promise<any> =>
+      apiFetch("/api/price-tiers", { method: "POST", body: JSON.stringify({ productId, tiers }) }),
+    deletePriceTiers: (productId: string): Promise<any> =>
+      apiFetch(`/api/price-tiers/${productId}`, { method: "DELETE" }),
+
+    // Bundles
+    getBundles: (): Promise<{ bundles: any[] }> => apiFetch("/api/bundles"),
+    getBundle: (id: string): Promise<any> => apiFetch(`/api/bundles/${id}`),
+    createBundle: (data: any): Promise<any> =>
+      apiFetch("/api/bundles", { method: "POST", body: JSON.stringify(data) }),
+    updateBundle: (id: string, data: any): Promise<any> =>
+      apiFetch(`/api/bundles/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    deleteBundle: (id: string): Promise<any> =>
+      apiFetch(`/api/bundles/${id}`, { method: "DELETE" }),
+
+    // Store Credit
+    searchUsersForCredit: (email: string): Promise<{ users: any[] }> =>
+      apiFetch(`/api/store-credit/admin/search?email=${encodeURIComponent(email)}`),
+    getUserCredit: (userId: string): Promise<any> =>
+      apiFetch(`/api/store-credit/admin/${userId}`),
+    addStoreCredit: (userId: string, amount: number, description: string): Promise<any> =>
+      apiFetch("/api/store-credit/admin/add", { method: "POST", body: JSON.stringify({ userId, amount, description }) }),
   },
 };
 

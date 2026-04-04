@@ -67,7 +67,9 @@ interface LowStockProduct {
   name: string;
   slug: string;
   stock: number;
+  lowStockAlert: number;
   price: number;
+  category: string | null;
 }
 
 /* ─── Constants ──────────────────────────────────────────── */
@@ -157,7 +159,7 @@ export default function AdminDashboard() {
     try {
       const [result, lowStockRes] = await Promise.all([
         api.admin.getDashboard() as unknown as DashboardData,
-        fetch("/api/admin/products?stock=low&limit=5").then((r) => r.ok ? r.json() : { products: [] }),
+        api.admin.getLowStockProducts(10).catch(() => ({ products: [], total: 0 })),
       ]);
       setData(result);
       setLowStockProducts(lowStockRes.products || []);
@@ -466,8 +468,9 @@ export default function AdminDashboard() {
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-[13px] font-medium text-gray-900">Low Stock</h2>
-                  <span className="text-[11px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">{lowStockProducts.length}</span>
+                  <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
+                  <h2 className="text-[13px] font-medium text-gray-900">Low Stock Alerts</h2>
+                  <span className="text-[11px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded font-medium">{lowStockProducts.length} product{lowStockProducts.length !== 1 ? "s" : ""} low on stock</span>
                 </div>
                 <Link href="/admin/inventory" className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
                   Manage <ArrowRight className="w-3 h-3" />
@@ -475,13 +478,19 @@ export default function AdminDashboard() {
               </div>
               <div className="divide-y divide-gray-50">
                 {lowStockProducts.map((p) => (
-                  <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <Link key={p.id} href={`/admin/products/${p.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
                     <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.stock === 0 ? "bg-red-400" : "bg-yellow-400"}`} />
-                    <p className="text-[13px] text-gray-700 truncate flex-1">{p.name}</p>
-                    <span className={`text-xs tabular-nums font-medium ${p.stock === 0 ? "text-red-500" : "text-gray-500"}`}>
-                      {p.stock === 0 ? "Out" : `${p.stock} left`}
-                    </span>
-                  </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] text-gray-700 truncate">{p.name}</p>
+                      {p.category && <p className="text-[11px] text-gray-400">{p.category}</p>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={`text-xs tabular-nums font-medium ${p.stock === 0 ? "text-red-500" : "text-yellow-600"}`}>
+                        {p.stock === 0 ? "Out of stock" : `${p.stock} left`}
+                      </span>
+                      <p className="text-[10px] text-gray-400">threshold: {p.lowStockAlert}</p>
+                    </div>
+                  </Link>
                 ))}
               </div>
             </div>

@@ -110,6 +110,46 @@ router.get("/", async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/admin/products/low-stock
+router.get("/low-stock", async (req: AuthRequest, res: Response) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+
+    // Prisma can't compare two columns, so fetch active products with
+    // low stock (heuristic ceiling) and filter in JS.
+    const products = await prisma.product.findMany({
+      where: {
+        status: "ACTIVE",
+        stock: { lte: 100 },
+      },
+      orderBy: { stock: "asc" },
+      include: {
+        category: { select: { name: true } },
+      },
+    });
+
+    const lowStockProducts = products
+      .filter((p) => p.stock <= p.lowStockAlert)
+      .slice(0, limit);
+
+    return res.json({
+      products: lowStockProducts.map((p) => ({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        stock: p.stock,
+        lowStockAlert: p.lowStockAlert,
+        price: p.price,
+        category: p.category?.name || null,
+      })),
+      total: lowStockProducts.length,
+    });
+  } catch (error) {
+    console.error("Admin low-stock products error:", error);
+    return res.status(500).json({ error: "Failed to fetch low stock products" });
+  }
+});
+
 // GET /api/admin/products/next-sku?categoryId=xxx
 router.get("/next-sku", async (req: AuthRequest, res: Response) => {
   try {

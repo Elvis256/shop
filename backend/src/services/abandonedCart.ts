@@ -21,15 +21,17 @@ const formatCurrency = (amount: number, currency: string): string => {
 interface CartItem {
   productId: string;
   productName: string;
+  productImage?: string;
   quantity: number;
   price: number;
 }
 
-const generateCartEmailHtml = (cart: { cartData: CartItem[]; cartValue: number; currency: string }, type: "reminder1" | "reminder2"): string => {
+const generateCartEmailHtml = (cart: { cartData: CartItem[]; cartValue: number; currency: string }, type: "reminder1" | "reminder2", recoveryUrl: string): string => {
   const items = cart.cartData;
   const subject = type === "reminder1" 
-    ? "You left something behind!" 
-    : "Your cart is about to expire";
+    ? "You left something behind! 🛒" 
+    : "Your cart is about to expire ⏰";
+  const baseUrl = process.env.BASE_URL || "http://localhost:3000";
   
   return `
 <!DOCTYPE html>
@@ -41,27 +43,28 @@ const generateCartEmailHtml = (cart: { cartData: CartItem[]; cartValue: number; 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f5f5f7; }
     .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
-    .header { background: #0071e3; color: white; padding: 30px; text-align: center; }
+    .header { background: #111; color: white; padding: 30px; text-align: center; }
     .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
     .content { padding: 40px 30px; }
     .content h2 { color: #1d1d1f; margin-bottom: 20px; }
     .content p { color: #86868b; line-height: 1.6; }
     .items { margin: 30px 0; }
-    .item { display: flex; padding: 15px 0; border-bottom: 1px solid #e5e5e5; }
-    .item-image { width: 80px; height: 80px; background: #f5f5f7; border-radius: 8px; margin-right: 15px; }
+    .item { display: flex; padding: 15px 0; border-bottom: 1px solid #e5e5e5; align-items: center; }
+    .item-image { width: 80px; height: 80px; background: #f5f5f7; border-radius: 8px; margin-right: 15px; object-fit: cover; flex-shrink: 0; }
+    .item-image-placeholder { width: 80px; height: 80px; background: #f5f5f7; border-radius: 8px; margin-right: 15px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 12px; }
     .item-details { flex: 1; }
     .item-name { font-weight: 500; color: #1d1d1f; margin-bottom: 5px; }
     .item-price { color: #86868b; }
     .total { text-align: right; padding: 20px 0; font-size: 18px; font-weight: 600; color: #1d1d1f; }
     .cta { text-align: center; padding: 20px 0; }
-    .cta a { display: inline-block; background: #0071e3; color: white; text-decoration: none; padding: 14px 40px; border-radius: 30px; font-weight: 500; }
+    .cta a { display: inline-block; background: #111; color: white; text-decoration: none; padding: 14px 40px; border-radius: 30px; font-weight: 500; font-size: 16px; }
     .footer { padding: 30px; text-align: center; color: #86868b; font-size: 12px; background: #f5f5f7; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>PleasureZone</h1>
+      <h1>🛒 ${subject}</h1>
     </div>
     <div class="content">
       <h2>${type === "reminder1" ? "Your cart misses you!" : "Last chance to complete your order"}</h2>
@@ -70,15 +73,23 @@ const generateCartEmailHtml = (cart: { cartData: CartItem[]; cartValue: number; 
         : "Your cart items are reserved but won't be for long. Complete your purchase now to avoid disappointment."}</p>
       
       <div class="items">
-        ${items.map((item: CartItem) => `
+        ${items.map((item: CartItem) => {
+          const imgUrl = item.productImage 
+            ? (item.productImage.startsWith("http") ? item.productImage : `${baseUrl}${item.productImage}`)
+            : null;
+          return `
           <div class="item">
-            <div class="item-image"></div>
+            ${imgUrl 
+              ? `<img src="${imgUrl}" alt="${item.productName}" class="item-image" />`
+              : `<div class="item-image-placeholder">No image</div>`
+            }
             <div class="item-details">
               <div class="item-name">${item.productName}</div>
               <div class="item-price">Qty: ${item.quantity} × ${formatCurrency(item.price, cart.currency || "UGX")}</div>
             </div>
           </div>
-        `).join("")}
+        `;
+        }).join("")}
       </div>
       
       <div class="total">
@@ -86,7 +97,7 @@ const generateCartEmailHtml = (cart: { cartData: CartItem[]; cartValue: number; 
       </div>
       
       <div class="cta">
-        <a href="${process.env.BASE_URL || "http://localhost:3000"}/cart">Complete Your Order</a>
+        <a href="${recoveryUrl}">Complete Your Order →</a>
       </div>
       
       ${type === "reminder2" ? `
@@ -96,7 +107,7 @@ const generateCartEmailHtml = (cart: { cartData: CartItem[]; cartValue: number; 
       ` : ""}
     </div>
     <div class="footer">
-      <p>You're receiving this because you have items in your PleasureZone cart.</p>
+      <p>You're receiving this because you have items in your cart.</p>
       <p>Discreet billing and shipping guaranteed.</p>
     </div>
   </div>
@@ -174,11 +185,12 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
       if (!cart.email) continue;
       try {
         const cartItems = cart.cartData as unknown as CartItem[];
+        const recoveryUrl = `${process.env.BASE_URL || "http://localhost:3000"}/cart?recover=${cart.cartId}`;
         const html = generateCartEmailHtml({
           cartData: cartItems,
           cartValue: Number(cart.cartValue),
           currency: cart.currency,
-        }, "reminder1");
+        }, "reminder1", recoveryUrl);
         
         await transporter.sendMail({
           from: `"PleasureZone" <${process.env.SMTP_FROM || "noreply@pleasurezone.ug"}>`,
@@ -214,11 +226,12 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
       if (!cart.email) continue;
       try {
         const cartItems = cart.cartData as unknown as CartItem[];
+        const recoveryUrl = `${process.env.BASE_URL || "http://localhost:3000"}/cart?recover=${cart.cartId}`;
         const html = generateCartEmailHtml({
           cartData: cartItems,
           cartValue: Number(cart.cartValue),
           currency: cart.currency,
-        }, "reminder2");
+        }, "reminder2", recoveryUrl);
         
         await transporter.sendMail({
           from: `"PleasureZone" <${process.env.SMTP_FROM || "noreply@pleasurezone.ug"}>`,
