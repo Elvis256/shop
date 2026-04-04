@@ -164,6 +164,9 @@ router.put("/:cartId/items/:itemId", async (req: Request, res: Response) => {
     return res.json({ success: true });
   } catch (error) {
     console.error("Update cart item error:", error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid quantity", details: error.errors });
+    }
     return res.status(500).json({ error: "Failed to update cart item" });
   }
 });

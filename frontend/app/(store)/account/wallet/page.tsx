@@ -32,6 +32,10 @@ export default function WalletPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    document.title = "Store Credit | My Account";
+  }, []);
+
+  useEffect(() => {
     if (!isLoading && !user) {
       router.push("/auth/login");
     }
@@ -80,7 +84,7 @@ export default function WalletPage() {
     <Section>
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center gap-4 mb-8">
-          <Link href="/account" className="btn-icon">
+          <Link href="/account" className="btn-icon" aria-label="Back to account">
             <ChevronLeft className="w-5 h-5" />
           </Link>
           <h1>Store Credit</h1>

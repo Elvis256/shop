@@ -10,7 +10,8 @@ router.get("/", async (req: Request, res: Response) => {
     const { category, minPrice, maxPrice, sort, sortBy, sortOrder, status, limit = "20", page = "1", flashSale, search } = req.query;
 
     const take = Math.min(parseInt(limit as string, 10) || 20, 100);
-    const skip = (Math.max(parseInt(page as string, 10) || 1, 1) - 1) * take;
+    const pageNum = Math.max(parseInt(page as string, 10) || 1, 1);
+    const skip = (pageNum - 1) * take;
 
     const where: any = {};
 
@@ -36,8 +37,14 @@ router.get("/", async (req: Request, res: Response) => {
 
     if (minPrice || maxPrice) {
       where.price = {};
-      if (minPrice) where.price.gte = parseFloat(minPrice as string);
-      if (maxPrice) where.price.lte = parseFloat(maxPrice as string);
+      if (minPrice) {
+        const min = parseFloat(minPrice as string);
+        if (!isNaN(min) && min >= 0) where.price.gte = min;
+      }
+      if (maxPrice) {
+        const max = parseFloat(maxPrice as string);
+        if (!isNaN(max) && max >= 0) where.price.lte = max;
+      }
     }
 
     let orderBy: any = {};
@@ -112,7 +119,7 @@ router.get("/", async (req: Request, res: Response) => {
       })),
       pagination: {
         total,
-        page: Math.floor(skip / take) + 1,
+        page: pageNum,
         limit: take,
         totalPages: Math.ceil(total / take),
       },

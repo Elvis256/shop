@@ -1,14 +1,29 @@
 import nodemailer from "nodemailer";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || "587"),
-  secure: parseInt(process.env.SMTP_PORT || "587") === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+function isSmtpConfigured(): boolean {
+  const user = process.env.SMTP_USER || "";
+  const pass = process.env.SMTP_PASS || "";
+  if (!user || !pass) return false;
+  if (user.includes("your-") || user.includes("change_this") || pass.includes("your-") || pass.includes("change_this")) return false;
+  return true;
+}
+
+const smtpReady = isSmtpConfigured();
+if (!smtpReady) {
+  console.warn("⚠️  Email sending disabled: SMTP credentials not configured (placeholder values detected)");
+}
+
+const transporter = smtpReady
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || "587"),
+      secure: parseInt(process.env.SMTP_PORT || "587") === 465,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    })
+  : null;
 
 type EmailTemplate = "welcome" | "order-received" | "order-confirmation" | "order-shipped" | "order-processing" | "order-delivered" | "order-cancelled" | "password-reset";
 
@@ -158,6 +173,11 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
 
 export async function sendEmail({ to, template, data }: SendEmailOptions): Promise<boolean> {
   try {
+    if (!transporter) {
+      console.log(`📧 Email sending skipped (${template} to ${to}): SMTP not configured`);
+      return false;
+    }
+
     const emailTemplate = templates[template];
     if (!emailTemplate) {
       throw new Error(`Template ${template} not found`);

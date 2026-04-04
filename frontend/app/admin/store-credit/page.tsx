@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { api } from "@/lib/api";
 import {
   Search,
@@ -38,6 +38,7 @@ interface Transaction {
 }
 
 export default function StoreCreditPage() {
+  useEffect(() => { document.title = "Store Credit | Admin"; }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<UserResult[]>([]);
@@ -123,7 +124,7 @@ export default function StoreCreditPage() {
         <div className="p-4 border border-red-200 rounded-lg flex items-center gap-3 bg-white">
           <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
           <p className="text-red-700 text-sm flex-1">{error}</p>
-          <button onClick={() => setError(null)}><X className="w-4 h-4 text-gray-400" /></button>
+          <button onClick={() => setError(null)} aria-label="Dismiss error"><X className="w-4 h-4 text-gray-400" /></button>
         </div>
       )}
       {success && (

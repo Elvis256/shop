@@ -109,21 +109,28 @@ async function syncCJPricesAndStock(): Promise<void> {
   let updated = 0;
   let errors = 0;
 
+  // Fetch USD→UGX exchange rate for price conversion
+  let usdToUgx = 3700;
+  try {
+    const usdCurrency = await prisma.currency.findUnique({ where: { code: "USD" } });
+    if (usdCurrency) usdToUgx = Math.round(1 / Number(usdCurrency.exchangeRate));
+  } catch {}
+
   for (const product of products) {
     try {
       const detail = await getProductDetail(product.cjProductId!);
       const oldCost = Number(product.cjCost);
-      const newCost = detail.price;
+      const newCostUgx = Math.round(detail.price * usdToUgx);
       const dataUpdate: any = { lastSyncedAt: new Date() };
 
-      if (Math.abs(oldCost - newCost) > 0.01 && product.markupType && product.markupValue) {
-        dataUpdate.cjCost = newCost;
-        dataUpdate.price = calculateSellingPrice(
-          newCost,
+      if (Math.abs(oldCost - newCostUgx) > 1 && product.markupType && product.markupValue) {
+        dataUpdate.cjCost = newCostUgx;
+        dataUpdate.price = Math.round(calculateSellingPrice(
+          newCostUgx,
           product.markupType as "PERCENTAGE" | "FIXED",
           Number(product.markupValue),
-        );
-        console.log(`[CJ-Sync] Price changed for "${product.name}": $${oldCost} → $${newCost}`);
+        ));
+        console.log(`[CJ-Sync] Price changed for "${product.name}": UGX ${oldCost} → UGX ${newCostUgx}`);
       }
 
       const newStock = detail.variants.reduce((sum, v) => sum + v.variantStock, 0);
@@ -134,8 +141,18 @@ async function syncCJPricesAndStock(): Promise<void> {
       await prisma.product.update({ where: { id: product.id }, data: dataUpdate });
       if (Object.keys(dataUpdate).length > 1) updated++;
     } catch (error: any) {
-      errors++;
-      console.error(`[CJ-Sync] Error for "${product.name}":`, error.message);
+      const msg = error.message || "";
+      // Product removed from CJ shelves — disable auto-sync to stop retries
+      if (msg.includes("1602002") || msg.includes("removed from shelves") || msg.includes("Product not found")) {
+        console.warn(`[CJ-Sync] Product "${product.name}" removed from CJ. Disabling auto-sync.`);
+        await prisma.product.update({
+          where: { id: product.id },
+          data: { cjAutoSync: false, status: "ARCHIVED" },
+        }).catch(() => {});
+      } else {
+        errors++;
+        console.error(`[CJ-Sync] Error for "${product.name}":`, msg);
+      }
     }
     await new Promise((r) => setTimeout(r, 1000));
   }

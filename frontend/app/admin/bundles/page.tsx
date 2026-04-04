@@ -46,6 +46,8 @@ function fmt(amount: number) {
 }
 
 export default function BundlesPage() {
+  useEffect(() => { document.title = "Product Bundles | Admin"; }, []);
+
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -206,7 +208,7 @@ export default function BundlesPage() {
         <div className="p-4 border border-red-200 rounded-lg flex items-center gap-3 bg-white">
           <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
           <p className="text-red-700 text-sm flex-1">{error}</p>
-          <button onClick={() => setError(null)}><X className="w-4 h-4 text-gray-400" /></button>
+          <button onClick={() => setError(null)} aria-label="Dismiss error"><X className="w-4 h-4 text-gray-400" /></button>
         </div>
       )}
       {success && (
@@ -320,6 +322,7 @@ export default function BundlesPage() {
                       type="button"
                       onClick={() => removeProduct(item.productId)}
                       className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                      aria-label={`Remove ${item.productName}`}
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -376,13 +379,14 @@ export default function BundlesPage() {
                   <button
                     onClick={() => toggleActive(bundle)}
                     className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                    title={bundle.isActive ? "Deactivate" : "Activate"}
+                    aria-label={bundle.isActive ? "Deactivate bundle" : "Activate bundle"}
                   >
                     {bundle.isActive ? <ToggleRight className="w-5 h-5 text-emerald-600" /> : <ToggleLeft className="w-5 h-5" />}
                   </button>
                   <Link
                     href={`/admin/bundles/${bundle.id}`}
                     className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                    aria-label={`Edit ${bundle.name}`}
                   >
                     <Edit2 className="w-4 h-4" />
                   </Link>
@@ -390,6 +394,7 @@ export default function BundlesPage() {
                     onClick={() => handleDelete(bundle.id)}
                     disabled={deleting === bundle.id}
                     className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                    aria-label={`Delete ${bundle.name}`}
                   >
                     {deleting === bundle.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   </button>

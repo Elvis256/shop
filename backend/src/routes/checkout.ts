@@ -21,7 +21,7 @@ const CheckoutSchema = z.object({
   })).optional(),
   currency: z.string().default("UGX"),
   amount: z.number().positive(),
-  shipping: z.number().default(0),
+  shipping: z.number().min(0).default(0),
   paymentMethod: z.enum(["card", "mobile_money", "paypal", "cod"]),
   mobileMoney: z
     .object({
