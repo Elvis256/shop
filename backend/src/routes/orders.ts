@@ -219,6 +219,83 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// POST /api/orders/:id/reorder - Re-add order items to cart
+router.post("/:id/reorder", authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Verify ownership
+    if (order.userId !== req.user!.id && order.customerEmail !== req.user!.email) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+
+    // Get or create user's cart
+    let cart = await prisma.cart.findUnique({ where: { userId: req.user!.id } });
+    if (!cart) {
+      cart = await prisma.cart.create({ data: { userId: req.user!.id } });
+    }
+
+    // Add each order item to the cart
+    for (const item of order.items) {
+      await prisma.cartItem.upsert({
+        where: { cartId_productId: { cartId: cart.id, productId: item.productId } },
+        update: { quantity: { increment: item.quantity } },
+        create: { cartId: cart.id, productId: item.productId, quantity: item.quantity },
+      });
+    }
+
+    // Return updated cart
+    const updatedCart = await prisma.cart.findUnique({
+      where: { id: cart.id },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                price: true,
+                currency: true,
+                stock: true,
+                images: { take: 1, orderBy: { position: "asc" } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return res.json({
+      message: "Items added to cart",
+      cart: {
+        id: updatedCart!.id,
+        items: updatedCart!.items.map((ci) => ({
+          id: ci.id,
+          productId: ci.productId,
+          quantity: ci.quantity,
+          product: {
+            ...ci.product,
+            imageUrl: ci.product.images[0]?.url || null,
+          },
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Reorder error:", error);
+    return res.status(500).json({ error: "Failed to reorder" });
+  }
+});
+
 // POST /api/orders/:id/cancel - Customer cancels their own order
 router.post("/:id/cancel", authenticate, async (req: AuthRequest, res: Response) => {
   try {

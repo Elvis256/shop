@@ -20,6 +20,7 @@ type ProductCardProps = {
   category?: string;
   inStock?: boolean;
   stock?: number;
+  lowStockThreshold?: number;
   isNew?: boolean;
   isBestseller?: boolean;
   badgeText?: string;
@@ -37,7 +38,9 @@ export default function ProductCard({
   slug,
   imageUrl,
   category,
+  stock,
   inStock = true,
+  lowStockThreshold = 5,
   isNew,
   isBestseller,
   badgeText,
@@ -236,6 +239,13 @@ export default function ProductCard({
             </span>
           )}
         </div>
+
+        {/* Low stock badge */}
+        {inStock && stock != null && stock > 0 && stock <= lowStockThreshold && (
+          <span className="mt-1.5 inline-flex items-center text-xs font-medium text-orange-700 bg-orange-50 px-2 py-0.5 rounded-md">
+            Only {stock} left!
+          </span>
+        )}
       </div>
     </div>
   );

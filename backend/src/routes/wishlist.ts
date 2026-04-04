@@ -122,11 +122,36 @@ router.delete("/remove-pin", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// GET /api/wishlist
-router.get("/", async (req: AuthRequest, res: Response) => {
+// GET /api/wishlist/collections — Get list of user's collection names
+router.get("/collections", async (req: AuthRequest, res: Response) => {
   try {
     const items = await prisma.wishlistItem.findMany({
       where: { userId: req.user!.id },
+      select: { collectionName: true },
+      distinct: ["collectionName"],
+      orderBy: { collectionName: "asc" },
+    });
+
+    return res.json({
+      collections: items.map((item) => item.collectionName),
+    });
+  } catch (error) {
+    console.error("Get wishlist collections error:", error);
+    return res.status(500).json({ error: "Failed to fetch collections" });
+  }
+});
+
+// GET /api/wishlist
+router.get("/", async (req: AuthRequest, res: Response) => {
+  try {
+    const collection = req.query.collection as string | undefined;
+    const where: any = { userId: req.user!.id };
+    if (collection) {
+      where.collectionName = collection;
+    }
+
+    const items = await prisma.wishlistItem.findMany({
+      where,
       include: {
         product: {
           select: {
@@ -149,6 +174,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       items: items.map((item) => ({
         id: item.id,
         addedAt: item.createdAt,
+        collectionName: item.collectionName,
         product: {
           ...item.product,
           imageUrl: item.product.images[0]?.url || null,
@@ -167,6 +193,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = z.object({ productId: z.string() }).parse(req.body);
+    const collectionName = (req.body.collectionName as string) || "Wishlist";
 
     // Check if product exists
     const product = await prisma.product.findUnique({ where: { id: productId } });
@@ -174,9 +201,15 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    // Check if already in wishlist
+    // Check if already in wishlist (same collection)
     const existing = await prisma.wishlistItem.findUnique({
-      where: { userId_productId: { userId: req.user!.id, productId } },
+      where: {
+        userId_productId_collectionName: {
+          userId: req.user!.id,
+          productId,
+          collectionName,
+        },
+      },
     });
 
     if (existing) {
@@ -184,7 +217,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const item = await prisma.wishlistItem.create({
-      data: { userId: req.user!.id, productId },
+      data: { userId: req.user!.id, productId, collectionName },
     });
 
     return res.status(201).json({ message: "Added to wishlist", id: item.id });

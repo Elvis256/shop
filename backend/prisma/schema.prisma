@@ -18,6 +18,9 @@ model User {
   emailVerified Boolean  @default(false)
   isBlocked     Boolean  @default(false)
   wishlistPin   String?  // 4-6 digit PIN for wishlist privacy
+  googleId      String?  @unique
+  avatarUrl     String?
+  smsOptIn      Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
@@ -37,6 +40,11 @@ model User {
   referredBy        Referral?        @relation("ReferredUser")
   twoFactorAuth     TwoFactorAuth?
   affiliate         Affiliate?
+  backInStockSubs   BackInStockSub[]
+  productQuestions  ProductQuestion[]
+  productAnswers    ProductAnswer[]
+  storeCredit       StoreCredit?
+  reviewImages      ReviewImage[]
 }
 
 model RefreshToken {
@@ -178,6 +186,10 @@ model Product {
   stockAlerts      StockAlert[]
   aliexpressOrders AliExpressOrder[]
   cjOrders         CJOrder[]
+  backInStockSubs  BackInStockSub[]
+  questions        ProductQuestion[]
+  bundleItems      BundleItem[]
+  priceTiers       PriceTier[]
 
   @@index([categoryId])
   @@index([status])
@@ -360,14 +372,15 @@ model Payment {
 }
 
 model WishlistItem {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  collectionName String   @default("Wishlist")
+  createdAt      DateTime @default(now())
 
-  @@unique([userId, productId])
+  @@unique([userId, productId, collectionName])
 }
 
 model Review {
@@ -381,10 +394,24 @@ model Review {
   content   String?  @db.Text
   verified  Boolean  @default(false)
   approved  Boolean  @default(false)
+  images    ReviewImage[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([productId, userId])
+}
+
+model ReviewImage {
+  id        String   @id @default(cuid())
+  reviewId  String
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url       String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([reviewId])
 }
 
 model Coupon {
@@ -1229,4 +1256,106 @@ model CJOrder {
   @@index([orderId])
   @@index([cjOrderId])
   @@index([status])
+}
+
+// ─── Back-in-Stock Notifications ──────────────────────────────────────────────
+model BackInStockSub {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String
+  notified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([productId, email])
+  @@index([productId, notified])
+}
+
+// ─── Product Q&A ──────────────────────────────────────────────────────────────
+model ProductQuestion {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question  String   @db.Text
+  answers   ProductAnswer[]
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+}
+
+model ProductAnswer {
+  id         String   @id @default(cuid())
+  questionId String
+  question   ProductQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answer     String   @db.Text
+  isOfficial Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([questionId])
+}
+
+// ─── Product Bundles ──────────────────────────────────────────────────────────
+model ProductBundle {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  discount    Decimal  @db.Decimal(5, 2) // percentage discount
+  isActive    Boolean  @default(true)
+  items       BundleItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BundleItem {
+  id        String   @id @default(cuid())
+  bundleId  String
+  bundle    ProductBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+
+  @@unique([bundleId, productId])
+}
+
+// ─── Bulk / Tiered Pricing ────────────────────────────────────────────────────
+model PriceTier {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  minQty    Int
+  discount  Decimal  @db.Decimal(5, 2) // percentage off
+  label     String?  // e.g. "Buy 3+ save 10%"
+
+  @@unique([productId, minQty])
+  @@index([productId])
+}
+
+// ─── Store Credit / Wallet ────────────────────────────────────────────────────
+model StoreCredit {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Decimal  @default(0) @db.Decimal(10, 2)
+  transactions StoreCreditTx[]
+  updatedAt    DateTime @updatedAt
+}
+
+model StoreCreditTx {
+  id            String   @id @default(cuid())
+  storeCreditId String
+  storeCredit   StoreCredit @relation(fields: [storeCreditId], references: [id], onDelete: Cascade)
+  amount        Decimal  @db.Decimal(10, 2) // positive = credit, negative = debit
+  type          String   // REFUND, MANUAL, PURCHASE, REDEMPTION
+  description   String?
+  orderId       String?
+  createdAt     DateTime @default(now())
+
+  @@index([storeCreditId])
 }

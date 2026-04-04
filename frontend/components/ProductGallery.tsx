@@ -2,11 +2,12 @@
 
 import { useState, useRef, useCallback } from "react";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, ZoomIn, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ZoomIn, X, Play } from "lucide-react";
 
 type ProductGalleryProps = {
   images: string[];
   productName?: string;
+  videoUrl?: string;
 };
 
 function PlaceholderImage() {
@@ -20,15 +21,28 @@ function PlaceholderImage() {
   );
 }
 
-export default function ProductGallery({ images, productName = "Product" }: ProductGalleryProps) {
+export default function ProductGallery({ images, productName = "Product", videoUrl }: ProductGalleryProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [showVideo, setShowVideo] = useState(false);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
 
   const displayImages = images.length > 0 ? images : [];
-  const hasMultiple = displayImages.length > 1;
+  const hasMultiple = displayImages.length > 1 || !!videoUrl;
+
+  // Parse YouTube URL to get embed URL
+  const getYouTubeEmbedUrl = (url: string): string | null => {
+    const match = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    return match ? `https://www.youtube.com/embed/${match[1]}?autoplay=1` : null;
+  };
+
+  const isYouTube = videoUrl ? !!getYouTubeEmbedUrl(videoUrl) : false;
+  const youTubeEmbedUrl = videoUrl ? getYouTubeEmbedUrl(videoUrl) : null;
+  const youTubeThumb = videoUrl && isYouTube
+    ? `https://img.youtube.com/vi/${videoUrl.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1]}/hqdefault.jpg`
+    : null;
 
   const handleImageError = useCallback((src: string) => {
     setFailedImages((prev) => new Set(prev).add(src));
@@ -63,13 +77,35 @@ export default function ProductGallery({ images, productName = "Product" }: Prod
 
   return (
     <div className="space-y-3">
-      {/* Main Image */}
+      {/* Main Image / Video */}
       <div
         className="relative aspect-square bg-gray-50 rounded-xl overflow-hidden group select-none"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        {currentSrc && !currentFailed ? (
+        {showVideo && videoUrl ? (
+          <div className="absolute inset-0 bg-black flex items-center justify-center">
+            {youTubeEmbedUrl ? (
+              <iframe
+                src={youTubeEmbedUrl}
+                className="w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title={`${productName} video`}
+              />
+            ) : (
+              <video src={videoUrl} controls autoPlay className="w-full h-full object-contain">
+                Your browser does not support the video tag.
+              </video>
+            )}
+            <button
+              onClick={() => setShowVideo(false)}
+              className="absolute top-3 right-3 p-2 bg-white/80 backdrop-blur-sm rounded-lg shadow hover:bg-white z-10"
+            >
+              <X className="w-4 h-4 text-gray-700" />
+            </button>
+          </div>
+        ) : currentSrc && !currentFailed ? (
           <>
             <Image
               src={currentSrc}
@@ -130,9 +166,9 @@ export default function ProductGallery({ images, productName = "Product" }: Prod
           {displayImages.map((img, idx) => (
             <button
               key={idx}
-              onClick={() => setSelectedIndex(idx)}
+              onClick={() => { setSelectedIndex(idx); setShowVideo(false); }}
               className={`relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
-                idx === selectedIndex
+                idx === selectedIndex && !showVideo
                   ? "border-primary ring-1 ring-primary/30"
                   : "border-gray-200 hover:border-gray-400 opacity-70 hover:opacity-100"
               }`}
@@ -155,6 +191,26 @@ export default function ProductGallery({ images, productName = "Product" }: Prod
               )}
             </button>
           ))}
+          {/* Video thumbnail */}
+          {videoUrl && (
+            <button
+              onClick={() => setShowVideo(true)}
+              className={`relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
+                showVideo
+                  ? "border-primary ring-1 ring-primary/30"
+                  : "border-gray-200 hover:border-gray-400 opacity-70 hover:opacity-100"
+              }`}
+            >
+              {youTubeThumb ? (
+                <Image src={youTubeThumb} alt="Video" fill className="object-cover" sizes="64px" />
+              ) : (
+                <div className="w-full h-full bg-gray-100" />
+              )}
+              <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                <Play className="w-5 h-5 text-white fill-white" />
+              </div>
+            </button>
+          )}
         </div>
       )}
 

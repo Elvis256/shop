@@ -12,6 +12,11 @@ import { ProductSchema, BreadcrumbSchema } from "@/components/StructuredData";
 import VariantSelector from "@/components/VariantSelector";
 import RecentlyViewed, { useRecentlyViewed } from "@/components/RecentlyViewed";
 import RelatedProducts from "@/components/RelatedProducts";
+import SocialShare from "@/components/SocialShare";
+import NotifyMe from "@/components/NotifyMe";
+import ProductQA from "@/components/ProductQA";
+import PriceTiers from "@/components/PriceTiers";
+import ProductBundles from "@/components/ProductBundles";
 import {
   Star, Heart, Shield, Truck, Package, ArrowLeft, Share2, Check, Eye,
   Users, ShoppingBag, Copy, MessageCircle, Clock, Tag, Zap, RotateCcw,
@@ -65,6 +70,7 @@ interface Product {
   flashSalePrice?: number;
   flashSaleEndsAt?: string;
   tags?: string[];
+  videoUrl?: string;
 }
 
 /** Compute estimated delivery date string */
@@ -332,7 +338,7 @@ export default function ProductPageClient() {
               )}
             </div>
             <div className="bg-white rounded-lg border sticky top-20">
-              <ProductGallery images={images} productName={product.name} />
+              <ProductGallery images={images} productName={product.name} videoUrl={product.videoUrl} />
             </div>
           </div>
 
@@ -410,6 +416,11 @@ export default function ProductPageClient() {
             {/* Title */}
             <h1 className="text-2xl lg:text-3xl font-semibold text-gray-900 mb-2">{product.name}</h1>
 
+            {/* Social Share */}
+            <div className="mb-3">
+              <SocialShare url={shareUrl} title={shareText} image={product.imageUrl || undefined} />
+            </div>
+
             {/* Rating */}
             <div className="flex items-center gap-3 mb-4">
               <div className="flex items-center gap-0.5">
@@ -463,6 +474,9 @@ export default function ProductPageClient() {
                 </div>
               )}
             </div>
+
+            {/* Price Tiers */}
+            <PriceTiers productId={product.id} />
 
             {/* Stock Status */}
             <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -537,6 +551,12 @@ export default function ProductPageClient() {
 
             {/* Add to Cart + Buy Now */}
             <div ref={addToCartRef} className="mb-4 space-y-2.5">
+              {isLowStock && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-100 rounded-lg text-sm text-orange-700 animate-pulse">
+                  <Zap className="w-4 h-4 shrink-0" />
+                  <span>Only <strong>{effectiveStock}</strong> left in stock — order soon!</span>
+                </div>
+              )}
               <AddToCartButton
                 product={{
                   id: product.id,
@@ -557,6 +577,9 @@ export default function ProductPageClient() {
                   <Zap className="w-4 h-4" />
                   Buy Now
                 </button>
+              )}
+              {effectiveStock <= 0 && (
+                <NotifyMe productId={product.id} />
               )}
             </div>
 
@@ -630,6 +653,12 @@ export default function ProductPageClient() {
             specifications={product.specifications}
           />
         </div>
+
+        {/* Q&A Section */}
+        <ProductQA productId={product.id} />
+
+        {/* Product Bundles */}
+        <ProductBundles productId={product.id} />
       </div>
 
       {/* Related Products */}

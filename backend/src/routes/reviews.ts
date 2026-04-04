@@ -26,6 +26,7 @@ router.get("/product/:productId", async (req: Request, res: Response) => {
         take,
         skip,
         include: {
+          images: true,
           user: { select: { name: true } },
         },
       }),
@@ -52,6 +53,7 @@ router.get("/product/:productId", async (req: Request, res: Response) => {
         content: r.content,
         verified: r.verified,
         author: r.user.name || "Anonymous",
+        images: r.images.map((img) => ({ id: img.id, url: img.url, position: img.position })),
         createdAt: r.createdAt,
       })),
       distribution,
@@ -76,6 +78,7 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       rating: z.number().int().min(1).max(5),
       title: z.string().max(100).optional(),
       content: z.string().max(2000).optional(),
+      images: z.array(z.string().url()).max(3).optional(),
     });
 
     const body = schema.parse(req.body);
@@ -113,6 +116,18 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
         approved: true, // Auto-approve for now; could add moderation
       },
     });
+
+    // Create review images if provided
+    if (body.images && body.images.length > 0) {
+      await prisma.reviewImage.createMany({
+        data: body.images.map((url, index) => ({
+          reviewId: review.id,
+          userId: req.user!.id,
+          url,
+          position: index,
+        })),
+      });
+    }
 
     // Update product rating
     const avgRating = await prisma.review.aggregate({
