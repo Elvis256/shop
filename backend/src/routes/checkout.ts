@@ -232,7 +232,7 @@ router.post("/create", async (req: Request, res: Response) => {
           ...reservations.map((r) => prisma.stockReservation.update({ where: { id: r.id }, data: { released: true } })),
         ]);
         const msg = flwErr.message?.includes("authorization key")
-          ? "Payment gateway not configured. Please contact support or try PayPal."
+          ? "Payment processing is temporarily unavailable. Please try PayPal or contact support."
           : "Payment initiation failed. Please try again or use a different method.";
         return res.status(400).json({ error: msg });
       }

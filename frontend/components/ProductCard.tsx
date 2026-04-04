@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import ProductImage from "@/components/ProductImage";
 import { Star, Heart, Plus, Check } from "lucide-react";
 import { useState } from "react";
@@ -49,6 +49,7 @@ export default function ProductCard({
   flashSaleEndsAt,
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false);
+  const router = useRouter();
   const { addItem } = useCart();
   const { showToast } = useToast();
   const { formatPrice } = useCurrency();
@@ -92,10 +93,16 @@ export default function ProductCard({
     showToast(added ? "Added to wishlist" : "Removed from wishlist", added ? "success" : "info");
   };
 
+  const productUrl = `/product/${slug}`;
+
+  const handleCardClick = () => {
+    router.push(productUrl);
+  };
+
   return (
-    <div className="group hover-lift">
+    <div className="group hover-lift cursor-pointer" onClick={handleCardClick} role="link" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && handleCardClick()}>
       {/* Image Container */}
-      <Link href={`/product/${slug}`} className="block relative">
+      <a href={productUrl} className="block relative" onClick={(e) => { e.preventDefault(); }}>
         <div className="aspect-[4/5] bg-surface-secondary rounded-24 overflow-hidden relative transition-all duration-500 group-hover:shadow-lg">
           <ProductImage
             src={imageUrl}
@@ -185,18 +192,16 @@ export default function ProductCard({
             </div>
           )}
         </div>
-      </Link>
+      </a>
 
       {/* Product Info */}
       <div className="mt-4 px-1">
         {category && (
           <p className="text-xs text-text-muted mb-1">{category}</p>
         )}
-        <Link href={`/product/${slug}`}>
-          <h3 className="text-sm font-medium text-text line-clamp-2 hover:text-primary transition-colors duration-200">
-            {name}
-          </h3>
-        </Link>
+        <h3 className="text-sm font-medium text-text line-clamp-2 hover:text-primary transition-colors duration-200">
+          {name}
+        </h3>
 
         {/* Rating */}
         <div className="flex items-center gap-1 mt-2">

@@ -209,8 +209,8 @@ router.post("/signup", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/affiliate/dashboard - Affiliate's own dashboard (by code)
-router.get("/dashboard/:code", async (req: Request, res: Response) => {
+// GET /api/affiliate/dashboard - Affiliate's own dashboard (authenticated)
+router.get("/dashboard/:code", authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const affiliate = await prisma.affiliate.findUnique({
       where: { code: req.params.code },
@@ -221,6 +221,12 @@ router.get("/dashboard/:code", async (req: Request, res: Response) => {
     });
 
     if (!affiliate) return res.status(404).json({ error: "Affiliate not found" });
+
+    // Verify the authenticated user owns this affiliate account
+    if (affiliate.userId !== req.user!.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
     if (affiliate.status !== "APPROVED") return res.status(403).json({ error: "Account not yet approved" });
 
     return res.json({
