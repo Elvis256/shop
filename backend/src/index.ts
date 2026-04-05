@@ -48,6 +48,7 @@ import browseTrackingRoutes from "./routes/browseTracking";
 import webhookEndpointsRoutes from "./routes/webhookEndpoints";
 import dailyDealRoutes from "./routes/dailyDeal";
 import socialRoutes from "./routes/social";
+import sellerRoutes from "./routes/seller";
 import developerApiRoutes from "./routes/developerApi";
 
 // Admin routes
@@ -69,6 +70,7 @@ import adminActivity from "./routes/adminActivity";
 import adminAuthRoutes from "./routes/adminAuth";
 import adminSocialRoutes from "./routes/adminSocial";
 import adminApiKeys from "./routes/admin/apiKeys";
+import adminSellers from "./routes/admin/sellers";
 import settingsRoutes from "./routes/settings";
 
 // Middleware
@@ -172,6 +174,7 @@ app.use("/api/browse", browseTrackingRoutes);
 app.use("/api/webhooks/endpoints", webhookEndpointsRoutes);
 app.use("/api/daily-deal", dailyDealRoutes);
 app.use("/api/social", socialRoutes);
+app.use("/api/seller", sellerRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);
@@ -192,6 +195,7 @@ app.use("/api/admin/activity", adminActivity);
 app.use("/api/admin/auth", adminAuthRoutes);
 app.use("/api/admin/social", adminSocialRoutes);
 app.use("/api/admin/api-keys", adminApiKeys);
+app.use("/api/admin/sellers", adminSellers);
 app.use("/api/settings", settingsRoutes);
 
 // Health check

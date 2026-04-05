@@ -180,6 +180,16 @@ export async function requireAdmin(req: AuthRequest, res: Response, next: NextFu
   next();
 }
 
+export async function requireSeller(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  if (req.user.role !== "SELLER" && req.user.role !== "ADMIN") {
+    return res.status(403).json({ error: "Seller access required" });
+  }
+  next();
+}
+
 export async function requireRole(roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
