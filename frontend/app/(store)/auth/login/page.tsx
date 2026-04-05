@@ -101,6 +101,8 @@ function LoginForm() {
         redirectTo = explicitRedirect;
       } else if (userRole === "ADMIN" || userRole === "STAFF" || userRole === "MANAGER") {
         redirectTo = "/admin";
+      } else if (userRole === "SELLER") {
+        redirectTo = "/seller";
       }
       
       await login(email, password).catch(() => {});
@@ -137,6 +139,8 @@ function LoginForm() {
         redirectTo = explicitRedirect;
       } else if (userRole === "ADMIN" || userRole === "STAFF" || userRole === "MANAGER") {
         redirectTo = "/admin";
+      } else if (userRole === "SELLER") {
+        redirectTo = "/seller";
       }
       router.push(redirectTo);
       // Reload to pick up new auth state

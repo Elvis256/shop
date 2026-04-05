@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2, Lock, Store, UserPlus } from "lucide-react";
-import { api } from "@/lib/api";
 
 export default function VendorLoginPage() {
   const [email, setEmail] = useState("");
@@ -21,13 +20,33 @@ export default function VendorLoginPage() {
     setLoading(true);
 
     try {
-      const response = await api.login(email, password);
-      const role = response.user?.role;
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+      
+      // Get CSRF token
+      let csrfToken: string | null = null;
+      const match = document.cookie.match(/csrf_token=([^;]+)/);
+      if (match) {
+        csrfToken = match[1];
+      } else {
+        const csrfRes = await fetch(`${API_URL}/api/csrf-token`, { credentials: "include" });
+        const csrfData = await csrfRes.json();
+        csrfToken = csrfData.csrfToken;
+      }
 
-      if (role !== "SELLER") {
-        setError("This account is not registered as a vendor. Please apply to become a seller first.");
-        setLoading(false);
-        return;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrfToken) headers["x-csrf-token"] = csrfToken;
+
+      const res = await fetch(`${API_URL}/api/seller/auth/login`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Login failed");
       }
 
       window.location.href = "/seller";

@@ -33,11 +33,12 @@ export interface AuthRequest extends Request {
     id: string;
     email: string;
     role: string;
+    portal?: string;
   };
 }
 
 // Generate short-lived access token (15 min)
-export function generateToken(payload: { id: string; email: string; role: string }): string {
+export function generateToken(payload: { id: string; email: string; role: string; portal?: string }): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "15m" } as jwt.SignOptions);
 }
 
@@ -46,9 +47,9 @@ export function generateRefreshToken(): string {
   return crypto.randomBytes(64).toString("hex");
 }
 
-export function verifyToken(token: string): { id: string; email: string; role: string } | null {
+export function verifyToken(token: string): { id: string; email: string; role: string; portal?: string } | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as { id: string; email: string; role: string };
+    return jwt.verify(token, JWT_SECRET) as { id: string; email: string; role: string; portal?: string };
   } catch {
     return null;
   }
@@ -139,7 +140,7 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
       return res.status(401).json({ error: "User not found" });
     }
 
-    req.user = user;
+    req.user = { ...user, portal: decoded.portal };
     next();
   } catch (error) {
     return res.status(401).json({ error: "Authentication failed" });
@@ -177,6 +178,9 @@ export async function requireAdmin(req: AuthRequest, res: Response, next: NextFu
   if (req.user.role !== "ADMIN" && req.user.role !== "MANAGER") {
     return res.status(403).json({ error: "Admin access required" });
   }
+  if (req.user.portal && req.user.portal !== "admin") {
+    return res.status(403).json({ error: "Admin portal access required. Please login at the admin portal." });
+  }
   next();
 }
 
@@ -184,10 +188,40 @@ export async function requireSeller(req: AuthRequest, res: Response, next: NextF
   if (!req.user) {
     return res.status(401).json({ error: "Authentication required" });
   }
-  if (req.user.role !== "SELLER" && req.user.role !== "ADMIN") {
+  if (req.user.role !== "SELLER") {
     return res.status(403).json({ error: "Seller access required" });
   }
+  if (req.user.portal && req.user.portal !== "seller") {
+    return res.status(403).json({ error: "Seller portal access required. Please login at the vendor centre." });
+  }
   next();
+}
+
+export function requirePermission(...permissions: string[]) {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user) return res.status(401).json({ error: "Authentication required" });
+    
+    // ADMIN always has all permissions
+    if (req.user.role === "ADMIN") return next();
+    
+    // Check if user's role has the required permissions
+    const rolePermissions = await prisma.rolePermission.findMany({
+      where: {
+        role: req.user.role as any,
+        permission: { name: { in: permissions } },
+        granted: true,
+      },
+      include: { permission: true },
+    });
+    
+    const grantedPerms = rolePermissions.map(rp => rp.permission.name);
+    const hasAll = permissions.every(p => grantedPerms.includes(p));
+    
+    if (!hasAll) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    next();
+  };
 }
 
 export async function requireRole(roles: string[]) {

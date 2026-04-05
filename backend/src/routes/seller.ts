@@ -9,7 +9,7 @@ function requireSeller(req: AuthRequest, res: Response): boolean {
     res.status(401).json({ error: "Authentication required" });
     return false;
   }
-  if (req.user.role !== "SELLER" && req.user.role !== "ADMIN") {
+  if (req.user.role !== "SELLER") {
     res.status(403).json({ error: "Seller access required" });
     return false;
   }

@@ -171,7 +171,7 @@ router.post("/login", async (req, res: Response) => {
       },
     }).catch(() => {});
 
-    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role });
+    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal: "admin" });
     const refreshToken = await createRefreshToken(user.id);
 
     res.cookie("auth_token", accessToken, COOKIE_OPTIONS);

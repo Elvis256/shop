@@ -83,14 +83,7 @@ router.post("/register", async (req, res: Response) => {
     });
 
     // Generate tokens
-    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role });
-    const refreshToken = await createRefreshToken(user.id);
-
-    // Set httpOnly cookies
-    res.cookie("auth_token", accessToken, COOKIE_OPTIONS);
-    res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
-
-    // Create email verification token
+    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal: "customer" });
     const verificationToken = uuidv4();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
@@ -262,7 +255,7 @@ router.post("/login", async (req, res: Response) => {
     }
 
     // Generate tokens
-    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role });
+    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal: "customer" });
     const refreshToken = await createRefreshToken(user.id);
 
     // Set httpOnly cookies

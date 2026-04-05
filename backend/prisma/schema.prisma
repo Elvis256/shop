@@ -1731,3 +1731,26 @@ model SellerReview {
 
   @@index([sellerId])
 }
+
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  category    String
+  createdAt   DateTime @default(now())
+  
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  id           String   @id @default(cuid())
+  role         UserRole
+  permissionId String
+  granted      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  @@unique([role, permissionId])
+}

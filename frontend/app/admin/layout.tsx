@@ -47,6 +47,7 @@ import {
   Store,
   Percent,
   Banknote,
+  Shield,
 } from "lucide-react";
 
 interface NavItem {
@@ -133,6 +134,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/subscriptions", icon: Repeat, label: "Subscriptions" },
       { href: "/admin/webhooks", icon: Webhook, label: "Webhooks" },
       { href: "/admin/api-keys", icon: Key, label: "API Keys" },
+      { href: "/admin/permissions", icon: Shield, label: "Roles & Permissions" },
       { href: "/admin/settings", icon: Settings, label: "Settings" },
     ],
   },
