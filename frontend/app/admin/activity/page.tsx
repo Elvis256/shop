@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
+import { useState, useEffect, useMemo } from "react";
+import { apiFetch } from "@/lib/api";
 import {
   Activity,
   Search,
@@ -15,6 +15,8 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Plus,
   Edit2,
@@ -25,6 +27,7 @@ import {
   Download,
   RotateCcw,
   DollarSign,
+  TrendingUp,
 } from "lucide-react";
 
 interface ActivityLog {
@@ -58,8 +61,6 @@ interface ActivityStats {
     count: number;
   }>;
 }
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 const actionIcons: Record<string, typeof Plus> = {
   CREATE: Plus,
@@ -98,6 +99,7 @@ const entityIcons: Record<string, typeof Package> = {
 
 export default function ActivityPage() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [stats, setStats] = useState<ActivityStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -110,6 +112,8 @@ export default function ActivityPage() {
     endDate: "",
   });
   const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   const loadLogs = async () => {
     setLoading(true);
@@ -121,15 +125,10 @@ export default function ActivityPage() {
       if (filters.startDate) params.set("startDate", filters.startDate);
       if (filters.endDate) params.set("endDate", filters.endDate);
 
-      const res = await fetch(`${API_URL}/api/admin/activity?${params}`, {
-        credentials: "include",
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setLogs(data.logs || []);
-        setTotalPages(data.pagination?.totalPages || 1);
-      }
+      const data = await apiFetch("/api/admin/activity?" + params);
+      setLogs(data.logs || []);
+      setTotalPages(data.pagination?.totalPages || 1);
+      setTotalCount(data.pagination?.total || data.logs?.length || 0);
     } catch (error) {
       console.error("Failed to load activity logs:", error);
     } finally {
@@ -139,14 +138,8 @@ export default function ActivityPage() {
 
   const loadStats = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/admin/activity/stats`, {
-        credentials: "include",
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-      }
+      const data = await apiFetch("/api/admin/activity/stats");
+      setStats(data);
     } catch (error) {
       console.error("Failed to load stats:", error);
     }
@@ -159,6 +152,24 @@ export default function ActivityPage() {
   useEffect(() => {
     loadStats();
   }, []);
+
+  const filteredLogs = useMemo(() => {
+    if (!searchQuery.trim()) return logs;
+    const query = searchQuery.toLowerCase();
+    return logs.filter(
+      (log) =>
+        log.description.toLowerCase().includes(query) ||
+        log.user.email.toLowerCase().includes(query) ||
+        (log.user.name && log.user.name.toLowerCase().includes(query))
+    );
+  }, [logs, searchQuery]);
+
+  const topAction = useMemo(() => {
+    if (!stats?.byAction?.length) return null;
+    return stats.byAction.reduce((max, item) =>
+      item.count > max.count ? item : max
+    );
+  }, [stats]);
 
   const formatDate = (date: string) => {
     const d = new Date(date);
@@ -181,6 +192,12 @@ export default function ActivityPage() {
     });
   };
 
+  const formatMetadataValue = (value: unknown): string => {
+    if (value === null || value === undefined) return "—";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
+
   const clearFilters = () => {
     setFilters({
       action: "",
@@ -200,7 +217,14 @@ export default function ActivityPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Activity Log</h1>
-          <p className="text-gray-500 mt-1">Track all admin actions and changes</p>
+          <p className="text-gray-500 mt-1">
+            Track all admin actions and changes
+            {totalCount > 0 && (
+              <span className="ml-2 text-gray-400">
+                ({totalCount.toLocaleString()} total entries)
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -232,7 +256,7 @@ export default function ActivityPage() {
 
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border shadow-sm p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-100 rounded-lg">
@@ -266,8 +290,43 @@ export default function ActivityPage() {
               </div>
             </div>
           </div>
+          <div className="bg-white rounded-xl border shadow-sm p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <TrendingUp className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900">
+                  {topAction ? topAction.action.replace("_", " ") : "—"}
+                </p>
+                <p className="text-sm text-gray-500">
+                  Top Action{topAction ? ` (${topAction.count})` : ""}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search activity by description, user name, or email..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            ×
+          </button>
+        )}
+      </div>
 
       {/* Filters */}
       {showFilters && (
@@ -343,60 +402,108 @@ export default function ActivityPage() {
             <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
             <p className="text-gray-500">Loading activity...</p>
           </div>
-        ) : logs.length === 0 ? (
+        ) : filteredLogs.length === 0 ? (
           <div className="p-12 text-center">
             <Activity className="w-12 h-12 text-gray-300 mx-auto mb-4" />
             <h3 className="font-medium text-gray-900 mb-2">No activity found</h3>
             <p className="text-gray-500 text-sm">
-              {hasActiveFilters ? "Try adjusting your filters" : "Activity will appear here as actions are performed"}
+              {searchQuery
+                ? "No results match your search"
+                : hasActiveFilters
+                ? "Try adjusting your filters"
+                : "Activity will appear here as actions are performed"}
             </p>
           </div>
         ) : (
           <div className="divide-y">
-            {logs.map((log) => {
+            {searchQuery && (
+              <div className="px-6 py-2 bg-gray-50 text-sm text-gray-500">
+                Showing {filteredLogs.length} of {logs.length} loaded entries
+              </div>
+            )}
+            {filteredLogs.map((log) => {
               const ActionIcon = actionIcons[log.action] || Activity;
               const EntityIcon = entityIcons[log.entityType] || Package;
               const actionColor = actionColors[log.action] || "bg-gray-100 text-gray-700";
+              const isExpanded = expandedLogId === log.id;
+              const hasMetadata = log.metadata && Object.keys(log.metadata).length > 0;
 
               return (
-                <div key={log.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start gap-4">
-                    <div className={`p-2 rounded-lg ${actionColor}`}>
-                      <ActionIcon className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-gray-900">{log.description}</span>
-                        {log.entityId && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
-                            <EntityIcon className="w-3 h-3" />
-                            {log.entityType}
+                <div key={log.id} className="hover:bg-gray-50 transition-colors">
+                  <div
+                    className="px-6 py-4 cursor-pointer"
+                    onClick={() => hasMetadata && setExpandedLogId(isExpanded ? null : log.id)}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className={`p-2 rounded-lg ${actionColor}`}>
+                        <ActionIcon className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-gray-900">{log.description}</span>
+                          {log.entityId && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
+                              <EntityIcon className="w-3 h-3" />
+                              {log.entityType}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <User className="w-4 h-4" />
+                            {log.user.name || log.user.email}
                           </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-4 h-4" />
+                            {formatDate(log.createdAt)}
+                          </span>
+                          {log.ipAddress && (
+                            <span className="hidden sm:inline text-xs text-gray-400">
+                              IP: {log.ipAddress}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-right text-xs text-gray-400">
+                          {new Date(log.createdAt).toLocaleTimeString("en-US", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                        {hasMetadata && (
+                          <button className="text-gray-400 hover:text-gray-600">
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </button>
                         )}
                       </div>
-                      <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <User className="w-4 h-4" />
-                          {log.user.name || log.user.email}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-4 h-4" />
-                          {formatDate(log.createdAt)}
-                        </span>
-                        {log.ipAddress && (
-                          <span className="hidden sm:inline text-xs text-gray-400">
-                            IP: {log.ipAddress}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right text-xs text-gray-400">
-                      {new Date(log.createdAt).toLocaleTimeString("en-US", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
                     </div>
                   </div>
+                  {isExpanded && hasMetadata && (
+                    <div className="px-6 pb-4 pl-[4.5rem]">
+                      <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                        <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">
+                          Metadata
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {Object.entries(log.metadata!).map(([key, value]) => (
+                            <div key={key} className="flex gap-2">
+                              <span className="font-medium text-gray-600 whitespace-nowrap">
+                                {key}:
+                              </span>
+                              <span className="text-gray-800 truncate">
+                                {formatMetadataValue(value)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
