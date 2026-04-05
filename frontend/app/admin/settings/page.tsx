@@ -10,6 +10,7 @@ import {
   Mail,
   Bell,
   Shield,
+  Plug,
   Save,
   RefreshCw,
   Check,
@@ -63,6 +64,7 @@ const settingCategories = [
   { id: "email", label: "Email", icon: Mail, description: "Email templates & SMTP" },
   { id: "notifications", label: "Notifications", icon: Bell, description: "Alerts & channels" },
   { id: "security", label: "Security", icon: Shield, description: "Auth, sessions & access" },
+  { id: "integrations", label: "Integrations", icon: Plug, description: "Tracking, WhatsApp & SMS" },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -169,6 +171,41 @@ const settingDefinitions: Record<string, SettingDef> = {
   security_maintenance_mode: { label: "Maintenance Mode", type: "toggle", description: "Show a maintenance page to all visitors (admins can still access)", section: "Access Control" },
   security_maintenance_message: { label: "Maintenance Message", type: "textarea", description: "Displayed to visitors during maintenance", section: "Access Control", placeholder: "We're upgrading our store. Back soon!" },
   security_allowed_ips: { label: "Admin IP Whitelist", type: "text", description: "Comma-separated IPs allowed admin access (empty = all)", section: "Access Control", placeholder: "102.209.111.68, 129.205.9.99" },
+
+  // ── Integrations: Google Analytics ──
+  tracking_ga_enabled: { label: "Enable Google Analytics", type: "toggle", description: "Track visitor behavior with Google Analytics 4", section: "Google Analytics" },
+  tracking_ga_measurement_id: { label: "Measurement ID", type: "text", description: "Your GA4 Measurement ID (starts with G-)", section: "Google Analytics", placeholder: "G-XXXXXXXXXX" },
+
+  // ── Integrations: Facebook Pixel ──
+  tracking_fb_pixel_enabled: { label: "Enable Facebook Pixel", type: "toggle", description: "Track conversions and build audiences for Facebook ads", section: "Facebook Pixel" },
+  tracking_fb_pixel_id: { label: "Pixel ID", type: "text", description: "Your Facebook Pixel ID (15-16 digits)", section: "Facebook Pixel", placeholder: "1234567890123456" },
+  tracking_fb_conversions_api_enabled: { label: "Enable Conversions API", type: "toggle", description: "Server-side event tracking for better attribution (recommended)", section: "Facebook Pixel" },
+  tracking_fb_conversions_api_token: { label: "Conversions API Access Token", type: "password", description: "Generate in Facebook Events Manager → Settings → Conversions API", section: "Facebook Pixel" },
+
+  // ── Integrations: TikTok Pixel ──
+  tracking_tiktok_pixel_enabled: { label: "Enable TikTok Pixel", type: "toggle", description: "Track conversions for TikTok ads", section: "TikTok Pixel" },
+  tracking_tiktok_pixel_id: { label: "Pixel ID", type: "text", description: "Your TikTok Pixel ID", section: "TikTok Pixel", placeholder: "XXXXXXXXXXXXXXXXX" },
+
+  // ── Integrations: Google Tag Manager ──
+  tracking_gtm_enabled: { label: "Enable Google Tag Manager", type: "toggle", description: "Manage all your tags through GTM (advanced)", section: "Google Tag Manager" },
+  tracking_gtm_container_id: { label: "Container ID", type: "text", description: "Your GTM Container ID (starts with GTM-)", section: "Google Tag Manager", placeholder: "GTM-XXXXXXX" },
+
+  // ── Integrations: WhatsApp Business ──
+  whatsapp_enabled: { label: "Enable WhatsApp Notifications", type: "toggle", description: "Send order updates via WhatsApp Business API", section: "WhatsApp Business" },
+  whatsapp_api_url: { label: "API URL", type: "url", description: "WhatsApp Business API endpoint (Cloud API or on-premise)", section: "WhatsApp Business", placeholder: "https://graph.facebook.com/v18.0/YOUR_PHONE_NUMBER_ID" },
+  whatsapp_api_token: { label: "Access Token", type: "password", description: "Permanent token from Meta Business Manager", section: "WhatsApp Business" },
+  whatsapp_phone_number_id: { label: "Phone Number ID", type: "text", description: "Your WhatsApp Business phone number ID", section: "WhatsApp Business", placeholder: "1234567890" },
+  whatsapp_order_confirmation: { label: "Order Confirmation", type: "toggle", description: "Send WhatsApp message when order is placed", section: "WhatsApp Notifications" },
+  whatsapp_shipping_update: { label: "Shipping Updates", type: "toggle", description: "Notify customer when order ships", section: "WhatsApp Notifications" },
+  whatsapp_delivery_confirmation: { label: "Delivery Confirmation", type: "toggle", description: "Send message when order is delivered", section: "WhatsApp Notifications" },
+
+  // ── Integrations: SMS (Africa's Talking) ──
+  sms_enabled: { label: "Enable SMS Notifications", type: "toggle", description: "Send order updates via SMS using Africa's Talking", section: "SMS (Africa's Talking)" },
+  sms_at_username: { label: "Username", type: "text", description: "Your Africa's Talking username", section: "SMS (Africa's Talking)", placeholder: "sandbox" },
+  sms_at_api_key: { label: "API Key", type: "password", description: "Your Africa's Talking API key", section: "SMS (Africa's Talking)" },
+  sms_sender_id: { label: "Sender ID", type: "text", description: "Your registered sender ID (or 'AFRICASTKNG' for sandbox)", section: "SMS (Africa's Talking)", placeholder: "UGSEX" },
+  sms_order_confirmation: { label: "Order Confirmation SMS", type: "toggle", description: "Send SMS when order is placed", section: "SMS Notifications" },
+  sms_shipping_update: { label: "Shipping Update SMS", type: "toggle", description: "Send SMS when order ships", section: "SMS Notifications" },
 };
 
 /* ------------------------------------------------------------------ */
@@ -184,6 +221,7 @@ function keyToCategory(key: string): string {
   if (key.startsWith("email_")) return "email";
   if (key.startsWith("notifications_") || key.startsWith("low_stock_")) return "notifications";
   if (key.startsWith("security_")) return "security";
+  if (key.startsWith("tracking_") || key.startsWith("whatsapp_") || key.startsWith("sms_")) return "integrations";
   return "store";
 }
 

@@ -56,6 +56,15 @@ const PUBLIC_KEYS = [
   "payment_cod_enabled",
   "payment_min_order",
   "payment_instructions",
+  // Tracking / integration config (needed by frontend for script injection)
+  "tracking_ga_enabled",
+  "tracking_ga_measurement_id",
+  "tracking_fb_pixel_enabled",
+  "tracking_fb_pixel_id",
+  "tracking_tiktok_pixel_enabled",
+  "tracking_tiktok_pixel_id",
+  "tracking_gtm_enabled",
+  "tracking_gtm_container_id",
 ];
 
 // GET /api/settings/public - Return safe public settings
