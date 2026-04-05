@@ -4,6 +4,8 @@ import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { sendShippingNotification, sendProcessingNotification, sendDeliveredNotification, sendCancelledNotification } from "../../lib/email";
 import { refundFlutterwaveTransaction } from "../../services/flutterwave";
+import { sendOrderConfirmationWhatsApp, sendShippingUpdateWhatsApp, sendDeliveryConfirmationWhatsApp } from "../../services/whatsapp";
+import { sendOrderConfirmationSMS, sendShippingUpdateSMS } from "../../services/sms";
 
 const router = Router();
 
@@ -246,6 +248,21 @@ router.put("/:id/status", async (req: AuthRequest, res: Response) => {
     // Send delivered notification
     if (status === "DELIVERED") {
       sendDeliveredNotification(order).catch(console.error);
+    }
+
+    // WhatsApp & SMS notifications (fire-and-forget)
+    if (order.customerPhone) {
+      if (status === "CONFIRMED") {
+        sendOrderConfirmationWhatsApp(order.customerPhone, order.orderNumber, order.totalAmount.toString()).catch(() => {});
+        sendOrderConfirmationSMS(order.customerPhone, order.orderNumber, order.totalAmount.toString()).catch(() => {});
+      }
+      if (status === "SHIPPED") {
+        sendShippingUpdateWhatsApp(order.customerPhone, order.orderNumber, order.trackingNumber || undefined).catch(() => {});
+        sendShippingUpdateSMS(order.customerPhone, order.orderNumber).catch(() => {});
+      }
+      if (status === "DELIVERED") {
+        sendDeliveryConfirmationWhatsApp(order.customerPhone, order.orderNumber).catch(() => {});
+      }
     }
 
     // Restore inventory if cancelled

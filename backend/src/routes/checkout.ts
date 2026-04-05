@@ -5,6 +5,9 @@ import { createPayPalCheckout, getPayPalCheckoutDetails, executePayPalPayment } 
 import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
 import { placeCJOrdersForOrder } from "../services/cjOrder";
 import { sendOrderReceivedEmail } from "../lib/email";
+import { sendOrderConfirmationWhatsApp } from "../services/whatsapp";
+import { sendOrderConfirmationSMS } from "../services/sms";
+import { sendMetaConversionEvent } from "../services/metaConversions";
 import prisma from "../lib/prisma";
 const router = Router();
 
@@ -272,6 +275,30 @@ router.post("/create", async (req: Request, res: Response) => {
       sendOrderReceivedEmail(orderWithItems).catch((err) =>
         console.error("Order received email failed:", err.message)
       );
+
+      // WhatsApp & SMS order confirmation (fire-and-forget)
+      if (orderWithItems.customerPhone) {
+        sendOrderConfirmationWhatsApp(orderWithItems.customerPhone, orderWithItems.orderNumber, orderWithItems.totalAmount.toString()).catch(() => {});
+        sendOrderConfirmationSMS(orderWithItems.customerPhone, orderWithItems.orderNumber, orderWithItems.totalAmount.toString()).catch(() => {});
+      }
+
+      // Meta Conversions API server-side tracking (fire-and-forget)
+      sendMetaConversionEvent({
+        eventName: "Purchase",
+        userData: {
+          email: orderWithItems.customerEmail,
+          phone: orderWithItems.customerPhone || undefined,
+          ip: req.ip,
+          userAgent: req.headers["user-agent"],
+        },
+        customData: {
+          value: Number(orderWithItems.totalAmount),
+          currency: "UGX",
+          orderId: orderWithItems.orderNumber,
+          numItems: orderWithItems.items.length,
+        },
+        eventSourceUrl: "https://ugsex.com/checkout",
+      }).catch(() => {});
     }
 
     // Track affiliate conversion if referral code provided
