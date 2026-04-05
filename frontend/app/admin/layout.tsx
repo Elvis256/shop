@@ -43,6 +43,7 @@ import {
   Repeat,
   Receipt,
   Webhook,
+  Key,
 } from "lucide-react";
 
 interface NavItem {
@@ -120,6 +121,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/activity", icon: Activity, label: "Activity Log" },
       { href: "/admin/subscriptions", icon: Repeat, label: "Subscriptions" },
       { href: "/admin/webhooks", icon: Webhook, label: "Webhooks" },
+      { href: "/admin/api-keys", icon: Key, label: "API Keys" },
       { href: "/admin/settings", icon: Settings, label: "Settings" },
     ],
   },

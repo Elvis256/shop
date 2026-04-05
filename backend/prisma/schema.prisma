@@ -1570,3 +1570,29 @@ model PriceSlasher {
 
   @@unique([priceSlashId, visitorIp])
 }
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique
+  prefix      String
+
+  permissions String[]
+
+  userId      String?
+
+  rateLimit   Int      @default(100)
+
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  requestCount Int     @default(0)
+
+  ipWhitelist String[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  expiresAt   DateTime?
+
+  @@index([key])
+  @@index([userId])
+}

@@ -48,6 +48,7 @@ import browseTrackingRoutes from "./routes/browseTracking";
 import webhookEndpointsRoutes from "./routes/webhookEndpoints";
 import dailyDealRoutes from "./routes/dailyDeal";
 import socialRoutes from "./routes/social";
+import developerApiRoutes from "./routes/developerApi";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -67,6 +68,7 @@ import adminStaff from "./routes/adminStaff";
 import adminActivity from "./routes/adminActivity";
 import adminAuthRoutes from "./routes/adminAuth";
 import adminSocialRoutes from "./routes/adminSocial";
+import adminApiKeys from "./routes/admin/apiKeys";
 import settingsRoutes from "./routes/settings";
 
 // Middleware
@@ -120,6 +122,10 @@ app.use(cookieParser());
 import { setCsrfToken, validateCsrf, csrfTokenHandler } from "./middleware/csrf";
 app.use(setCsrfToken);
 app.get("/api/csrf-token", csrfTokenHandler);
+
+// Developer API (API key auth, no CSRF needed)
+app.use("/api/v1", developerApiRoutes);
+
 app.use("/api", validateCsrf);
 
 // Static files (uploads)
@@ -185,6 +191,7 @@ app.use("/api/admin/staff", adminStaff);
 app.use("/api/admin/activity", adminActivity);
 app.use("/api/admin/auth", adminAuthRoutes);
 app.use("/api/admin/social", adminSocialRoutes);
+app.use("/api/admin/api-keys", adminApiKeys);
 app.use("/api/settings", settingsRoutes);
 
 // Health check
