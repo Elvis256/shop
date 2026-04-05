@@ -44,6 +44,9 @@ import {
   Receipt,
   Webhook,
   Key,
+  Store,
+  Percent,
+  Banknote,
 } from "lucide-react";
 
 interface NavItem {
@@ -112,6 +115,14 @@ const navGroups: NavGroup[] = [
       { href: "/admin/aliexpress", icon: ShoppingBag, label: "AliExpress" },
       { href: "/admin/cjdropshipping", icon: Truck, label: "CJ Dropshipping" },
       { href: "/admin/shipping", icon: Truck, label: "Shipping" },
+    ],
+  },
+  {
+    title: "MARKETPLACE",
+    items: [
+      { href: "/admin/sellers", icon: Store, label: "Sellers" },
+      { href: "/admin/commissions", icon: Percent, label: "Commissions" },
+      { href: "/admin/payouts", icon: Banknote, label: "Payouts" },
     ],
   },
   {

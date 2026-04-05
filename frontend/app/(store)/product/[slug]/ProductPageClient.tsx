@@ -79,6 +79,13 @@ interface Product {
   preOrderDate?: string;
   isSubscribable?: boolean;
   subscriptionDiscount?: number;
+  seller?: {
+    id: string;
+    storeName: string;
+    storeSlug: string;
+    rating: number;
+    reviewCount: number;
+  };
 }
 
 /** Compute estimated delivery date string */
@@ -626,6 +633,25 @@ export default function ProductPageClient() {
                 </div>
               </div>
             </div>
+
+            {/* Sold by */}
+            {product.seller && (
+              <div className="border border-gray-100 rounded-lg p-4 bg-gray-50">
+                <p className="text-xs text-gray-500 mb-1">Sold by</p>
+                <Link href={`/seller/${product.seller.storeSlug}`} className="font-semibold text-gray-900 hover:text-pink-600 transition-colors">
+                  {product.seller.storeName}
+                </Link>
+                {product.seller.rating > 0 && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                    <span className="text-xs text-gray-600">{product.seller.rating} ({product.seller.reviewCount} reviews)</span>
+                  </div>
+                )}
+                <Link href={`/seller/${product.seller.storeSlug}`} className="text-xs text-pink-600 hover:underline mt-2 block">
+                  Visit Store →
+                </Link>
+              </div>
+            )}
 
             {/* Trust badges */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-5 border-t">
