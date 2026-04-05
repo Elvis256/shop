@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { PrismaClient } from "@prisma/client";
-import { authenticate, AuthRequest } from "../middleware/auth";
+import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -138,6 +138,32 @@ const generateInvoiceHtml = (order: Record<string, unknown>, items: Array<Record
 </html>
   `;
 };
+
+// GET /api/invoices/admin/all — List all invoices (admin)
+router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: { paymentStatus: { in: ["SUCCESSFUL", "PENDING"] } },
+      select: {
+        id: true,
+        orderNumber: true,
+        customerName: true,
+        customerEmail: true,
+        totalAmount: true,
+        currency: true,
+        paymentStatus: true,
+        createdAt: true,
+        items: {
+          select: { name: true, quantity: true, price: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(orders);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Get invoice HTML for order
 router.get("/:orderId", authenticate, async (req: AuthRequest, res: Response) => {

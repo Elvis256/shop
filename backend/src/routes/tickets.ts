@@ -1,7 +1,7 @@
 import { Router, Response } from "express";
 import { PrismaClient, TicketCategory, TicketPriority } from "@prisma/client";
 import { z } from "zod";
-import { authenticate, optionalAuth, AuthRequest } from "../middleware/auth";
+import { authenticate, optionalAuth, AuthRequest, requireAdmin } from "../middleware/auth";
 import { v4 as uuidv4 } from "uuid";
 
 const router = Router();
@@ -129,6 +129,26 @@ router.get("/lookup/:ticketNumber", async (req, res) => {
   } catch (error) {
     console.error("Lookup ticket error:", error);
     res.status(500).json({ error: "Failed to lookup ticket" });
+  }
+});
+
+// PUT /api/tickets/:id — Update ticket (admin)
+router.put("/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { status, priority, assignedTo } = req.body;
+    const updated = await prisma.supportTicket.update({
+      where: { id: req.params.id },
+      data: {
+        ...(status && { status }),
+        ...(priority && { priority }),
+        ...(assignedTo !== undefined && { assignedTo }),
+        ...(status === "RESOLVED" && { resolvedAt: new Date() }),
+      },
+      include: { messages: true },
+    });
+    res.json(updated);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
 });
 

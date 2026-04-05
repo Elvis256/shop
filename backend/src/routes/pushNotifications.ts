@@ -104,4 +104,38 @@ router.post("/admin/send", authenticate, requireAdmin, async (req: AuthRequest, 
   }
 });
 
+// GET /api/push/admin/subscribers — List all push subscribers (admin)
+router.get("/admin/subscribers", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const subscribers = await prisma.pushSubscription.findMany({
+      include: { user: { select: { name: true, email: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(subscribers);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/push/admin/stats — Subscriber stats (admin)
+router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const total = await prisma.pushSubscription.count();
+    const withUser = await prisma.pushSubscription.count({ where: { userId: { not: null } } });
+    res.json({ total, registered: withUser, anonymous: total - withUser });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/push/admin/:id — Delete a subscriber (admin)
+router.delete("/admin/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    await prisma.pushSubscription.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;

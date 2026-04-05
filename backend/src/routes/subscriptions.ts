@@ -73,6 +73,45 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/subscriptions/admin/stats — Subscription stats (admin)
+router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const active = await prisma.subscription.count({ where: { status: "ACTIVE" } });
+    const paused = await prisma.subscription.count({ where: { status: "PAUSED" } });
+    const cancelled = await prisma.subscription.count({ where: { status: "CANCELLED" } });
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    const upcomingDeliveries = await prisma.subscription.count({
+      where: { status: "ACTIVE", nextDelivery: { lte: nextWeek } },
+    });
+    res.json({ active, paused, cancelled, upcomingDeliveries });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/subscriptions/admin/:id — Admin update subscription
+router.put("/admin/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { status, intervalDays, nextDelivery } = req.body;
+    const updated = await prisma.subscription.update({
+      where: { id: req.params.id },
+      data: {
+        ...(status && { status }),
+        ...(intervalDays && { intervalDays }),
+        ...(nextDelivery && { nextDelivery: new Date(nextDelivery) }),
+      },
+      include: {
+        user: { select: { name: true, email: true } },
+        product: { select: { name: true, price: true, images: { take: 1, select: { url: true } } } },
+      },
+    });
+    res.json(updated);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // PUT /api/subscriptions/:id — Update subscription
 router.put("/:id", authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -143,7 +182,7 @@ router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, r
     const subscriptions = await prisma.subscription.findMany({
       include: {
         user: { select: { id: true, email: true, name: true } },
-        product: { select: { name: true, slug: true, price: true } },
+        product: { select: { name: true, slug: true, price: true, images: { take: 1, select: { url: true } } } },
       },
       orderBy: { createdAt: "desc" },
     });

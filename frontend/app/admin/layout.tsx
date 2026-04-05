@@ -32,6 +32,17 @@ import {
   Layers,
   Wallet,
   Sparkles,
+  RotateCcw,
+  Star,
+  MessageSquare,
+  Gift,
+  Award,
+  Zap,
+  Share2,
+  BellRing,
+  Repeat,
+  Receipt,
+  Webhook,
 } from "lucide-react";
 
 interface NavItem {
@@ -67,9 +78,13 @@ const navGroups: NavGroup[] = [
     title: "SALES",
     items: [
       { href: "/admin/orders", icon: ShoppingCart, label: "Orders" },
+      { href: "/admin/returns", icon: RotateCcw, label: "Returns" },
       { href: "/admin/customers", icon: Users, label: "Customers" },
+      { href: "/admin/invoices", icon: Receipt, label: "Invoices" },
       { href: "/admin/coupons", icon: Tag, label: "Coupons" },
+      { href: "/admin/gift-cards", icon: Gift, label: "Gift Cards" },
       { href: "/admin/store-credit", icon: Wallet, label: "Store Credit" },
+      { href: "/admin/daily-deals", icon: Zap, label: "Daily Deals" },
     ],
   },
   {
@@ -77,7 +92,17 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/admin/social", icon: Sparkles, label: "Social Shopping" },
       { href: "/admin/affiliates", icon: Globe, label: "Affiliates" },
+      { href: "/admin/referrals", icon: Share2, label: "Referrals" },
+      { href: "/admin/loyalty", icon: Award, label: "Loyalty Program" },
+      { href: "/admin/push-notifications", icon: BellRing, label: "Push Notifications" },
       { href: "/admin/content", icon: FileText, label: "Content" },
+    ],
+  },
+  {
+    title: "SUPPORT",
+    items: [
+      { href: "/admin/tickets", icon: MessageSquare, label: "Tickets" },
+      { href: "/admin/reviews", icon: Star, label: "Reviews" },
     ],
   },
   {
@@ -93,6 +118,8 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/admin/staff", icon: UserCog, label: "Staff" },
       { href: "/admin/activity", icon: Activity, label: "Activity Log" },
+      { href: "/admin/subscriptions", icon: Repeat, label: "Subscriptions" },
+      { href: "/admin/webhooks", icon: Webhook, label: "Webhooks" },
       { href: "/admin/settings", icon: Settings, label: "Settings" },
     ],
   },

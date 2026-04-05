@@ -271,6 +271,79 @@ router.post("/admin/multiplier", authenticate, requireAdmin, async (req: AuthReq
   }
 });
 
+// GET /api/loyalty/admin/accounts — List all loyalty accounts (admin)
+router.get("/admin/accounts", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const accounts = await prisma.loyaltyAccount.findMany({
+      include: {
+        user: { select: { name: true, email: true } },
+        transactions: { orderBy: { createdAt: "desc" }, take: 5 },
+      },
+      orderBy: { lifetimePoints: "desc" },
+    });
+    res.json(accounts);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/loyalty/admin/adjust — Manually adjust points (admin)
+router.post("/admin/adjust", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId, points, description } = req.body;
+    if (!userId || points === undefined || !description) {
+      return res.status(400).json({ error: "userId, points, and description required" });
+    }
+    const account = await prisma.loyaltyAccount.findUnique({ where: { userId } });
+    if (!account) return res.status(404).json({ error: "Loyalty account not found" });
+
+    const [updatedAccount, tx] = await prisma.$transaction([
+      prisma.loyaltyAccount.update({
+        where: { userId },
+        data: {
+          points: { increment: points },
+          lifetimePoints: points > 0 ? { increment: points } : undefined,
+        },
+      }),
+      prisma.loyaltyTransaction.create({
+        data: {
+          accountId: account.id,
+          type: "ADJUSTMENT",
+          points,
+          description,
+        },
+      }),
+    ]);
+    res.json({ account: updatedAccount, transaction: tx });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/loyalty/admin/stats — Program stats (admin)
+router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const totalMembers = await prisma.loyaltyAccount.count();
+    const pointsCirculation = await prisma.loyaltyAccount.aggregate({ _sum: { points: true } });
+    const pointsRedeemed = await prisma.loyaltyTransaction.aggregate({
+      where: { type: "REDEMPTION" },
+      _sum: { points: true },
+    });
+    const tierCounts = await prisma.loyaltyAccount.groupBy({
+      by: ["tier"],
+      _count: true,
+    });
+    res.json({
+      totalMembers,
+      totalPointsCirculation: pointsCirculation._sum.points || 0,
+      totalPointsRedeemed: Math.abs(pointsRedeemed._sum.points || 0),
+      tierBreakdown: tierCounts.reduce((acc: any, t: any) => { acc[t.tier] = t._count; return acc; }, {}),
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/loyalty/multiplier — Get current active multiplier
 router.get("/multiplier", async (_req: any, res: Response) => {
   try {

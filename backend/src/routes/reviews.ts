@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
-import { authenticate, optionalAuth, AuthRequest } from "../middleware/auth";
+import { authenticate, optionalAuth, AuthRequest, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 
@@ -158,6 +158,23 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to submit review" });
+  }
+});
+
+// GET /api/reviews/admin/all — List all reviews (admin)
+router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const reviews = await prisma.review.findMany({
+      include: {
+        product: { select: { name: true, slug: true, images: { take: 1, select: { url: true } } } },
+        user: { select: { name: true, email: true } },
+        images: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(reviews);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
 });
 

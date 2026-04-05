@@ -1,7 +1,7 @@
 import { Router, Response } from "express";
 import { PrismaClient, ReturnReason, ReturnStatus } from "@prisma/client";
 import { z } from "zod";
-import { authenticate, optionalAuth, AuthRequest } from "../middleware/auth";
+import { authenticate, optionalAuth, AuthRequest, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -112,6 +112,47 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Get returns error:", error);
     res.status(500).json({ error: "Failed to fetch return requests" });
+  }
+});
+
+// GET /api/returns/admin/all — List all return requests (admin)
+router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const returns = await prisma.returnRequest.findMany({
+      include: {
+        order: { select: { orderNumber: true, totalAmount: true, customerName: true, customerEmail: true } },
+        user: { select: { name: true, email: true } },
+        items: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(returns);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/returns/:id/status — Update return status (admin)
+router.put("/:id/status", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { status, adminNotes, refundAmount, refundMethod } = req.body;
+    const updated = await prisma.returnRequest.update({
+      where: { id: req.params.id },
+      data: {
+        status,
+        adminNotes,
+        refundAmount: refundAmount ? parseFloat(refundAmount) : undefined,
+        refundMethod,
+        processedAt: ["APPROVED", "REJECTED", "REFUNDED"].includes(status) ? new Date() : undefined,
+      },
+      include: {
+        order: { select: { orderNumber: true } },
+        items: true,
+      },
+    });
+    res.json(updated);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
 });
 

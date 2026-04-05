@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { PrismaClient } from "@prisma/client";
-import { authenticate, AuthRequest } from "../middleware/auth";
+import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 import crypto from "crypto";
 
 const router = Router();
@@ -275,6 +275,60 @@ router.get("/leaderboard", async (_req, res) => {
   } catch (error) {
     console.error("Get referral leaderboard error:", error);
     return res.status(500).json({ error: "Failed to fetch leaderboard" });
+  }
+});
+
+// GET /api/referrals/admin/all — List all referral codes with referrals (admin)
+router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const codes = await prisma.referralCode.findMany({
+      include: {
+        user: { select: { name: true, email: true } },
+        referrals: {
+          include: {
+            referredUser: { select: { name: true, email: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        },
+      },
+      orderBy: { totalEarnings: "desc" },
+    });
+    res.json(codes);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/referrals/admin/stats — Referral program stats (admin)
+router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const totalCodes = await prisma.referralCode.count();
+    const totalReferrals = await prisma.referral.count();
+    const completed = await prisma.referral.count({ where: { status: "REWARDED" } });
+    const totalPaid = await prisma.referral.aggregate({ where: { rewardPaid: true }, _sum: { rewardAmount: true } });
+    const pendingPayouts = await prisma.referral.count({ where: { status: "REWARDED", rewardPaid: false } });
+    res.json({
+      totalCodes,
+      totalReferrals,
+      completedReferrals: completed,
+      totalPaidOut: totalPaid._sum.rewardAmount || 0,
+      pendingPayouts,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/referrals/admin/:id/payout — Mark referral reward as paid (admin)
+router.put("/admin/:id/payout", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const updated = await prisma.referral.update({
+      where: { id: req.params.id },
+      data: { rewardPaid: true },
+    });
+    res.json(updated);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
 });
 
