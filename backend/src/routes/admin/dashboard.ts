@@ -240,11 +240,13 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
     // ── Visitor data from PageView ────────────────────────────
     const pageViews = await prisma.pageView.findMany({
       where: { createdAt: { gte: startDate } },
-      select: { createdAt: true, sessionId: true, path: true },
+      select: { createdAt: true, sessionId: true, path: true, country: true, referrer: true },
     });
     const visitorMap = new Map<string, Set<string>>();
     const allSessions = new Set<string>();
     const pathCounts = new Map<string, number>();
+    const countryVisitorMap = new Map<string, Set<string>>();
+    const sessionPageCounts = new Map<string, number>();
     let totalPageViews = 0;
 
     pageViews.forEach((pv) => {
@@ -255,7 +257,15 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
       allSessions.add(sid);
       totalPageViews++;
       const p = pv.path || "/";
-      pathCounts.set(p, (pathCounts.get(p) || 0) + 1);
+      if (!p.startsWith("/admin")) {
+        pathCounts.set(p, (pathCounts.get(p) || 0) + 1);
+      }
+      // Country tracking
+      const country = pv.country || "Unknown";
+      if (!countryVisitorMap.has(country)) countryVisitorMap.set(country, new Set());
+      countryVisitorMap.get(country)!.add(sid);
+      // Session page counts for bounce rate
+      sessionPageCounts.set(sid, (sessionPageCounts.get(sid) || 0) + 1);
     });
 
     dailyData.forEach((d) => {
@@ -264,6 +274,18 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
 
     const totalVisitors = allSessions.size;
     const pagesPerSession = totalVisitors > 0 ? Math.round((totalPageViews / totalVisitors) * 10) / 10 : 0;
+
+    // Bounce rate
+    const totalSessions = sessionPageCounts.size;
+    const bounceSessions = Array.from(sessionPageCounts.values()).filter(c => c === 1).length;
+    const bounceRate = totalSessions > 0 ? Math.round((bounceSessions / totalSessions) * 1000) / 10 : 0;
+
+    // Visitors by country
+    const visitorsByCountry = Array.from(countryVisitorMap.entries())
+      .filter(([c]) => c !== "Unknown")
+      .map(([country, sessions]) => ({ country, visitors: sessions.size }))
+      .sort((a, b) => b.visitors - a.visitors)
+      .slice(0, 20);
 
     // Top pages
     const topPages = Array.from(pathCounts.entries())
@@ -458,29 +480,34 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
       ? Math.round(((totalVisitors - previousVisitors) / previousVisitors) * 1000) / 10
       : totalVisitors > 0 ? 100 : 0;
 
-    // ── Traffic sources from referrer ─────────────────────────
-    const referrerViews = await prisma.pageView.findMany({
-      where: { createdAt: { gte: startDate } },
-      select: { referrer: true },
-    });
+    // ── Traffic sources from referrer (use already-loaded pageViews) ──
     const sourceCounts = new Map<string, number>();
-    referrerViews.forEach((pv) => {
+    pageViews.forEach((pv) => {
       let source = "Direct";
       if (pv.referrer) {
         try {
           const url = new URL(pv.referrer);
-          source = url.hostname.replace("www.", "");
-        } catch { source = pv.referrer; }
+          const host = url.hostname.replace("www.", "");
+          if (host.includes("ugsex.com")) return; // skip internal
+          if (host.includes("google")) source = "Google";
+          else if (host.includes("facebook") || host.includes("fb.")) source = "Facebook";
+          else if (host.includes("instagram")) source = "Instagram";
+          else if (host.includes("tiktok")) source = "TikTok";
+          else if (host.includes("youtube")) source = "YouTube";
+          else if (host.includes("twitter") || host.includes("x.com")) source = "X/Twitter";
+          else if (host.includes("whatsapp") || host.includes("wa.me")) source = "WhatsApp";
+          else source = host;
+        } catch { source = "Other"; }
       }
       sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
     });
     const trafficSources = Array.from(sourceCounts.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
+      .slice(0, 10)
       .map(([source, visits]) => ({
         source,
         visits,
-        pct: totalPageViews > 0 ? Math.round((visits / totalPageViews) * 100) : 0,
+        pct: totalPageViews > 0 ? Math.round((visits / totalPageViews) * 1000) / 10 : 0,
       }));
 
     // ── Inventory value ───────────────────────────────────────
@@ -493,6 +520,101 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
       const unitValue = unitCost > 0 ? unitCost : Number(p.price);
       return sum + unitValue * (p.stock || 0);
     }, 0);
+
+    // ── Category breakdown ────────────────────────────────────
+    const categoryBreakdown = await prisma.category.findMany({
+      select: {
+        name: true,
+        _count: { select: { products: true } },
+        products: { where: { status: "ACTIVE" }, select: { price: true, stock: true } },
+      },
+    });
+    const categoryStats = categoryBreakdown
+      .map((c) => ({
+        name: c.name,
+        count: c._count.products,
+        totalValue: c.products.reduce((s, p) => s + Number(p.price), 0),
+        totalStock: c.products.reduce((s, p) => s + (p.stock || 0), 0),
+      }))
+      .filter((c) => c.count > 0)
+      .sort((a, b) => b.count - a.count);
+
+    // ── Most wishlisted ───────────────────────────────────────
+    const wishlistedProducts = await prisma.product.findMany({
+      where: { status: "ACTIVE", wishlist: { some: {} } },
+      select: { name: true, stock: true, _count: { select: { wishlist: true } } },
+      orderBy: { wishlist: { _count: "desc" } },
+      take: 10,
+    });
+    const mostWishlisted = wishlistedProducts.map((p) => ({
+      name: p.name,
+      wishlistCount: p._count.wishlist,
+      stock: p.stock || 0,
+    }));
+
+    // ── Health breakdown ──────────────────────────────────────
+    const healthyStock = await prisma.product.count({
+      where: { status: "ACTIVE", trackInventory: true, stock: { gt: 10, lte: 200 } },
+    });
+    const overstocked = await prisma.product.count({
+      where: { status: "ACTIVE", trackInventory: true, stock: { gt: 200 } },
+    });
+    const healthBreakdown = {
+      outOfStock,
+      lowStock: lowStockCount,
+      healthy: healthyStock,
+      overstocked,
+    };
+
+    // ── Projections (simple linear trend) ─────────────────────
+    const revenueValues = dailyData.map((d) => d.revenue);
+    const visitorValues = dailyData.map((d) => d.visitors);
+    const calcTrend = (vals: number[]) => {
+      const n = vals.length;
+      if (n < 2) return { slope: 0 };
+      const xMean = (n - 1) / 2;
+      const yMean = vals.reduce((a, b) => a + b, 0) / n;
+      let num = 0, den = 0;
+      vals.forEach((y, x) => { num += (x - xMean) * (y - yMean); den += (x - xMean) ** 2; });
+      return { slope: den !== 0 ? num / den : 0, intercept: yMean - (den !== 0 ? num / den : 0) * xMean };
+    };
+    const revTrend = calcTrend(revenueValues);
+    const visTrend = calcTrend(visitorValues);
+    const projectedRevenue30d = Math.max(0, revenueValues.reduce((s, v) => s + v, 0) * (30 / days));
+    const projectedVisitors30d = Math.max(0, Math.round(visitorValues.reduce((s, v) => s + v, 0) * (30 / days)));
+
+    // Week-over-week
+    const lastWeekStart = new Date(); lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+    const prevWeekStart = new Date(); prevWeekStart.setDate(prevWeekStart.getDate() - 14);
+    const lastWeekRevenue = dailyData
+      .filter((d) => new Date(d.date) >= lastWeekStart)
+      .reduce((s, d) => s + d.revenue, 0);
+    const prevWeekRevenue = dailyData
+      .filter((d) => new Date(d.date) >= prevWeekStart && new Date(d.date) < lastWeekStart)
+      .reduce((s, d) => s + d.revenue, 0);
+    const lastWeekVisitors = dailyData
+      .filter((d) => new Date(d.date) >= lastWeekStart)
+      .reduce((s, d) => s + d.visitors, 0);
+    const prevWeekVisitors = dailyData
+      .filter((d) => new Date(d.date) >= prevWeekStart && new Date(d.date) < lastWeekStart)
+      .reduce((s, d) => s + d.visitors, 0);
+
+    // ── Business insights ─────────────────────────────────────
+    const insights: { type: string; title: string; message: string }[] = [];
+    if (outOfStock > 0)
+      insights.push({ type: "warning", title: "Out of Stock", message: `${outOfStock} product${outOfStock > 1 ? "s" : ""} out of stock.` });
+    if (lowStockCount > 3)
+      insights.push({ type: "warning", title: "Low Stock Alert", message: `${lowStockCount} products running low on stock.` });
+    if (revenueGrowth > 20)
+      insights.push({ type: "success", title: "Revenue Growing", message: `Revenue is up ${revenueGrowth.toFixed(1)}% vs previous period.` });
+    if (revenueGrowth < -20)
+      insights.push({ type: "warning", title: "Revenue Declining", message: `Revenue is down ${Math.abs(revenueGrowth).toFixed(1)}% vs previous period.` });
+    if (conversionRate > 3)
+      insights.push({ type: "success", title: "Good Conversion", message: `Conversion rate at ${conversionRate.toFixed(1)}% — above average.` });
+    if (conversionRate > 0 && conversionRate < 1)
+      insights.push({ type: "info", title: "Low Conversion", message: `Conversion rate at ${conversionRate.toFixed(1)}%. Consider improving product pages.` });
+    if (neverOrdered > 5)
+      insights.push({ type: "info", title: "Dormant Products", message: `${neverOrdered} products have never been ordered.` });
 
     return res.json({
       revenue: {
@@ -527,18 +649,33 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
         dropshipMargins,
         avgDropshipMargin,
         inventoryValue,
+        categoryBreakdown: categoryStats,
+        mostWishlisted,
+        healthBreakdown,
       },
       traffic: {
         daily: dailyData.map((d) => ({ date: d.date, visitors: d.visitors, orders: d.orders, revenue: d.revenue })),
         totalVisitors,
         visitorGrowth,
         pagesPerSession,
+        bounceRate,
         topPages,
         sources: trafficSources,
-        bounceRate: 0,
+        visitorsByCountry,
+      },
+      projections: {
+        revenue30d: Math.round(projectedRevenue30d),
+        visitors30d: projectedVisitors30d,
+        revenueTrend: revTrend.slope > 0 ? "up" : revTrend.slope < 0 ? "down" : "flat",
+        visitorTrend: visTrend.slope > 0 ? "up" : visTrend.slope < 0 ? "down" : "flat",
+        weekOverWeek: {
+          revenue: { current: lastWeekRevenue, previous: prevWeekRevenue, change: prevWeekRevenue > 0 ? Math.round(((lastWeekRevenue - prevWeekRevenue) / prevWeekRevenue) * 1000) / 10 : 0 },
+          visitors: { current: lastWeekVisitors, previous: prevWeekVisitors, change: prevWeekVisitors > 0 ? Math.round(((lastWeekVisitors - prevWeekVisitors) / prevWeekVisitors) * 1000) / 10 : 0 },
+        },
       },
       paymentMethods,
       hourlyOrders: hourlyData,
+      insights,
     });
   } catch (error) {
     console.error("Analytics error:", error);
