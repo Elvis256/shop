@@ -90,10 +90,15 @@ export async function rotateRefreshToken(oldToken: string): Promise<{ accessToke
   await prisma.refreshToken.delete({ where: { id: tokenRecord.id } });
   
   const newRefreshToken = await createRefreshToken(tokenRecord.userId);
+  // Preserve portal context based on role
+  const portal = (tokenRecord.user.role === "ADMIN" || tokenRecord.user.role === "MANAGER") ? "admin"
+               : tokenRecord.user.role === "SELLER" ? "seller"
+               : "customer";
   const accessToken = generateToken({
     id: tokenRecord.user.id,
     email: tokenRecord.user.email,
     role: tokenRecord.user.role,
+    portal,
   });
   
   return {

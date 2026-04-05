@@ -254,8 +254,11 @@ router.post("/login", async (req, res: Response) => {
       }
     }
 
-    // Generate tokens
-    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal: "customer" });
+    // Generate tokens — set portal based on role so token works in the correct portal
+    const portal = (user.role === "ADMIN" || user.role === "MANAGER") ? "admin"
+                 : user.role === "SELLER" ? "seller"
+                 : "customer";
+    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal });
     const refreshToken = await createRefreshToken(user.id);
 
     // Set httpOnly cookies
