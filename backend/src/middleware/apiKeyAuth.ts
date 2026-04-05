@@ -1,10 +1,23 @@
 import { Request, Response, NextFunction } from "express";
 import { PrismaClient } from "@prisma/client";
+import crypto from "crypto";
 
 const prisma = new PrismaClient();
 
-// Simple in-memory rate limiter
+// In-memory rate limiter with periodic cleanup
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+// Clean up expired rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(id);
+  }
+}, 300_000);
+
+export function hashApiKey(key: string): string {
+  return crypto.createHash("sha256").update(key).digest("hex");
+}
 
 export interface ApiKeyRequest extends Request {
   apiKey?: {
@@ -16,21 +29,20 @@ export interface ApiKeyRequest extends Request {
 }
 
 export async function authenticateApiKey(req: ApiKeyRequest, res: Response, next: NextFunction) {
+  // Only accept API key via Authorization header (never query params — they leak in logs)
   const authHeader = req.headers.authorization;
-  const queryKey = req.query.api_key as string;
 
-  const key = authHeader?.startsWith("Bearer sk_")
-    ? authHeader.slice(7)
-    : queryKey;
-
-  if (!key) {
+  if (!authHeader || !authHeader.startsWith("Bearer sk_")) {
     return res.status(401).json({
-      error: { code: "UNAUTHORIZED", message: "API key required. Pass via Authorization: Bearer sk_live_xxx or ?api_key=sk_live_xxx" }
+      error: { code: "UNAUTHORIZED", message: "API key required. Pass via Authorization: Bearer sk_live_xxx" }
     });
   }
 
+  const key = authHeader.slice(7); // Remove "Bearer "
+
   try {
-    const apiKey = await prisma.apiKey.findUnique({ where: { key } });
+    const keyHash = hashApiKey(key);
+    const apiKey = await prisma.apiKey.findUnique({ where: { keyHash } });
 
     if (!apiKey) {
       return res.status(401).json({ error: { code: "INVALID_KEY", message: "Invalid API key" } });
@@ -88,7 +100,7 @@ export async function authenticateApiKey(req: ApiKeyRequest, res: Response, next
     };
 
     next();
-  } catch (e: any) {
+  } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Authentication error" } });
   }
 }

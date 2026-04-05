@@ -173,23 +173,19 @@ export default function ApiDocsPage() {
             <Key className="w-5 h-5" /> Authentication
           </h2>
           <p className="text-sm text-gray-600 mb-4">
-            All API requests require an API key. You can pass it via the <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">Authorization</code> header or as a query parameter.
+            All API requests require an API key passed via the <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">Authorization</code> header. API keys are hashed with SHA-256 before storage — the full key is only shown once at creation time.
           </p>
 
           <div className="space-y-3 mb-4">
             <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Option 1: Authorization Header (Recommended)</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Authorization Header</p>
               <CodeBlock code={`curl -H "Authorization: Bearer sk_live_your_key_here" \\
   https://api.example.com/api/v1/products`} />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Option 2: Query Parameter</p>
-              <CodeBlock code="curl https://api.example.com/api/v1/products?api_key=sk_live_your_key_here" />
             </div>
           </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
-            <strong>Security:</strong> Never expose your API key in client-side code. Always make API calls from your server.
+            <strong>Security:</strong> Never expose your API key in client-side code, URLs, or query parameters. Always make API calls from your server.
           </div>
         </section>
 

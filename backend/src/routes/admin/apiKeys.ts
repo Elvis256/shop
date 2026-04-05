@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import { authenticate, AuthRequest, requireAdmin } from "../../middleware/auth";
+import { hashApiKey } from "../../middleware/apiKeyAuth";
 import crypto from "crypto";
 
 const router = Router();
@@ -8,11 +9,25 @@ const prisma = new PrismaClient();
 
 router.use(authenticate, requireAdmin);
 
+const VALID_PERMISSIONS = [
+  "products:read", "products:write",
+  "orders:read", "orders:write",
+  "customers:read", "customers:write",
+  "inventory:read", "inventory:write",
+  "webhooks:read", "webhooks:write",
+];
+
 function generateApiKey(): string {
   return "sk_live_" + crypto.randomBytes(32).toString("hex");
 }
 
-// GET / — List all API keys
+function validatePermissions(perms: string[]): string[] | null {
+  if (!Array.isArray(perms) || perms.length === 0) return null;
+  const invalid = perms.filter(p => !VALID_PERMISSIONS.includes(p));
+  return invalid.length > 0 ? invalid : null;
+}
+
+// GET / — List all API keys (never returns key or hash)
 router.get("/", async (_req: AuthRequest, res: Response) => {
   try {
     const keys = await prisma.apiKey.findMany({
@@ -25,8 +40,8 @@ router.get("/", async (_req: AuthRequest, res: Response) => {
       orderBy: { createdAt: "desc" },
     });
     res.json(keys);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch {
+    res.status(500).json({ error: "Failed to list API keys" });
   }
 });
 
@@ -34,53 +49,94 @@ router.get("/", async (_req: AuthRequest, res: Response) => {
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
     const { name, permissions, rateLimit, ipWhitelist, expiresAt } = req.body;
-    if (!name) return res.status(400).json({ error: "Name required" });
+    if (!name || typeof name !== "string" || name.trim().length === 0) {
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    const perms = permissions || ["products:read"];
+    const invalidPerms = validatePermissions(perms);
+    if (invalidPerms) {
+      return res.status(400).json({ error: `Invalid permissions: ${invalidPerms.join(", ")}` });
+    }
+
+    const parsedRate = parseInt(rateLimit) || 100;
+    if (parsedRate < 1 || parsedRate > 10000) {
+      return res.status(400).json({ error: "Rate limit must be between 1 and 10,000 req/min" });
+    }
 
     const key = generateApiKey();
+    const keyHash = hashApiKey(key);
     const prefix = key.slice(0, 12) + "...";
 
     const apiKey = await prisma.apiKey.create({
       data: {
-        name,
-        key,
+        name: name.trim(),
+        keyHash,
         prefix,
-        permissions: permissions || ["products:read"],
-        rateLimit: rateLimit || 100,
+        permissions: perms,
+        rateLimit: parsedRate,
         userId: req.user!.id,
-        ipWhitelist: ipWhitelist || [],
+        ipWhitelist: Array.isArray(ipWhitelist) ? ipWhitelist : [],
         expiresAt: expiresAt ? new Date(expiresAt) : null,
       },
     });
 
-    // Return full key ONCE (never shown again)
+    // Return full key ONCE (never shown again — only hash is stored)
     res.json({
-      ...apiKey,
-      key,
+      id: apiKey.id,
+      name: apiKey.name,
+      prefix: apiKey.prefix,
+      permissions: apiKey.permissions,
+      rateLimit: apiKey.rateLimit,
+      ipWhitelist: apiKey.ipWhitelist,
+      createdAt: apiKey.createdAt,
+      expiresAt: apiKey.expiresAt,
+      key, // Plaintext key — shown only this once
       message: "Save this key — it won't be shown again."
     });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch {
+    res.status(500).json({ error: "Failed to create API key" });
   }
 });
 
-// PUT /:id — Update API key
+// PUT /:id — Update API key metadata (never changes the key itself)
 router.put("/:id", async (req: AuthRequest, res: Response) => {
   try {
     const { name, permissions, rateLimit, isActive, ipWhitelist, expiresAt } = req.body;
+
+    if (permissions) {
+      const invalidPerms = validatePermissions(permissions);
+      if (invalidPerms) {
+        return res.status(400).json({ error: `Invalid permissions: ${invalidPerms.join(", ")}` });
+      }
+    }
+
+    if (rateLimit !== undefined) {
+      const parsedRate = parseInt(rateLimit);
+      if (isNaN(parsedRate) || parsedRate < 1 || parsedRate > 10000) {
+        return res.status(400).json({ error: "Rate limit must be between 1 and 10,000 req/min" });
+      }
+    }
+
     const updated = await prisma.apiKey.update({
       where: { id: req.params.id },
       data: {
-        ...(name !== undefined && { name }),
+        ...(name !== undefined && { name: String(name).trim() }),
         ...(permissions !== undefined && { permissions }),
-        ...(rateLimit !== undefined && { rateLimit }),
-        ...(isActive !== undefined && { isActive }),
-        ...(ipWhitelist !== undefined && { ipWhitelist }),
+        ...(rateLimit !== undefined && { rateLimit: parseInt(rateLimit) }),
+        ...(isActive !== undefined && { isActive: Boolean(isActive) }),
+        ...(ipWhitelist !== undefined && { ipWhitelist: Array.isArray(ipWhitelist) ? ipWhitelist : [] }),
         ...(expiresAt !== undefined && { expiresAt: expiresAt ? new Date(expiresAt) : null }),
+      },
+      select: {
+        id: true, name: true, prefix: true, permissions: true,
+        rateLimit: true, isActive: true, ipWhitelist: true,
+        createdAt: true, expiresAt: true,
       },
     });
     res.json(updated);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch {
+    res.status(500).json({ error: "Failed to update API key" });
   }
 });
 
@@ -89,23 +145,29 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
   try {
     await prisma.apiKey.delete({ where: { id: req.params.id } });
     res.json({ success: true });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch {
+    res.status(500).json({ error: "Failed to delete API key" });
   }
 });
 
-// POST /:id/regenerate — Regenerate key
+// POST /:id/regenerate — Regenerate key (new hash, new prefix)
 router.post("/:id/regenerate", async (req: AuthRequest, res: Response) => {
   try {
     const key = generateApiKey();
+    const keyHash = hashApiKey(key);
     const prefix = key.slice(0, 12) + "...";
+
     const updated = await prisma.apiKey.update({
       where: { id: req.params.id },
-      data: { key, prefix },
+      data: { keyHash, prefix },
+      select: {
+        id: true, name: true, prefix: true, permissions: true,
+        rateLimit: true, isActive: true, createdAt: true,
+      },
     });
     res.json({ ...updated, key, message: "New key generated. Save it — it won't be shown again." });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch {
+    res.status(500).json({ error: "Failed to regenerate API key" });
   }
 });
 

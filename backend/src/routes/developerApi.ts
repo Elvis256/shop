@@ -5,6 +5,8 @@ import { authenticateApiKey, requirePermission, ApiKeyRequest } from "../middlew
 const router = Router();
 const prisma = new PrismaClient();
 
+const VALID_ORDER_STATUSES = ["PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED", "REFUNDED"];
+
 // All routes require API key
 router.use(authenticateApiKey);
 
@@ -50,8 +52,8 @@ router.get("/products", requirePermission("products:read"), async (req: ApiKeyRe
       data: products,
       pagination: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
     });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch products" } });
   }
 });
 
@@ -69,8 +71,8 @@ router.get("/products/:idOrSlug", requirePermission("products:read"), async (req
     });
     if (!product) return res.status(404).json({ error: { code: "NOT_FOUND", message: "Product not found" } });
     res.json({ data: product });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch product" } });
   }
 });
 
@@ -85,8 +87,19 @@ router.get("/orders", requirePermission("orders:read"), async (req: ApiKeyReques
     const since = req.query.since as string;
 
     const where: any = {};
-    if (status) where.status = status;
-    if (since) where.createdAt = { gte: new Date(since) };
+    if (status) {
+      if (!VALID_ORDER_STATUSES.includes(status)) {
+        return res.status(400).json({ error: { code: "BAD_REQUEST", message: `Invalid status. Valid: ${VALID_ORDER_STATUSES.join(", ")}` } });
+      }
+      where.status = status;
+    }
+    if (since) {
+      const sinceDate = new Date(since);
+      if (isNaN(sinceDate.getTime())) {
+        return res.status(400).json({ error: { code: "BAD_REQUEST", message: "Invalid 'since' date. Use ISO 8601 format." } });
+      }
+      where.createdAt = { gte: sinceDate };
+    }
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
@@ -109,8 +122,8 @@ router.get("/orders", requirePermission("orders:read"), async (req: ApiKeyReques
     ]);
 
     res.json({ data: orders, pagination: { page, perPage, total, totalPages: Math.ceil(total / perPage) } });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch orders" } });
   }
 });
 
@@ -127,8 +140,8 @@ router.get("/orders/:id", requirePermission("orders:read"), async (req: ApiKeyRe
     });
     if (!order) return res.status(404).json({ error: { code: "NOT_FOUND", message: "Order not found" } });
     res.json({ data: order });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch order" } });
   }
 });
 
@@ -136,6 +149,15 @@ router.get("/orders/:id", requirePermission("orders:read"), async (req: ApiKeyRe
 router.put("/orders/:id", requirePermission("orders:write"), async (req: ApiKeyRequest, res: Response) => {
   try {
     const { status, trackingNumber, notes } = req.body;
+
+    if (status && !VALID_ORDER_STATUSES.includes(status)) {
+      return res.status(400).json({ error: { code: "BAD_REQUEST", message: `Invalid status. Valid: ${VALID_ORDER_STATUSES.join(", ")}` } });
+    }
+
+    if (trackingNumber !== undefined && typeof trackingNumber !== "string") {
+      return res.status(400).json({ error: { code: "BAD_REQUEST", message: "trackingNumber must be a string" } });
+    }
+
     const order = await prisma.order.findFirst({
       where: { OR: [{ id: req.params.id }, { orderNumber: req.params.id }] },
     });
@@ -146,14 +168,14 @@ router.put("/orders/:id", requirePermission("orders:write"), async (req: ApiKeyR
       data: {
         ...(status && { status }),
         ...(trackingNumber !== undefined && { trackingNumber }),
-        ...(notes !== undefined && { notes }),
+        ...(notes !== undefined && { notes: String(notes) }),
       },
       select: { id: true, orderNumber: true, status: true, trackingNumber: true, updatedAt: true },
     });
 
     res.json({ data: updated });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to update order" } });
   }
 });
 
@@ -190,8 +212,8 @@ router.get("/customers", requirePermission("customers:read"), async (req: ApiKey
     ]);
 
     res.json({ data: customers, pagination: { page, perPage, total, totalPages: Math.ceil(total / perPage) } });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch customers" } });
   }
 });
 
@@ -208,8 +230,8 @@ router.get("/categories", requirePermission("products:read"), async (_req: ApiKe
       orderBy: { name: "asc" },
     });
     res.json({ data: categories });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch categories" } });
   }
 });
 
@@ -244,8 +266,8 @@ router.get("/inventory", requirePermission("inventory:read"), async (req: ApiKey
     ]);
 
     res.json({ data: products, pagination: { page, perPage, total, totalPages: Math.ceil(total / perPage) } });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch inventory" } });
   }
 });
 
@@ -253,16 +275,23 @@ router.get("/inventory", requirePermission("inventory:read"), async (req: ApiKey
 router.put("/inventory/:id", requirePermission("inventory:write"), async (req: ApiKeyRequest, res: Response) => {
   try {
     const { stock } = req.body;
-    if (stock === undefined) return res.status(400).json({ error: { code: "BAD_REQUEST", message: "stock required" } });
+    if (stock === undefined || stock === null) {
+      return res.status(400).json({ error: { code: "BAD_REQUEST", message: "stock is required" } });
+    }
+
+    const parsed = parseInt(stock);
+    if (isNaN(parsed) || parsed < 0) {
+      return res.status(400).json({ error: { code: "BAD_REQUEST", message: "stock must be a non-negative integer" } });
+    }
 
     const product = await prisma.product.update({
       where: { id: req.params.id },
-      data: { stock: parseInt(stock) },
+      data: { stock: parsed },
       select: { id: true, name: true, sku: true, stock: true },
     });
     res.json({ data: product });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to update inventory" } });
   }
 });
 
@@ -275,8 +304,8 @@ router.get("/webhooks", requirePermission("webhooks:read"), async (_req: ApiKeyR
       select: { id: true, url: true, events: true, isActive: true, failCount: true, createdAt: true },
     });
     res.json({ data: endpoints });
-  } catch (e: any) {
-    res.status(500).json({ error: { code: "INTERNAL", message: e.message } });
+  } catch {
+    res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch webhooks" } });
   }
 });
 

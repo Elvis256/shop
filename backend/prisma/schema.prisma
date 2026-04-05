@@ -1574,8 +1574,8 @@ model PriceSlasher {
 model ApiKey {
   id          String   @id @default(cuid())
   name        String
-  key         String   @unique
-  prefix      String
+  keyHash     String   @unique // SHA-256 hash of the API key
+  prefix      String            // First 12 chars for display (e.g. "sk_live_a3f1...")
 
   permissions String[]
 
@@ -1593,6 +1593,6 @@ model ApiKey {
   updatedAt   DateTime @updatedAt
   expiresAt   DateTime?
 
-  @@index([key])
+  @@index([keyHash])
   @@index([userId])
 }
