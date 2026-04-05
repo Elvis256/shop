@@ -42,15 +42,15 @@ export default function SellerLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeName, setStoreName] = useState<string>("");
 
-  const isRegisterPage = pathname === "/seller/register";
+  const isPublicPage = pathname === "/seller/register" || pathname === "/seller/login";
   const isSeller = user?.role === "SELLER";
 
   useEffect(() => {
-    if (isRegisterPage || isLoading) return;
+    if (isPublicPage || isLoading) return;
     if (!user) {
-      router.push("/auth/login");
+      router.push("/seller/login");
     }
-  }, [user, isLoading, isRegisterPage, router]);
+  }, [user, isLoading, isPublicPage, router]);
 
   useEffect(() => {
     if (!user || !isSeller) return;
@@ -58,7 +58,7 @@ export default function SellerLayout({ children }: { children: ReactNode }) {
     if (stored) setStoreName(stored);
   }, [user, isSeller]);
 
-  if (isRegisterPage) {
+  if (isPublicPage) {
     return <>{children}</>;
   }
 

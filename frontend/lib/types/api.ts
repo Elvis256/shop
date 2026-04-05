@@ -10,7 +10,7 @@ export interface User {
   email: string;
   name: string | null;
   phone: string | null;
-  role: "CUSTOMER" | "ADMIN" | "MANAGER";
+  role: "CUSTOMER" | "SELLER" | "ADMIN" | "MANAGER";
   emailVerified: boolean;
   createdAt: string;
 }
