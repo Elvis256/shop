@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { Shield, Save, Loader2, Check, X, RefreshCw } from "lucide-react";
+import { Shield, Save, Loader2, Check, X, RefreshCw, UserCog, Search } from "lucide-react";
 
 interface Permission {
   id: string;
@@ -26,6 +26,12 @@ export default function PermissionsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [roleSearchEmail, setRoleSearchEmail] = useState("");
+  const [roleSearchLoading, setRoleSearchLoading] = useState(false);
+  const [roleSearchResult, setRoleSearchResult] = useState<{id: string; email: string; name: string | null; role: string} | null>(null);
+  const [roleSearchError, setRoleSearchError] = useState("");
+  const [roleAssigning, setRoleAssigning] = useState(false);
+  const [roleMessage, setRoleMessage] = useState("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -82,6 +88,50 @@ export default function PermissionsPage() {
       setMessage("Failed to save permissions");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const searchUserForRole = async () => {
+    setRoleSearchLoading(true);
+    setRoleSearchResult(null);
+    setRoleSearchError("");
+    setRoleMessage("");
+    try {
+      const res = await apiFetch(`/api/admin/customers?search=${encodeURIComponent(roleSearchEmail)}&limit=1&includeAllRoles=true`);
+      const data = await res.json();
+      const customers = data.customers || [];
+      if (customers.length === 0) {
+        setRoleSearchError("No user found with that email");
+        return;
+      }
+      const c = customers[0];
+      setRoleSearchResult({ id: c.id, email: c.email, name: c.name, role: c.role || "CUSTOMER" });
+    } catch (err) {
+      setRoleSearchError("Search failed");
+    } finally {
+      setRoleSearchLoading(false);
+    }
+  };
+
+  const assignRoleToUser = async (userId: string, newRole: string) => {
+    setRoleAssigning(true);
+    setRoleMessage("");
+    try {
+      const res = await apiFetch(`/api/admin/customers/${userId}/role`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: newRole }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed");
+      }
+      setRoleSearchResult(prev => prev ? { ...prev, role: newRole } : prev);
+      setRoleMessage(`Role changed to ${newRole} successfully`);
+    } catch (err: any) {
+      setRoleMessage(err.message || "Failed to change role");
+    } finally {
+      setRoleAssigning(false);
     }
   };
 
@@ -146,6 +196,78 @@ export default function PermissionsPage() {
             )}
           </div>
         ))}
+      </div>
+
+      {/* Quick Role Assignment */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+          <UserCog className="w-5 h-5 text-primary" />
+          Assign Role to User
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">Search for a user by email to change their role</p>
+        
+        <div className="flex gap-3 items-end">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">User Email</label>
+            <input
+              type="email"
+              placeholder="user@example.com"
+              value={roleSearchEmail}
+              onChange={(e) => setRoleSearchEmail(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          <button
+            onClick={searchUserForRole}
+            disabled={!roleSearchEmail || roleSearchLoading}
+            className="px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-sm hover:bg-gray-200 disabled:opacity-50 flex items-center gap-2"
+          >
+            {roleSearchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            Search
+          </button>
+        </div>
+
+        {roleSearchResult && (
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">{roleSearchResult.name || roleSearchResult.email}</p>
+                <p className="text-xs text-gray-500">{roleSearchResult.email}</p>
+                <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium ${
+                  roleSearchResult.role === "ADMIN" ? "bg-red-100 text-red-700" :
+                  roleSearchResult.role === "MANAGER" ? "bg-purple-100 text-purple-700" :
+                  roleSearchResult.role === "SELLER" ? "bg-blue-100 text-blue-700" :
+                  "bg-gray-100 text-gray-600"
+                }`}>
+                  {roleSearchResult.role}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={roleSearchResult.role}
+                  onChange={(e) => assignRoleToUser(roleSearchResult.id, e.target.value)}
+                  disabled={roleAssigning}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                >
+                  <option value="CUSTOMER">Customer</option>
+                  <option value="SELLER">Seller</option>
+                  <option value="MANAGER">Manager</option>
+                  <option value="ADMIN">Admin</option>
+                </select>
+                {roleAssigning && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+              </div>
+            </div>
+            {roleMessage && (
+              <p className={`text-xs mt-2 ${roleMessage.includes("success") || roleMessage.includes("changed") ? "text-green-600" : "text-red-600"}`}>
+                {roleMessage}
+              </p>
+            )}
+          </div>
+        )}
+
+        {roleSearchError && (
+          <p className="text-xs text-red-500 mt-2">{roleSearchError}</p>
+        )}
       </div>
 
       {/* Permissions matrix */}

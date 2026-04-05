@@ -17,6 +17,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       page = "1",
       limit = "20",
       filter,
+      includeAllRoles,
     } = req.query;
 
     const take = Math.min(parseInt(limit as string) || 20, 100);
@@ -46,6 +47,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       name: string;
       phone: string | null;
       isRegistered: boolean;
+      role: string | null;
       orderCount: number;
       totalSpent: number;
       activeOrders: number;
@@ -75,6 +77,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
           name: o.customerName || "",
           phone: o.customerPhone || null,
           isRegistered: !!o.userId,
+          role: null,
           orderCount: 1,
           totalSpent: isActive ? amt : 0,
           activeOrders: isActive ? 1 : 0,
@@ -85,9 +88,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
     }
 
     // Also include registered customers who may not have ordered
+    const showAllRoles = includeAllRoles === "true";
     const registeredUsers = await prisma.user.findMany({
-      where: { role: "CUSTOMER" },
-      select: { id: true, email: true, name: true, phone: true, createdAt: true, isBlocked: true },
+      where: showAllRoles ? {} : { role: "CUSTOMER" },
+      select: { id: true, email: true, name: true, phone: true, role: true, createdAt: true, isBlocked: true },
     });
 
     for (const u of registeredUsers) {
@@ -96,6 +100,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         const c = customerMap.get(key)!;
         c.id = u.id;
         c.isRegistered = true;
+        c.role = u.role;
         if (!c.name && u.name) c.name = u.name || "";
         if (!c.phone && u.phone) c.phone = u.phone;
       } else {
@@ -105,6 +110,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
           name: u.name || "",
           phone: u.phone || null,
           isRegistered: true,
+          role: u.role,
           orderCount: 0,
           totalSpent: 0,
           activeOrders: 0,
@@ -160,6 +166,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         phone: c.phone,
         isRegistered: c.isRegistered,
         isBlocked: false,
+        role: c.role || "CUSTOMER",
         orderCount: c.orderCount,
         activeOrders: c.activeOrders,
         totalSpent: c.totalSpent,
@@ -279,7 +286,7 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       .object({
         name: z.string().optional(),
         phone: z.string().optional(),
-        role: z.enum(["CUSTOMER", "ADMIN", "MANAGER"]).optional(),
+        role: z.enum(["CUSTOMER", "SELLER", "ADMIN", "MANAGER"]).optional(),
         isBlocked: z.boolean().optional(),
       })
       .parse(req.body);
@@ -403,5 +410,74 @@ export async function autoSegmentUsers(): Promise<number> {
   }
   return updated;
 }
+
+// PUT /api/admin/customers/:id/role - Change a user's role
+router.put("/:id/role", async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { role } = z.object({
+      role: z.enum(["CUSTOMER", "SELLER", "ADMIN", "MANAGER"]),
+    }).parse(req.body);
+
+    // Prevent self-demotion
+    if (req.user?.id === id) {
+      return res.status(400).json({ error: "Cannot change your own role" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const oldRole = user.role;
+
+    // If promoting to SELLER, ensure they have a Seller record
+    if (role === "SELLER") {
+      const existingSeller = await prisma.seller.findUnique({ where: { userId: id } });
+      if (!existingSeller) {
+        await prisma.seller.create({
+          data: {
+            userId: id,
+            storeName: user.name || user.email.split("@")[0],
+            storeSlug: user.email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "-"),
+            description: "",
+            status: "APPROVED",
+          },
+        });
+      } else if (existingSeller.status !== "APPROVED") {
+        await prisma.seller.update({
+          where: { userId: id },
+          data: { status: "APPROVED" },
+        });
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: { role },
+      select: { id: true, email: true, name: true, role: true },
+    });
+
+    // Log the role change
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user!.id,
+        action: "ROLE_CHANGE",
+        entityType: "User",
+        entityId: id,
+        description: `Changed role from ${oldRole} to ${role} for ${user.email}`,
+        metadata: { oldRole, newRole: role, targetEmail: user.email },
+        ipAddress: req.ip || "unknown",
+      },
+    }).catch(() => {});
+
+    return res.json({ message: `Role changed to ${role}`, user: updated });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid role" });
+    }
+    return res.status(500).json({ error: "Failed to change role" });
+  }
+});
 
 export default router;

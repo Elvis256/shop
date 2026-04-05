@@ -5,7 +5,7 @@ import { api, apiFetch } from "@/lib/api";
 import {
   Search, Users, UserCheck, UserX, Package, ShieldBan, ChevronLeft, ChevronRight,
   ArrowUpDown, Download, RefreshCw, X, ExternalLink, ShieldAlert, ShieldCheck,
-  Mail, Phone, Calendar, ShoppingBag,
+  Mail, Phone, Calendar, ShoppingBag, Loader2,
 } from "lucide-react";
 
 interface Customer {
@@ -15,6 +15,7 @@ interface Customer {
   phone: string | null;
   isRegistered: boolean;
   isBlocked: boolean;
+  role?: string;
   orderCount: number;
   activeOrders: number;
   totalSpent: number;
@@ -43,6 +44,7 @@ export default function AdminCustomersPage() {
   const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 20, totalPages: 1 });
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [togglingBlock, setTogglingBlock] = useState(false);
+  const [changingRole, setChangingRole] = useState(false);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const blockedCount = customers.filter((c) => c.isBlocked).length;
@@ -92,6 +94,24 @@ export default function AdminCustomersPage() {
       console.error("Failed to toggle block status:", e);
     } finally {
       setTogglingBlock(false);
+    }
+  };
+
+  const changeRole = async (customer: Customer, newRole: string) => {
+    if (!customer.id) return;
+    setChangingRole(true);
+    try {
+      await apiFetch(`/api/admin/customers/${customer.id}/role`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: newRole }),
+      });
+      setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, role: newRole } : c));
+      setSelectedCustomer(prev => prev ? { ...prev, role: newRole } : prev);
+    } catch (e) {
+      console.error("Failed to change role:", e);
+    } finally {
+      setChangingRole(false);
     }
   };
 
@@ -269,6 +289,16 @@ export default function AdminCustomersPage() {
                             Blocked
                           </span>
                         )}
+                        {c.role && c.role !== "CUSTOMER" && (
+                          <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            c.role === "ADMIN" ? "bg-red-100 text-red-700" :
+                            c.role === "MANAGER" ? "bg-purple-100 text-purple-700" :
+                            c.role === "SELLER" ? "bg-blue-100 text-blue-700" :
+                            "bg-gray-100 text-gray-600"
+                          }`}>
+                            {c.role}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -423,9 +453,31 @@ export default function AdminCustomersPage() {
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Modal Footer */}
+              {/* Role Management */}
+              {selectedCustomer.id && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <label className="block text-xs font-medium text-gray-500 mb-2">User Role</label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedCustomer.role || "CUSTOMER"}
+                      onChange={(e) => changeRole(selectedCustomer, e.target.value)}
+                      disabled={changingRole || selectedCustomer.id === undefined}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
+                    >
+                      <option value="CUSTOMER">Customer</option>
+                      <option value="SELLER">Seller / Vendor</option>
+                      <option value="MANAGER">Manager</option>
+                      <option value="ADMIN">Admin</option>
+                    </select>
+                    {changingRole && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Changing role affects what this user can access. Promoting to Seller will auto-create a vendor profile.
+                  </p>
+                </div>
+              )}
+            </div>
             <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
               <a href={`/admin/orders?customer=${encodeURIComponent(selectedCustomer.email)}`}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
