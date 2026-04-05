@@ -370,19 +370,26 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
 
     // ── Customer stats ────────────────────────────────────────
     const registeredCustomers = await prisma.user.count({ where: { role: "CUSTOMER" } });
-    const newRegistered = await prisma.user.count({
-      where: { role: "CUSTOMER", createdAt: { gte: startDate } },
+    const thisMonthStart = new Date();
+    thisMonthStart.setDate(1); thisMonthStart.setHours(0, 0, 0, 0);
+    const lastMonthStart = new Date(thisMonthStart);
+    lastMonthStart.setMonth(lastMonthStart.getMonth() - 1);
+    const newRegisteredThisMonth = await prisma.user.count({
+      where: { role: "CUSTOMER", createdAt: { gte: thisMonthStart } },
+    });
+    const newRegisteredLastMonth = await prisma.user.count({
+      where: { role: "CUSTOMER", createdAt: { gte: lastMonthStart, lt: thisMonthStart } },
     });
 
     // Unique customers from orders (includes guests)
     const uniqueEmails = await prisma.order.findMany({
-      where: { createdAt: { gte: startDate } },
+      where: { createdAt: { gte: startDate }, ...activeFilter },
       select: { customerEmail: true },
       distinct: ["customerEmail"],
     });
     const totalOrderCustomers = uniqueEmails.length;
 
-    // Repeat customers
+    // Repeat customers (more than 1 non-cancelled order in period)
     const repeatBuyers = await prisma.order.groupBy({
       by: ["customerEmail"],
       where: { createdAt: { gte: startDate }, ...activeFilter },
@@ -390,7 +397,8 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
     });
     const returningCount = repeatBuyers.filter((r) => r._count.id > 1).length;
 
-    const conversionRate = totalVisitors > 0 ? (currentOrders / totalVisitors) * 100 : 0;
+    // Conversion = unique buyers / unique visitors
+    const conversionRate = totalVisitors > 0 ? (totalOrderCustomers / totalVisitors) * 100 : 0;
 
     // ── Top selling products ──────────────────────────────────
     const topProductGroups = await prisma.orderItem.groupBy({
@@ -428,7 +436,7 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
     });
     const totalActiveProducts = await prisma.product.count({ where: { status: "ACTIVE" } });
 
-    // Never ordered products
+    // Never ordered products — return details for display
     const orderedProductIds = await prisma.orderItem.findMany({
       select: { productId: true },
       distinct: ["productId"],
@@ -436,9 +444,19 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
     const orderedSet = new Set(orderedProductIds.map((p) => p.productId));
     const allActiveProducts = await prisma.product.findMany({
       where: { status: "ACTIVE" },
-      select: { id: true },
+      select: { id: true, name: true, price: true, stock: true, createdAt: true },
     });
-    const neverOrdered = allActiveProducts.filter((p) => !orderedSet.has(p.id)).length;
+    const now = new Date();
+    const neverOrderedProducts = allActiveProducts
+      .filter((p) => !orderedSet.has(p.id))
+      .map((p) => ({
+        name: p.name,
+        price: Number(p.price),
+        stock: p.stock,
+        daysListed: Math.floor((now.getTime() - p.createdAt.getTime()) / 86400000),
+      }))
+      .sort((a, b) => b.daysListed - a.daysListed);
+    const neverOrderedCount = neverOrderedProducts.length;
 
     // Dropship margin analysis
     const dropshipProducts = await prisma.product.findMany({
@@ -624,8 +642,8 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
       insights.push({ type: "success", title: "Good Conversion", message: `Conversion rate at ${conversionRate.toFixed(1)}% — above average.` });
     if (conversionRate > 0 && conversionRate < 1)
       insights.push({ type: "info", title: "Low Conversion", message: `Conversion rate at ${conversionRate.toFixed(1)}%. Consider improving product pages.` });
-    if (neverOrdered > 5)
-      insights.push({ type: "info", title: "Dormant Products", message: `${neverOrdered} products have never been ordered.` });
+    if (neverOrderedCount > 5)
+      insights.push({ type: "info", title: "Dormant Products", message: `${neverOrderedCount} products have never been ordered.` });
 
     return res.json({
       revenue: {
@@ -646,7 +664,8 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
       },
       customers: {
         registered: registeredCustomers,
-        newRegistered,
+        newRegistered: newRegisteredThisMonth,
+        newLastMonth: newRegisteredLastMonth,
         orderCustomers: totalOrderCustomers,
         returning: returningCount,
         conversionRate: Math.round(conversionRate * 10) / 10,
@@ -656,7 +675,8 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
         lowStock: lowStockCount,
         outOfStock,
         totalActive: totalActiveProducts,
-        neverOrdered,
+        neverOrdered: neverOrderedProducts.slice(0, 10),
+        neverOrderedCount,
         dropshipMargins,
         avgDropshipMargin,
         inventoryValue,
