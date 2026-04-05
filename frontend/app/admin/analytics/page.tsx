@@ -71,7 +71,7 @@ const CHART_COLORS = [
 function buildCSV(data: any, period: number): string {
   const rows: string[] = [];
 
-  rows.push("ANALYTICS REPORT — " + period + " Days — " + new Date().toISOString().split("T")[0]);
+  rows.push("ANALYTICS REPORT — " + (period === 1 ? "Today" : period + " Days") + " — " + new Date().toISOString().split("T")[0]);
   rows.push("");
 
   rows.push("REVENUE");
@@ -403,7 +403,7 @@ export default function AnalyticsPage() {
         <h1 className="text-lg font-semibold text-gray-900">Analytics</h1>
         <div className="flex items-center gap-2">
           <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5">
-            {[7, 14, 30, 90].map((p) => (
+            {[1, 7, 14, 30, 90].map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
@@ -412,7 +412,7 @@ export default function AnalyticsPage() {
                   (period === p ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")
                 }
               >
-                {p}D
+                {p === 1 ? "Today" : `${p}D`}
               </button>
             ))}
           </div>

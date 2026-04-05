@@ -202,17 +202,28 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
     const { period = "30" } = req.query;
     const days = parseInt(period as string) || 30;
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    if (days === 1) {
+      // "Today" — start of current day (UTC)
+      startDate.setUTCHours(0, 0, 0, 0);
+    } else {
+      startDate.setDate(startDate.getDate() - days);
+    }
 
     const previousStartDate = new Date(startDate);
-    previousStartDate.setDate(previousStartDate.getDate() - days);
+    if (days === 1) {
+      // Previous period = yesterday
+      previousStartDate.setDate(previousStartDate.getDate() - 1);
+    } else {
+      previousStartDate.setDate(previousStartDate.getDate() - days);
+    }
 
     // Active orders = not cancelled/refunded (includes COD with pending payment)
     const activeFilter = { status: { notIn: ["CANCELLED", "REFUNDED"] as ("CANCELLED" | "REFUNDED")[] } };
 
     // ── Daily order data (active orders) ──────────────────────
     const dailyMap = new Map<string, { revenue: number; orders: number; collected: number }>();
-    for (let i = 0; i <= days; i++) {
+    const bucketCount = days === 1 ? 1 : days + 1;
+    for (let i = 0; i < bucketCount; i++) {
       const d = new Date(startDate);
       d.setDate(d.getDate() + i);
       dailyMap.set(d.toISOString().split("T")[0], { revenue: 0, orders: 0, collected: 0 });
