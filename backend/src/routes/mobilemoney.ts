@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
+import { authenticate, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -269,8 +270,12 @@ router.post("/callback/:provider", async (req, res) => {
   }
 });
 
-// Simulate payment completion (for testing)
-router.post("/simulate-complete/:transactionId", async (req, res) => {
+// Simulate payment completion (DEV/STAGING ONLY — blocked in production)
+router.post("/simulate-complete/:transactionId", authenticate, requireAdmin, async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "Simulation endpoint disabled in production" });
+  }
+
   try {
     const { transactionId } = req.params;
     const { success = true } = req.body;

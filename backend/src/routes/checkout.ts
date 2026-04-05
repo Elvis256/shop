@@ -345,7 +345,7 @@ router.post("/create", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     if (error instanceof Error && error.message.includes("Insufficient stock")) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: "Insufficient stock for one or more items" });
     }
     return res.status(500).json({ error: "Checkout failed" });
   }

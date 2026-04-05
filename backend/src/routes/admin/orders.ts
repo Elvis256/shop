@@ -498,7 +498,7 @@ router.post("/:id/refund", async (req: AuthRequest, res: Response) => {
     return res.json({ message: "Refund processed successfully", data: refundResult });
   } catch (error: any) {
     console.error("Admin refund error:", error);
-    return res.status(500).json({ error: error.message || "Refund failed" });
+    return res.status(500).json({ error: "Refund failed" });
   }
 });
 

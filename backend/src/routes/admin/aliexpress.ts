@@ -52,7 +52,7 @@ router.get("/search", async (req: AuthRequest, res: Response) => {
     return res.json(result);
   } catch (error: any) {
     console.error("AliExpress search error:", error.message);
-    return res.status(500).json({ error: error.message || "Search failed" });
+    return res.status(500).json({ error: "Search failed" });
   }
 });
 
@@ -69,7 +69,7 @@ router.get("/product/:productId", async (req: AuthRequest, res: Response) => {
     return res.json({ ...detail, shippingOptions: shipping.length ? shipping : detail.shippingOptions });
   } catch (error: any) {
     console.error("AliExpress product detail error:", error.message);
-    return res.status(500).json({ error: error.message || "Failed to get product details" });
+    return res.status(500).json({ error: "Failed to get product details" });
   }
 });
 
@@ -176,7 +176,7 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
-    return res.status(500).json({ error: error.message || "Import failed" });
+    return res.status(500).json({ error: "Import failed" });
   }
 });
 
@@ -268,7 +268,7 @@ router.post("/import-from-url", async (req: AuthRequest, res: Response) => {
     return res.json({ message: "Product imported from URL successfully", product });
   } catch (error: any) {
     console.error("AliExpress URL import error:", error.message);
-    return res.status(500).json({ error: error.message || "URL import failed" });
+    return res.status(500).json({ error: "URL import failed" });
   }
 });
 
@@ -306,7 +306,7 @@ router.put("/products/:id/markup", async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
-    return res.status(500).json({ error: error.message || "Update failed" });
+    return res.status(500).json({ error: "Update failed" });
   }
 });
 
@@ -332,7 +332,7 @@ router.get("/products", async (req: AuthRequest, res: Response) => {
 
     return res.json({ products, total, page, totalPages: Math.ceil(total / limit) });
   } catch (error: any) {
-    return res.status(500).json({ error: error.message || "Failed to list products" });
+    return res.status(500).json({ error: "Failed to list products" });
   }
 });
 
@@ -386,7 +386,7 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
 
     return res.json({ synced: results.length, results });
   } catch (error: any) {
-    return res.status(500).json({ error: error.message || "Sync failed" });
+    return res.status(500).json({ error: "Sync failed" });
   }
 });
 
@@ -419,7 +419,7 @@ router.get("/orders", async (req: AuthRequest, res: Response) => {
 
     return res.json({ orders, total, page, totalPages: Math.ceil(total / limit) });
   } catch (error: any) {
-    return res.status(500).json({ error: error.message || "Failed to list orders" });
+    return res.status(500).json({ error: "Failed to list orders" });
   }
 });
 
@@ -455,7 +455,7 @@ router.put("/settings", async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
-    return res.status(500).json({ error: error.message || "Failed to save settings" });
+    return res.status(500).json({ error: "Failed to save settings" });
   }
 });
 
@@ -478,7 +478,7 @@ router.get("/settings", async (req: AuthRequest, res: Response) => {
 
     return res.json(result);
   } catch (error: any) {
-    return res.status(500).json({ error: error.message || "Failed to get settings" });
+    return res.status(500).json({ error: "Failed to get settings" });
   }
 });
 

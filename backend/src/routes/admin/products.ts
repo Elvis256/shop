@@ -364,10 +364,10 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
 router.post("/:id/images", (req, res, next) => {
   uploadMultiple(req, res, (err) => {
     if (err instanceof multer.MulterError) {
-      return res.status(400).json({ error: `Upload error: ${err.message}` });
+      return res.status(400).json({ error: "File upload failed" });
     }
     if (err) {
-      return res.status(400).json({ error: err.message || "Upload failed" });
+      return res.status(400).json({ error: "Upload failed" });
     }
     next();
   });

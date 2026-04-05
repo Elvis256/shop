@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import DOMPurify from "dompurify";
 import { Star, ThumbsUp, ShieldCheck, Truck, RotateCcw } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Review, ReviewsResponse } from "@/lib/types/api";
@@ -109,7 +110,7 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
         {activeTab === "details" && (
           <div className="prose prose-sm max-w-none text-gray-700">
             {description ? (
-              <div className="leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: description }} />
+              <div className="leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description) }} />
             ) : (
               <p className="text-gray-400 italic">No description provided for this product.</p>
             )}

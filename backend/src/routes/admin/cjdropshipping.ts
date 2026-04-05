@@ -52,7 +52,7 @@ router.get("/search", async (req: AuthRequest, res: Response) => {
     return res.json(result);
   } catch (error: any) {
     console.error("CJ search error:", error.message);
-    return res.status(500).json({ error: error.message || "Search failed" });
+    return res.status(500).json({ error: "Search failed" });
   }
 });
 
@@ -66,7 +66,7 @@ router.get("/product/:productId", async (req: AuthRequest, res: Response) => {
     ]);
     return res.json({ ...detail, shippingOptions: shipping });
   } catch (error: any) {
-    return res.status(500).json({ error: error.message || "Failed to get product details" });
+    return res.status(500).json({ error: "Failed to get product details" });
   }
 });
 
@@ -168,7 +168,7 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
-    return res.status(500).json({ error: error.message || "Import failed" });
+    return res.status(500).json({ error: "Import failed" });
   }
 });
 
@@ -198,7 +198,7 @@ router.put("/products/:id/markup", async (req: AuthRequest, res: Response) => {
     return res.json({ message: "Markup updated", product: updated });
   } catch (error: any) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
-    return res.status(500).json({ error: error.message || "Update failed" });
+    return res.status(500).json({ error: "Update failed" });
   }
 });
 
@@ -222,7 +222,7 @@ router.get("/products", async (req: AuthRequest, res: Response) => {
 
     return res.json({ products, total, page, totalPages: Math.ceil(total / limit) });
   } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: "Operation failed" });
   }
 });
 
@@ -290,7 +290,7 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
 
     return res.json({ synced: results.length, results });
   } catch (error: any) {
-    return res.status(500).json({ error: error.message || "Sync failed" });
+    return res.status(500).json({ error: "Sync failed" });
   }
 });
 
@@ -321,7 +321,7 @@ router.get("/orders", async (req: AuthRequest, res: Response) => {
 
     return res.json({ orders, total, page, totalPages: Math.ceil(total / limit) });
   } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: "Operation failed" });
   }
 });
 
@@ -348,7 +348,7 @@ router.put("/settings", async (req: AuthRequest, res: Response) => {
     return res.json({ message: "CJ Dropshipping settings saved" });
   } catch (error: any) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: "Operation failed" });
   }
 });
 
@@ -368,7 +368,7 @@ router.get("/settings", async (req: AuthRequest, res: Response) => {
     }
     return res.json(result);
   } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: "Operation failed" });
   }
 });
 

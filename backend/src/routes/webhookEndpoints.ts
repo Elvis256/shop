@@ -118,7 +118,7 @@ router.post("/:id/test", async (req: AuthRequest, res: Response) => {
     });
   } catch (error: any) {
     console.error("Test webhook error:", error);
-    return res.status(500).json({ error: "Failed to send test webhook", detail: error.message });
+    return res.status(500).json({ error: "Failed to send test webhook" });
   }
 });
 
