@@ -9,6 +9,7 @@ import { sendOrderConfirmationWhatsApp } from "../services/whatsapp";
 import { sendOrderConfirmationSMS } from "../services/sms";
 import { sendMetaConversionEvent } from "../services/metaConversions";
 import prisma from "../lib/prisma";
+import redis from "../lib/redis";
 const router = Router();
 
 // Stock reservation timeout (15 minutes)
@@ -99,6 +100,27 @@ async function reserveStock(
 // POST /api/checkout/create
 router.post("/create", async (req: Request, res: Response) => {
   try {
+    // Idempotency: prevent duplicate checkout submissions
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (idempotencyKey) {
+      const redisKey = `idempotency:checkout:${idempotencyKey}`;
+      try {
+        const existing = await redis.get(redisKey);
+        if (existing) {
+          const cached = JSON.parse(existing);
+          return res.status(cached.statusCode || 200).json(cached.body);
+        }
+        // Claim the key with a short TTL to prevent races (extend after completion)
+        const claimed = await redis.set(redisKey, JSON.stringify({ pending: true }), "EX", 300, "NX");
+        if (!claimed) {
+          // Another request already claimed this key — it's in-flight
+          return res.status(409).json({ error: "Checkout already in progress. Please wait." });
+        }
+      } catch {
+        // Redis unavailable — proceed without idempotency rather than blocking checkout
+      }
+    }
+
     const body = CheckoutSchema.parse(req.body);
 
     // Fetch cart items - try cartId first, fall back to items array
@@ -332,13 +354,21 @@ router.post("/create", async (req: Request, res: Response) => {
       }
     }
 
-    return res.json({
+    const responseBody = {
       orderId: result.id,
       paymentId: payment.id,
       paymentLink,
       paymentMethod: body.paymentMethod,
       status: paymentStatus,
-    });
+    };
+
+    // Cache successful response for idempotency (1 hour TTL)
+    if (idempotencyKey) {
+      const redisKey = `idempotency:checkout:${idempotencyKey}`;
+      redis.set(redisKey, JSON.stringify({ statusCode: 200, body: responseBody }), "EX", 3600).catch(() => {});
+    }
+
+    return res.json(responseBody);
   } catch (error) {
     console.error("Checkout error:", error);
     if (error instanceof z.ZodError) {

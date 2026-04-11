@@ -5,6 +5,8 @@ import fs from "fs";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "uploads";
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || "5242880"); // 5MB
+const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+const ALLOWED_MIMETYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 // Ensure upload directory exists
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -29,33 +31,25 @@ function validateFileContent(buffer: Buffer, mimetype: string): boolean {
   });
 }
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, UPLOAD_DIR);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
-    if (!allowedExtensions.includes(ext)) {
-      return cb(new Error("Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp are allowed."), "");
-    }
-    const filename = `${uuidv4()}${ext}`;
-    cb(null, filename);
-  },
-});
+// Use memory storage so files are validated BEFORE touching disk
+const memoryStorage = multer.memoryStorage();
 
 const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-  
-  if (!allowedTypes.includes(file.mimetype)) {
+  if (!ALLOWED_MIMETYPES.includes(file.mimetype)) {
     cb(new Error("Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed."));
     return;
   }
-  
+
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+    cb(new Error("Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp are allowed."));
+    return;
+  }
+
   cb(null, true);
 };
 
-// Middleware to validate file content after upload
+// Validate magic bytes in memory, then write safe files to disk
 export function validateUploadedFiles(req: any, res: any, next: any) {
   const files = req.files as Express.Multer.File[] | undefined;
   const file = req.file as Express.Multer.File | undefined;
@@ -63,23 +57,35 @@ export function validateUploadedFiles(req: any, res: any, next: any) {
   const filesToValidate = files || (file ? [file] : []);
   
   for (const uploadedFile of filesToValidate) {
-    try {
-      const buffer = fs.readFileSync(uploadedFile.path);
-      if (!validateFileContent(buffer, uploadedFile.mimetype)) {
-        // Delete invalid file
-        fs.unlinkSync(uploadedFile.path);
-        return res.status(400).json({ error: "Invalid file content. File does not match declared type." });
-      }
-    } catch (err) {
-      return res.status(500).json({ error: "File validation failed" });
+    if (!uploadedFile.buffer) {
+      return res.status(400).json({ error: "File upload processing error" });
     }
+
+    if (!validateFileContent(uploadedFile.buffer, uploadedFile.mimetype)) {
+      return res.status(400).json({ error: "Invalid file content. File does not match declared type." });
+    }
+
+    // Write validated file to disk
+    const ext = path.extname(uploadedFile.originalname).toLowerCase();
+    const filename = `${uuidv4()}${ext}`;
+    const filepath = path.join(UPLOAD_DIR, filename);
+    try {
+      fs.writeFileSync(filepath, uploadedFile.buffer, { mode: 0o644 });
+    } catch (err) {
+      return res.status(500).json({ error: "Failed to save file" });
+    }
+
+    // Update file metadata so downstream handlers see the disk path
+    uploadedFile.path = filepath;
+    uploadedFile.filename = filename;
+    uploadedFile.destination = UPLOAD_DIR;
   }
   
   next();
 }
 
-export const upload = multer({
-  storage,
+const upload = multer({
+  storage: memoryStorage,
   fileFilter,
   limits: {
     fileSize: MAX_FILE_SIZE,

@@ -20,7 +20,7 @@ const AdminLoginSchema = z.object({
 });
 
 const MAX_ATTEMPTS = 3;
-const LOCKOUT_SECONDS = 30 * 60; // 30 minutes
+const LOCKOUT_SECONDS = 60 * 60; // 60 minutes
 
 // Custom TOTP verification (matches twoFactor.ts implementation)
 function verifyTOTP(secret: string, token: string, window = 1): boolean {
