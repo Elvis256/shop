@@ -103,8 +103,8 @@ router.get("/track/:orderNumber", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/orders/:id
-router.get("/:id", async (req: Request, res: Response) => {
+// GET /api/orders/:id — requires authentication + ownership check
+router.get("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -136,6 +136,14 @@ router.get("/:id", async (req: Request, res: Response) => {
 
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Verify ownership: user must own the order or be an admin
+    const user = req.user;
+    const isOwner = user && (order.userId === user.id || order.customerEmail === user.email);
+    const isAdmin = user && (user.role === "ADMIN" || user.role === "MANAGER");
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: "Not authorized to view this order" });
     }
 
     // Parse shippingAddress if stored as JSON string
@@ -399,6 +407,14 @@ router.put("/:id/modify", authenticate, async (req: AuthRequest, res: Response) 
     }
     if (order.status !== "PENDING") {
       return res.status(400).json({ error: "Only PENDING orders can be modified" });
+    }
+
+    // Block modification if payment has been initiated
+    const activePayment = await prisma.payment.findFirst({
+      where: { orderId: id, status: { not: "PENDING" } },
+    });
+    if (activePayment) {
+      return res.status(400).json({ error: "Cannot modify order after payment has been initiated" });
     }
 
     await prisma.$transaction(async (tx) => {

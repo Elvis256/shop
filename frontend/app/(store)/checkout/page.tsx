@@ -257,11 +257,13 @@ export default function CheckoutPage() {
       };
 
       const csrf = getCsrfToken();
+      const idempotencyKey = `ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`;
       const res = await fetch(`${API_URL}/api/checkout/create`, {
         method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(csrf ? { "x-csrf-token": csrf } : {}),
         },

@@ -49,8 +49,8 @@ async function nvpCall(params: Record<string, string>): Promise<Record<string, s
   return decodeNVP(data);
 }
 
-// Convert UGX amount to USD using the Currency table
-async function convertUgxToUsd(amountUgx: number): Promise<number> {
+// Convert UGX amount to USD using the Currency table (exported for amount verification)
+export async function convertUgxToUsd(amountUgx: number): Promise<number> {
   const usdCurrency = await prisma.currency.findUnique({ where: { code: "USD" } });
   const rate = usdCurrency ? Number(usdCurrency.exchangeRate) : 0.000271;
   return Math.round(amountUgx * rate * 100) / 100; // Round to 2 decimal places

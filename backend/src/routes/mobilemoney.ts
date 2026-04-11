@@ -170,23 +170,29 @@ router.post("/callback/:provider", async (req, res) => {
     const { provider } = req.params;
     const payload = req.body;
 
-    // Validate webhook signatures
+    // Validate webhook signatures — REJECT if signature is missing
     if (provider === "mtn_ug") {
       const signature = req.headers["x-callback-signature"] as string | undefined;
       const secret = process.env.MTN_WEBHOOK_SECRET;
-      if (secret && signature) {
-        const crypto = await import("crypto");
-        const expected = crypto.createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex");
-        if (signature !== expected) {
-          console.warn("[MTN Callback] Invalid signature — request rejected");
-          return res.status(401).json({ error: "Invalid signature" });
-        }
+      if (!secret || !signature) {
+        console.warn("[MTN Callback] Missing webhook secret or signature — request rejected");
+        return res.status(401).json({ error: "Missing signature — authentication required" });
+      }
+      const crypto = await import("crypto");
+      const expected = crypto.createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex");
+      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+        console.warn("[MTN Callback] Invalid signature — request rejected");
+        return res.status(401).json({ error: "Invalid signature" });
       }
     } else if (provider === "airtel_ug") {
       // Airtel uses Bearer token validation
       const authHeader = req.headers["authorization"] as string | undefined;
       const expectedToken = process.env.AIRTEL_CALLBACK_TOKEN;
-      if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+      if (!expectedToken || !authHeader) {
+        console.warn("[Airtel Callback] Missing token — request rejected");
+        return res.status(401).json({ error: "Missing authentication — token required" });
+      }
+      if (authHeader !== `Bearer ${expectedToken}`) {
         console.warn("[Airtel Callback] Invalid token — request rejected");
         return res.status(401).json({ error: "Invalid token" });
       }
@@ -245,6 +251,21 @@ router.post("/callback/:provider", async (req, res) => {
 
     // If successful, update order payment status
     if (status === "SUCCESSFUL" && transaction.orderId) {
+      // Verify payment amount matches order total
+      const order = await prisma.order.findUnique({ where: { id: transaction.orderId } });
+      if (!order) {
+        console.error(`Order not found for transaction ${transaction.id}`);
+        return res.status(404).json({ error: "Order not found" });
+      }
+      if (Math.abs(Number(order.totalAmount) - Number(transaction.amount)) > 1) {
+        console.error(`Amount mismatch for order ${transaction.orderId}: expected ${order.totalAmount}, got ${transaction.amount}`);
+        return res.status(400).json({ error: "Amount mismatch" });
+      }
+      // Guard: don't overwrite terminal payment status
+      if (order.paymentStatus === "SUCCESSFUL") {
+        return res.json({ success: true, message: "Already processed" });
+      }
+
       await prisma.$transaction([
         prisma.order.update({
           where: { id: transaction.orderId },

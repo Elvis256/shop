@@ -43,7 +43,9 @@ const ForgotPasswordSchema = z.object({
 
 const ResetPasswordSchema = z.object({
   token: z.string(),
-  password: z.string().min(8),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(strongPasswordRegex, "Password must contain uppercase, lowercase, number, and special character"),
 });
 
 const UpdateProfileSchema = z.object({
@@ -54,7 +56,9 @@ const UpdateProfileSchema = z.object({
 
 const ChangePasswordSchema = z.object({
   currentPassword: z.string(),
-  newPassword: z.string().min(8),
+  newPassword: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(strongPasswordRegex, "Password must contain uppercase, lowercase, number, and special character"),
 });
 
 // POST /api/auth/register
@@ -129,7 +133,9 @@ async function checkAccountLockout(email: string): Promise<{ locked: boolean; re
     }
     return { locked: false };
   } catch {
-    return { locked: false }; // Redis down — allow login
+    // Redis down — fail closed for security (block login)
+    console.error("Redis unavailable — blocking login for safety");
+    return { locked: true, remainingTime: 5 };
   }
 }
 
@@ -282,6 +288,19 @@ router.post("/login", async (req, res: Response) => {
 router.post("/forgot-password", async (req, res: Response) => {
   try {
     const body = ForgotPasswordSchema.parse(req.body);
+
+    // Per-email rate limiting: max 3 reset requests per hour
+    try {
+      const resetKey = `password-reset:${body.email}`;
+      const resetData = await redis.get(resetKey);
+      const resetCount = resetData ? parseInt(resetData, 10) : 0;
+      if (resetCount >= 3) {
+        return res.json({ message: "If the email exists, a reset link has been sent" });
+      }
+      await redis.set(resetKey, String(resetCount + 1), "EX", 3600);
+    } catch {
+      // Redis down — allow request but log it
+    }
 
     const user = await prisma.user.findUnique({ where: { email: body.email } });
     

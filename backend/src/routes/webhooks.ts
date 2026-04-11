@@ -24,14 +24,22 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
       const amount = data.amount;
       const currency = data.currency;
 
-      // Idempotency check - prevent duplicate processing
-      const existingWebhook = await prisma.processedWebhook.findUnique({
-        where: { webhookId: flw_ref },
-      });
-
-      if (existingWebhook) {
-        console.log(`Webhook ${flw_ref} already processed, skipping`);
-        return res.status(200).json({ received: true, duplicate: true });
+      // Idempotency: use INSERT with unique constraint first (atomic)
+      // This prevents race conditions from concurrent duplicate webhooks
+      try {
+        await prisma.processedWebhook.create({
+          data: {
+            webhookId: flw_ref,
+            provider: "flutterwave",
+            eventType: event,
+          },
+        });
+      } catch (idempotencyError: any) {
+        if (idempotencyError.code === "P2002") {
+          console.log(`Webhook ${flw_ref} already processed (unique constraint), skipping`);
+          return res.status(200).json({ received: true, duplicate: true });
+        }
+        throw idempotencyError;
       }
 
       // Find the order
@@ -51,23 +59,24 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
         return res.status(400).json({ error: "Amount mismatch" });
       }
 
-      // Process webhook in a transaction with idempotency record
+      // Process webhook in a transaction
       await prisma.$transaction(async (tx) => {
-        // Record webhook as processed first (idempotency)
-        await tx.processedWebhook.create({
-          data: {
-            webhookId: flw_ref,
-            provider: "flutterwave",
-            eventType: event,
-          },
-        });
-
         // Get stock reservations for this order
         const reservations = await tx.stockReservation.findMany({
           where: { orderId: tx_ref, released: false },
         });
 
         if (status === "successful") {
+          // Guard: reject if order already has a terminal payment status
+          const existingOrder = await tx.order.findUnique({
+            where: { id: tx_ref },
+            select: { paymentStatus: true },
+          });
+          if (existingOrder?.paymentStatus === "SUCCESSFUL") {
+            console.log(`Order ${tx_ref} already paid, skipping duplicate confirmation`);
+            return;
+          }
+
           await tx.payment.updateMany({
             where: { orderId: tx_ref },
             data: {

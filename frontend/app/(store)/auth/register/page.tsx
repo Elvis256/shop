@@ -97,6 +97,8 @@ export default function RegisterPage() {
     { label: "At least 8 characters", met: password.length >= 8 },
     { label: "Contains a number", met: /\d/.test(password) },
     { label: "Contains uppercase", met: /[A-Z]/.test(password) },
+    { label: "Contains lowercase", met: /[a-z]/.test(password) },
+    { label: "Contains special character", met: /[@$!%*?&#^()_+\-=\[\]{}|;:,.<>]/.test(password) },
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {

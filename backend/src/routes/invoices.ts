@@ -5,6 +5,16 @@ import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 const router = Router();
 const prisma = new PrismaClient();
 
+// HTML-escape to prevent XSS in invoice output
+function escapeHtml(str: string): string {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 // Generate invoice HTML
 const generateInvoiceHtml = (order: Record<string, unknown>, items: Array<Record<string, unknown>>) => {
   const formatDate = (date: Date) => {
@@ -63,21 +73,21 @@ const generateInvoiceHtml = (order: Record<string, unknown>, items: Array<Record
   <div class="info-grid">
     <div class="info-section">
       <h3>Bill To</h3>
-      <p><strong>${order.customerName}</strong></p>
-      <p>${order.customerEmail}</p>
-      ${order.customerPhone ? `<p>${order.customerPhone}</p>` : ""}
+      <p><strong>${escapeHtml(order.customerName as string)}</strong></p>
+      <p>${escapeHtml(order.customerEmail as string)}</p>
+      ${order.customerPhone ? `<p>${escapeHtml(order.customerPhone as string)}</p>` : ""}
     </div>
     <div class="info-section">
       <h3>Invoice Details</h3>
       <p><strong>Date:</strong> ${formatDate(order.createdAt as Date)}</p>
-      <p><strong>Order #:</strong> ${order.orderNumber}</p>
+      <p><strong>Order #:</strong> ${escapeHtml(order.orderNumber as string)}</p>
       <p><strong>Status:</strong> <span class="status ${order.paymentStatus === 'SUCCESSFUL' ? 'status-paid' : 'status-pending'}">${order.paymentStatus === 'SUCCESSFUL' ? 'Paid' : 'Pending'}</span></p>
     </div>
   </div>
   
   <div class="info-section" style="margin-bottom: 30px;">
     <h3>Ship To</h3>
-    <p>${(order.shippingAddress as string).replace(/\n/g, "<br>")}</p>
+    <p>${escapeHtml(order.shippingAddress as string).replace(/\n/g, "<br>")}</p>
   </div>
   
   <table>
@@ -92,7 +102,7 @@ const generateInvoiceHtml = (order: Record<string, unknown>, items: Array<Record
     <tbody>
       ${items.map((item: Record<string, unknown>) => `
         <tr>
-          <td class="item-name">${item.name}</td>
+          <td class="item-name">${escapeHtml(item.name as string)}</td>
           <td class="text-right">${item.quantity}</td>
           <td class="text-right">${formatCurrency(item.price as number, order.currency as string)}</td>
           <td class="text-right">${formatCurrency((item.price as number) * (item.quantity as number), order.currency as string)}</td>

@@ -369,6 +369,21 @@ router.get("/paypal-return", async (req: Request, res: Response) => {
     const result = await executePayPalPayment(token, payerId, details.amount);
 
     if (result.status === "Completed") {
+      // Verify the paid amount matches the order total (converted to USD)
+      const order = await prisma.order.findUnique({ where: { id: orderId } });
+      if (!order) {
+        return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=order_not_found`);
+      }
+
+      // Import convertUgxToUsd from paypal service for amount verification
+      const { convertUgxToUsd } = await import("../services/paypal");
+      const expectedUsd = await convertUgxToUsd(Number(order.totalAmount));
+      const paidUsd = parseFloat(result.amount);
+      if (Math.abs(paidUsd - expectedUsd) > 0.50) {
+        console.error(`PayPal amount mismatch for order ${orderId}: expected $${expectedUsd}, got $${paidUsd}`);
+        return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=amount_mismatch`);
+      }
+
       // Update payment and order
       await prisma.$transaction(async (tx) => {
         await tx.payment.updateMany({
