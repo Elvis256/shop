@@ -104,7 +104,7 @@ services:
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/ || exit 1"]
+      test: ["CMD-SHELL", "node -e \"const http=require('http');const r=http.get('http://localhost:5000/',res=>{process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(3000,()=>{r.destroy();process.exit(1)})\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -130,7 +130,10 @@ services:
       - certbot_www:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
     depends_on:
-      - frontend
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_started
     deploy:
       resources:
         limits:
