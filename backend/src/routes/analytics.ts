@@ -21,7 +21,7 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
-    // ─── Build daily map ──────────────────────────────────────────────────
+    // ─── Build daily map using DB aggregation ────────────────────────────
     const dailyMap = new Map<string, { revenue: number; orders: number }>();
     for (let i = 0; i < days; i++) {
       const d = new Date(startDate);
@@ -29,128 +29,138 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
       dailyMap.set(d.toISOString().split("T")[0], { revenue: 0, orders: 0 });
     }
 
-    const paidOrders = await prisma.order.findMany({
-      where: { createdAt: { gte: startDate }, paymentStatus: "SUCCESSFUL" },
-      select: { createdAt: true, totalAmount: true },
-    });
-    paidOrders.forEach((o) => {
-      const key = o.createdAt.toISOString().split("T")[0];
-      const e = dailyMap.get(key) || { revenue: 0, orders: 0 };
-      e.revenue += Number(o.totalAmount);
-      e.orders += 1;
-      dailyMap.set(key, e);
+    // Aggregate daily revenue/orders in the database instead of loading all records
+    const dailyOrderAgg: Array<{ day: string; total_revenue: any; order_count: bigint }> =
+      await prisma.$queryRaw`
+        SELECT DATE("createdAt") as day, SUM("totalAmount") as total_revenue, COUNT(*) as order_count
+        FROM "Order"
+        WHERE "createdAt" >= ${startDate} AND "paymentStatus" = 'SUCCESSFUL'
+        GROUP BY DATE("createdAt")
+      `;
+    dailyOrderAgg.forEach((row) => {
+      const key = new Date(row.day).toISOString().split("T")[0];
+      const e = dailyMap.get(key);
+      if (e) {
+        e.revenue = Number(row.total_revenue) || 0;
+        e.orders = Number(row.order_count);
+      }
     });
 
     const dailyData = Array.from(dailyMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, s]) => ({ date, revenue: s.revenue, orders: s.orders, visitors: 0 }));
 
-    // ─── Page views / visitors / country / referrer / top pages ───────────
-    const pageViews = await prisma.pageView.findMany({
-      where: { createdAt: { gte: startDate } },
-      select: { createdAt: true, sessionId: true, country: true, referrer: true, path: true },
+    // ─── Page views / visitors / country / referrer / top pages (DB aggregation) ──
+    // Daily visitor counts
+    const dailyVisitorAgg: Array<{ day: string; visitors: bigint }> =
+      await prisma.$queryRaw`
+        SELECT DATE("createdAt") as day, COUNT(DISTINCT COALESCE("sessionId", "id")) as visitors
+        FROM "PageView"
+        WHERE "createdAt" >= ${startDate}
+        GROUP BY DATE("createdAt")
+      `;
+    const visitorMap = new Map<string, number>();
+    dailyVisitorAgg.forEach((row) => {
+      const key = new Date(row.day).toISOString().split("T")[0];
+      visitorMap.set(key, Number(row.visitors));
     });
-    const visitorMap = new Map<string, Set<string>>();
-    const countryVisitorMap = new Map<string, Set<string>>();
+
+    // Country breakdown
+    const countryAgg: Array<{ country: string; visitors: bigint }> =
+      await prisma.$queryRaw`
+        SELECT COALESCE("country", 'Unknown') as country,
+               COUNT(DISTINCT COALESCE("sessionId", "id")) as visitors
+        FROM "PageView"
+        WHERE "createdAt" >= ${startDate}
+        GROUP BY COALESCE("country", 'Unknown')
+        ORDER BY visitors DESC
+      `;
+    const visitorsByCountry = countryAgg.map((r) => ({
+      country: r.country,
+      visitors: Number(r.visitors),
+    }));
+
+    // Top pages
+    const topPagesAgg: Array<{ path: string; views: bigint }> =
+      await prisma.$queryRaw`
+        SELECT "path", COUNT(*) as views
+        FROM "PageView"
+        WHERE "createdAt" >= ${startDate} AND "path" NOT LIKE '/admin%'
+        GROUP BY "path"
+        ORDER BY views DESC
+        LIMIT 10
+      `;
+    const topPages = topPagesAgg.map((r) => ({ path: r.path, views: Number(r.views) }));
+
+    // Referrer sources (fetch aggregated, classify in-app)
+    const referrerAgg: Array<{ referrer: string | null; cnt: bigint }> =
+      await prisma.$queryRaw`
+        SELECT "referrer", COUNT(*) as cnt
+        FROM "PageView"
+        WHERE "createdAt" >= ${startDate}
+        GROUP BY "referrer"
+        ORDER BY cnt DESC
+        LIMIT 100
+      `;
     const referrerMap = new Map<string, number>();
-    const pageVisitMap = new Map<string, number>();
-    const uniqueSessions = new Set<string>();
-
-    pageViews.forEach((pv) => {
-      const key = pv.createdAt.toISOString().split("T")[0];
-      const visitorId = pv.sessionId || pv.createdAt.toISOString();
-      uniqueSessions.add(visitorId);
-
-      if (!visitorMap.has(key)) visitorMap.set(key, new Set());
-      visitorMap.get(key)!.add(visitorId);
-
-      // Country
-      const country = pv.country || "Unknown";
-      if (!countryVisitorMap.has(country)) countryVisitorMap.set(country, new Set());
-      countryVisitorMap.get(country)!.add(visitorId);
-
-      // Referrer source analysis
-      if (pv.referrer) {
-        let source = "Direct";
+    referrerAgg.forEach((row) => {
+      let source = "Direct";
+      if (row.referrer) {
         try {
-          const url = new URL(pv.referrer);
+          const url = new URL(row.referrer);
           const host = url.hostname.replace("www.", "");
-          if (host.includes("ugsex.com")) {
-            source = "Internal";
-          } else if (host.includes("google")) {
-            source = "Google";
-          } else if (host.includes("facebook") || host.includes("fb.com")) {
-            source = "Facebook";
-          } else if (host.includes("instagram")) {
-            source = "Instagram";
-          } else if (host.includes("twitter") || host.includes("x.com")) {
-            source = "X / Twitter";
-          } else if (host.includes("tiktok")) {
-            source = "TikTok";
-          } else if (host.includes("youtube")) {
-            source = "YouTube";
-          } else if (host.includes("whatsapp")) {
-            source = "WhatsApp";
-          } else {
-            source = host;
-          }
-        } catch {
-          source = "Other";
-        }
-        if (source !== "Internal") {
-          referrerMap.set(source, (referrerMap.get(source) || 0) + 1);
-        }
-      } else {
-        referrerMap.set("Direct", (referrerMap.get("Direct") || 0) + 1);
+          if (host.includes("ugsex.com")) return; // skip internal
+          else if (host.includes("google")) source = "Google";
+          else if (host.includes("facebook") || host.includes("fb.com")) source = "Facebook";
+          else if (host.includes("instagram")) source = "Instagram";
+          else if (host.includes("twitter") || host.includes("x.com")) source = "X / Twitter";
+          else if (host.includes("tiktok")) source = "TikTok";
+          else if (host.includes("youtube")) source = "YouTube";
+          else if (host.includes("whatsapp")) source = "WhatsApp";
+          else source = host;
+        } catch { source = "Other"; }
       }
-
-      // Top pages (only storefront paths)
-      if (pv.path && !pv.path.startsWith("/admin")) {
-        pageVisitMap.set(pv.path, (pageVisitMap.get(pv.path) || 0) + 1);
-      }
+      referrerMap.set(source, (referrerMap.get(source) || 0) + Number(row.cnt));
     });
-
-    dailyData.forEach((d) => { d.visitors = visitorMap.get(d.date)?.size || 0; });
-
-    const visitorsByCountry = Array.from(countryVisitorMap.entries())
-      .map(([country, sessions]) => ({ country, visitors: sessions.size }))
-      .sort((a, b) => b.visitors - a.visitors);
-
     const trafficSources = Array.from(referrerMap.entries())
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
-    const topPages = Array.from(pageVisitMap.entries())
-      .map(([path, views]) => ({ path, views }))
-      .sort((a, b) => b.views - a.views)
-      .slice(0, 10);
-
-    // Bounce rate: sessions with only 1 page view
-    const sessionPageCounts = new Map<string, number>();
-    pageViews.forEach((pv) => {
-      const sid = pv.sessionId || pv.createdAt.toISOString();
-      sessionPageCounts.set(sid, (sessionPageCounts.get(sid) || 0) + 1);
-    });
-    const totalSessions = sessionPageCounts.size;
-    const bounceSessions = Array.from(sessionPageCounts.values()).filter(c => c === 1).length;
+    // Bounce rate + avg pages per session (aggregated)
+    const sessionStats: Array<{ total_sessions: bigint; bounce_sessions: bigint; total_views: bigint }> =
+      await prisma.$queryRaw`
+        SELECT
+          COUNT(*) as total_sessions,
+          SUM(CASE WHEN page_count = 1 THEN 1 ELSE 0 END) as bounce_sessions,
+          SUM(page_count) as total_views
+        FROM (
+          SELECT COALESCE("sessionId", "id") as sid, COUNT(*) as page_count
+          FROM "PageView"
+          WHERE "createdAt" >= ${startDate}
+          GROUP BY COALESCE("sessionId", "id")
+        ) sub
+      `;
+    const totalSessions = Number(sessionStats[0]?.total_sessions) || 0;
+    const bounceSessions = Number(sessionStats[0]?.bounce_sessions) || 0;
+    const totalPageViews = Number(sessionStats[0]?.total_views) || 0;
     const bounceRate = totalSessions > 0 ? (bounceSessions / totalSessions) * 100 : 0;
+    const avgPagesPerSession = totalSessions > 0 ? totalPageViews / totalSessions : 0;
 
-    // Avg pages per session
-    const avgPagesPerSession = totalSessions > 0
-      ? pageViews.length / totalSessions
-      : 0;
+    // Populate daily visitor counts
+    dailyData.forEach((d) => { d.visitors = visitorMap.get(d.date) || 0; });
 
     // ─── Revenue calculations ─────────────────────────────────────────────
     const currentRevenue = dailyData.reduce((s, d) => s + d.revenue, 0);
     const currentOrders = dailyData.reduce((s, d) => s + d.orders, 0);
 
-    const prevPaid = await prisma.order.findMany({
+    const prevPaidAgg = await prisma.order.aggregate({
       where: { createdAt: { gte: previousStartDate, lt: startDate }, paymentStatus: "SUCCESSFUL" },
-      select: { totalAmount: true },
+      _sum: { totalAmount: true },
+      _count: { id: true },
     });
-    const previousRevenue = prevPaid.reduce((s, o) => s + Number(o.totalAmount), 0);
-    const previousOrderCount = prevPaid.length;
+    const previousRevenue = Number(prevPaidAgg._sum.totalAmount) || 0;
+    const previousOrderCount = prevPaidAgg._count.id;
 
     // ─── Monthly stats ────────────────────────────────────────────────────
     const [monthRevAgg, lastMonthRevAgg, monthOrderCount, lastMonthOrderCount,
@@ -310,20 +320,20 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
     const lastWeekVisitors = last7.reduce((s, d) => s + d.visitors, 0);
     const prevWeekVisitors = prev7.reduce((s, d) => s + d.visitors, 0);
 
-    // ─── All orders (including non-paid) for funnel analysis ──────────────
-    const allOrders = await prisma.order.findMany({
+    // ─── Order funnel (DB aggregation) ──────────────────────────────────
+    const funnelAgg = await prisma.order.groupBy({
+      by: ["paymentStatus"],
       where: { createdAt: { gte: startDate } },
-      select: { status: true, paymentStatus: true, totalAmount: true, createdAt: true },
+      _count: { id: true },
+      _sum: { totalAmount: true },
     });
-
+    const funnelMap = new Map(funnelAgg.map((f) => [f.paymentStatus, { count: f._count.id, sum: Number(f._sum.totalAmount) || 0 }]));
     const orderFunnel = {
-      totalOrders: allOrders.length,
-      pending: allOrders.filter(o => o.paymentStatus === "PENDING").length,
-      successful: allOrders.filter(o => o.paymentStatus === "SUCCESSFUL").length,
-      failed: allOrders.filter(o => o.paymentStatus === "FAILED").length,
-      pendingValue: allOrders
-        .filter(o => o.paymentStatus === "PENDING")
-        .reduce((s, o) => s + Number(o.totalAmount), 0),
+      totalOrders: funnelAgg.reduce((s, f) => s + f._count.id, 0),
+      pending: funnelMap.get("PENDING")?.count || 0,
+      successful: funnelMap.get("SUCCESSFUL")?.count || 0,
+      failed: funnelMap.get("FAILED")?.count || 0,
+      pendingValue: funnelMap.get("PENDING")?.sum || 0,
     };
 
     // ─── Payments ─────────────────────────────────────────────────────────
@@ -334,13 +344,16 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
       _sum: { amount: true },
     });
 
-    const hourlyRaw = await prisma.order.findMany({
-      where: { createdAt: { gte: startDate }, paymentStatus: "SUCCESSFUL" },
-      select: { createdAt: true },
-    });
+    const hourlyAgg: Array<{ hour: number; cnt: bigint }> =
+      await prisma.$queryRaw`
+        SELECT EXTRACT(HOUR FROM "createdAt")::int as hour, COUNT(*) as cnt
+        FROM "Order"
+        WHERE "createdAt" >= ${startDate} AND "paymentStatus" = 'SUCCESSFUL'
+        GROUP BY EXTRACT(HOUR FROM "createdAt")::int
+      `;
     const hourlyMap = new Map<number, number>();
     for (let i = 0; i < 24; i++) hourlyMap.set(i, 0);
-    hourlyRaw.forEach((o) => hourlyMap.set(o.createdAt.getHours(), (hourlyMap.get(o.createdAt.getHours()) || 0) + 1));
+    hourlyAgg.forEach((row) => hourlyMap.set(row.hour, Number(row.cnt)));
     const hourlyOrders = Array.from(hourlyMap.entries())
       .sort(([a], [b]) => a - b)
       .map(([hour, count]) => ({ hour: `${String(hour).padStart(2, "0")}:00`, count }));

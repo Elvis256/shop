@@ -179,6 +179,7 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
         email1SentAt: null,
       },
       take: 50,
+      orderBy: { createdAt: "asc" },
     });
 
     for (const cart of cartsForReminder1) {
@@ -220,6 +221,7 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
         email2SentAt: null,
       },
       take: 50,
+      orderBy: { createdAt: "asc" },
     });
 
     for (const cart of cartsForReminder2) {

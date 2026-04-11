@@ -22,6 +22,9 @@ import type {
 } from "./types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 1_000;
 
 // CSRF token management
 let csrfToken: string | null = null;
@@ -108,28 +111,63 @@ export async function apiFetch(
     }
   }
 
-  const res = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
-    credentials: "include", // Include cookies in requests
-  });
+  // Retry with exponential backoff for transient failures
+  let lastError: Error | null = null;
+  const maxAttempts = retry ? MAX_RETRIES : 1;
 
-  // Handle 401 with automatic token refresh
-  if (res.status === 401 && retry && !endpoint.includes("/auth/refresh")) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      // Retry the original request
-      return apiFetch(endpoint, options, false);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
+        credentials: "include",
+        signal: options.signal || controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      // Handle 401 with automatic token refresh (no retry loop)
+      if (res.status === 401 && retry && !endpoint.includes("/auth/refresh")) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          return apiFetch(endpoint, options, false);
+        }
+      }
+
+      // Retry on 5xx server errors (not on 4xx client errors)
+      if (res.status >= 500 && attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, RETRY_BASE_DELAY_MS * Math.pow(2, attempt)));
+        continue;
+      }
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Request failed");
+      }
+
+      return data;
+    } catch (err: any) {
+      clearTimeout(timeout);
+      lastError = err;
+
+      // Don't retry on abort (user-initiated or client errors)
+      if (err.name === "AbortError") {
+        throw new Error("Request timed out");
+      }
+
+      // Retry on network errors (fetch failed entirely)
+      if (attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, RETRY_BASE_DELAY_MS * Math.pow(2, attempt)));
+        continue;
+      }
     }
   }
 
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error(data.error || "Request failed");
-  }
-
-  return data;
+  throw lastError || new Error("Request failed after retries");
 }
 
 export const api = {
@@ -263,7 +301,7 @@ export const api = {
   // Admin
   admin: {
     getDashboard: (): Promise<DashboardStats> => apiFetch("/api/admin/dashboard"),
-    getAnalytics: (period?: number) => apiFetch(`/api/admin/dashboard/analytics?days=${period || 30}`),
+    getAnalytics: (period?: number) => apiFetch(`/api/admin/dashboard/analytics?period=${period || 30}`),
     
     // Products
     getProducts: (params?: Record<string, string>): Promise<ProductsResponse> => {

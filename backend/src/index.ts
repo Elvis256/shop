@@ -3,9 +3,22 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import path from "path";
+import logger, { requestIdMiddleware, requestLogMiddleware } from "./lib/logger";
+import prisma from "./lib/prisma";
+import redis from "./lib/redis";
 
 // Load environment variables
 dotenv.config();
+
+// Global error handlers — prevent silent crashes
+process.on("unhandledRejection", (reason) => {
+  logger.error("unhandled_rejection", { error: String(reason) });
+});
+process.on("uncaughtException", (err) => {
+  logger.error("uncaught_exception", { error: err.message, stack: err.stack });
+  // Give time to flush logs, then exit
+  setTimeout(() => process.exit(1), 1000);
+});
 
 // Routes
 import authRoutes from "./routes/auth";
@@ -80,6 +93,10 @@ import { setupSecurity } from "./middleware/security";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+// Request ID + structured logging
+app.use(requestIdMiddleware);
+app.use(requestLogMiddleware);
 
 // Security middleware
 setupSecurity(app);
@@ -207,14 +224,38 @@ app.use("/api/admin/sellers", adminSellers);
 app.use("/api/admin/permissions", adminPermissions);
 app.use("/api/settings", settingsRoutes);
 
-// Health check
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+// Health check — verifies database and Redis connectivity
+app.get("/health", async (_req, res) => {
+  const checks: Record<string, string> = {};
+  let healthy = true;
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = "ok";
+  } catch {
+    checks.database = "unavailable";
+    healthy = false;
+  }
+
+  try {
+    await redis.ping();
+    checks.redis = "ok";
+  } catch {
+    checks.redis = "unavailable";
+    healthy = false;
+  }
+
+  const status = healthy ? "ok" : "degraded";
+  res.status(healthy ? 200 : 503).json({ status, timestamp: new Date().toISOString(), checks });
 });
 
 // Error handling
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error("Unhandled error:", err);
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logger.error("unhandled_route_error", {
+    requestId: (req as any).requestId,
+    error: err.message,
+    path: req.path,
+  });
   res.status(500).json({ error: "Internal server error" });
 });
 
@@ -223,47 +264,62 @@ app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
-app.listen(Number(PORT), "0.0.0.0", () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 Admin panel: ${process.env.BASE_URL || "http://localhost:3000"}/admin`);
-  
-  // Start stock reservation cleanup job
-  import("./utils/stockReservation").then(({ startReservationCleanup }) => {
-    startReservationCleanup();
-  });
-  
-  // Start abandoned cart email job
-  import("./services/abandonedCart").then(({ startAbandonedCartJob }) => {
-    startAbandonedCartJob();
-  });
+const server = app.listen(Number(PORT), "0.0.0.0", () => {
+  logger.info("server_started", { port: PORT });
 
-  // Start real-time exchange rate refresh job
-  import("./services/exchangeRates").then(({ startRateRefreshJob }) => {
-    startRateRefreshJob();
-  });
+  // Background jobs — with error handling
+  const startJob = (name: string, importFn: Promise<any>, startFn: string) => {
+    importFn
+      .then((mod) => { mod[startFn](); logger.info("job_started", { job: name }); })
+      .catch((err) => logger.error("job_start_failed", { job: name, error: err.message }));
+  };
 
-  // Start AliExpress tracking sync job (every 6 hours)
-  import("./services/aliexpressSync").then(({ startTrackingSyncJob }) => {
-    startTrackingSyncJob();
-  });
+  startJob("stock_reservation_cleanup", import("./utils/stockReservation"), "startReservationCleanup");
+  startJob("abandoned_cart_emails", import("./services/abandonedCart"), "startAbandonedCartJob");
+  startJob("exchange_rate_refresh", import("./services/exchangeRates"), "startRateRefreshJob");
+  startJob("aliexpress_tracking_sync", import("./services/aliexpressSync"), "startTrackingSyncJob");
+  startJob("aliexpress_price_sync", import("./services/aliexpressSync"), "startPriceSyncJob");
+  startJob("cj_tracking_sync", import("./services/cjSync"), "startCJTrackingSyncJob");
+  startJob("cj_price_sync", import("./services/cjSync"), "startCJPriceSyncJob");
+  startJob("review_requests", import("./services/reviewRequests"), "startReviewRequestJob");
 
-  // Start AliExpress price/stock sync job (daily)
-  import("./services/aliexpressSync").then(({ startPriceSyncJob }) => {
-    startPriceSyncJob();
-  });
+  // Expired refresh token cleanup — every 6 hours
+  const tokenCleanupInterval = setInterval(async () => {
+    try {
+      const result = await prisma.refreshToken.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      });
+      if (result.count > 0) {
+        logger.info("token_cleanup", { deleted: result.count });
+      }
+    } catch (err: any) {
+      logger.error("token_cleanup_failed", { error: err.message });
+    }
+  }, 6 * 60 * 60 * 1000);
+  // Run once on startup after 30s
+  setTimeout(async () => {
+    try {
+      await prisma.refreshToken.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    } catch {}
+  }, 30_000);
 
-  // Start CJ Dropshipping tracking sync job (every 6 hours)
-  import("./services/cjSync").then(({ startCJTrackingSyncJob }) => {
-    startCJTrackingSyncJob();
-  });
+  // Graceful shutdown
+  const shutdown = async (signal: string) => {
+    logger.info("shutdown_initiated", { signal });
+    server.close(async () => {
+      clearInterval(tokenCleanupInterval);
+      await prisma.$disconnect().catch(() => {});
+      await redis.quit().catch(() => {});
+      logger.info("shutdown_complete");
+      process.exit(0);
+    });
+    // Force exit if graceful shutdown takes too long
+    setTimeout(() => {
+      logger.error("shutdown_forced");
+      process.exit(1);
+    }, 30_000);
+  };
 
-  // Start CJ Dropshipping price/stock sync job (daily)
-  import("./services/cjSync").then(({ startCJPriceSyncJob }) => {
-    startCJPriceSyncJob();
-  });
-
-  // Start review request job (every 6 hours)
-  import("./services/reviewRequests").then(({ startReviewRequestJob }) => {
-    startReviewRequestJob();
-  });
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 });
