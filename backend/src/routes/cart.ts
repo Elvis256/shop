@@ -101,7 +101,7 @@ router.post("/:id/items", async (req: Request, res: Response) => {
     if (!product) {
       return res.status(404).json({ error: "Product not found" });
     }
-    if (product.stock < quantity) {
+    if (product.stock - (product.reservedStock || 0) < quantity) {
       return res.status(400).json({ error: "Insufficient stock" });
     }
 
@@ -156,6 +156,11 @@ router.put("/:cartId/items/:itemId", async (req: Request, res: Response) => {
     if (quantity === 0) {
       await prisma.cartItem.delete({ where: { id: itemId } });
     } else {
+      // Validate stock before updating quantity
+      const product = await prisma.product.findUnique({ where: { id: item.productId } });
+      if (product && product.stock - (product.reservedStock || 0) < quantity) {
+        return res.status(400).json({ error: `Only ${product.stock - (product.reservedStock || 0)} available in stock` });
+      }
       await prisma.cartItem.update({
         where: { id: itemId },
         data: { quantity },

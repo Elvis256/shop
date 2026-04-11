@@ -103,6 +103,26 @@ router.get("/track/:orderNumber", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/orders/:id/payment-status — Public endpoint for polling payment status
+router.get("/:id/payment-status", async (req: Request, res: Response) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      select: { paymentStatus: true, status: true, orderNumber: true },
+    });
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    return res.json({
+      paymentStatus: order.paymentStatus,
+      status: order.status,
+      orderNumber: order.orderNumber,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to check status" });
+  }
+});
+
 // GET /api/orders/:id — requires authentication + ownership check
 router.get("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
@@ -320,7 +340,7 @@ router.post("/:id/cancel", authenticate, async (req: AuthRequest, res: Response)
     }
 
     // Verify the authenticated user owns this order
-    if (order.customerEmail !== req.user!.email && order.customerEmail !== req.user!.id) {
+    if (order.customerEmail !== req.user!.email && order.userId !== req.user!.id) {
       return res.status(403).json({ error: "You can only cancel your own orders" });
     }
 
@@ -353,12 +373,14 @@ router.post("/:id/cancel", authenticate, async (req: AuthRequest, res: Response)
         },
       });
 
-      // Restore stock
-      for (const item of order.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        });
+      // Restore stock only if it was actually decremented (paid orders)
+      if (order.paymentStatus === "SUCCESSFUL") {
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
       }
 
       // Release stock reservations
@@ -427,27 +449,75 @@ router.put("/:id/modify", authenticate, async (req: AuthRequest, res: Response) 
         await tx.order.update({ where: { id }, data: updateData });
       }
 
-      // Remove items
+      // Remove items and release their stock reservations
       if (removeItems && Array.isArray(removeItems) && removeItems.length > 0) {
+        const removedItems = await tx.orderItem.findMany({
+          where: { id: { in: removeItems }, orderId: id },
+        });
         await tx.orderItem.deleteMany({
           where: { id: { in: removeItems }, orderId: id },
         });
+        // Release stock reservations for removed items
+        for (const item of removedItems) {
+          const reservation = await tx.stockReservation.findFirst({
+            where: { orderId: id, productId: item.productId, released: false },
+          });
+          if (reservation) {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { reservedStock: { decrement: reservation.quantity } },
+            });
+            await tx.stockReservation.update({
+              where: { id: reservation.id },
+              data: { released: true },
+            });
+          }
+        }
       }
 
-      // Add items
+      // Add items and create stock reservations
       if (addItems && Array.isArray(addItems) && addItems.length > 0) {
         for (const item of addItems) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) continue;
+          const qty = item.quantity;
+          if (!qty || qty < 1 || !Number.isInteger(qty)) {
+            throw new Error(`Invalid quantity for "${product.name}". Must be a positive integer.`);
+          }
+
+          // Check available stock before adding
+          if (product.trackInventory && !product.allowBackorder) {
+            const available = product.stock - (product.reservedStock || 0);
+            if (available < qty) {
+              throw new Error(`Insufficient stock for "${product.name}". Available: ${available}`);
+            }
+          }
+
           await tx.orderItem.create({
             data: {
               orderId: id,
               productId: item.productId,
               name: product.name,
               price: product.price,
-              quantity: item.quantity || 1,
+              quantity: qty,
             },
           });
+
+          // Create stock reservation for added item
+          if (product.trackInventory && !product.allowBackorder) {
+            await tx.stockReservation.create({
+              data: {
+                orderId: id,
+                productId: item.productId,
+                quantity: qty,
+                expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 min, consistent with checkout
+              },
+            });
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { reservedStock: { increment: qty } },
+            });
+          }
         }
       }
 
@@ -466,6 +536,12 @@ router.put("/:id/modify", authenticate, async (req: AuthRequest, res: Response) 
           subtotal: new Decimal(subtotal),
           totalAmount: new Decimal(Math.max(totalAmount, 0)),
         },
+      });
+
+      // Update pending payment records to match new total
+      await tx.payment.updateMany({
+        where: { orderId: id, status: "PENDING" },
+        data: { amount: new Decimal(Math.max(totalAmount, 0)) },
       });
 
       await tx.orderEvent.create({

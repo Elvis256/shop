@@ -478,7 +478,7 @@ router.post("/verify-email", async (req, res: Response) => {
     // Send welcome email
     sendVerifiedWelcome(verification.user.email, verification.user.name || undefined).catch(console.error);
 
-    return res.json({ message: "Email verified successfully! Welcome to Adult Store Kenya." });
+    return res.json({ message: "Email verified successfully! Welcome to Pleasure Zone Uganda." });
   } catch (error) {
     console.error("Verify email error:", error);
     return res.status(500).json({ error: "Verification failed" });

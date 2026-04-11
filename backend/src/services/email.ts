@@ -109,13 +109,13 @@ export async function sendWelcomeEmail(email: string, name?: string): Promise<bo
         </div>
         <div class="content">
           <p>Hi${name ? ` ${name}` : ""},</p>
-          <p>Your email has been verified! Welcome to Kenya's premier adult wellness store.</p>
+          <p>Your email has been verified! Welcome to Uganda's premier adult wellness store.</p>
           
           <div class="features">
             <p><strong>What you can enjoy:</strong></p>
             <p>✅ 100% Discreet Packaging - Plain boxes, no logos</p>
-            <p>✅ Secure Payments - M-Pesa & Card accepted</p>
-            <p>✅ Fast Delivery - Same-day in Nairobi</p>
+            <p>✅ Secure Payments - Mobile Money & Card accepted</p>
+            <p>✅ Fast Delivery - Same-day in Kampala</p>
             <p>✅ 24/7 Support - We're here to help</p>
           </div>
           
@@ -144,7 +144,8 @@ export async function sendOrderConfirmation(
   orderNumber: string,
   items: { name: string; quantity: number; price: number }[],
   total: number,
-  name?: string
+  name?: string,
+  currency: string = "UGX"
 ): Promise<boolean> {
   const itemsHtml = items
     .map(
@@ -152,7 +153,7 @@ export async function sendOrderConfirmation(
       <tr>
         <td style="padding: 10px; border-bottom: 1px solid #eee;">${item.name}</td>
         <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">KES ${item.price.toLocaleString()}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">${currency} ${item.price.toLocaleString()}</td>
       </tr>
     `
     )
@@ -199,7 +200,7 @@ export async function sendOrderConfirmation(
             </tbody>
           </table>
           
-          <p class="total" style="text-align: right;">Total: KES ${total.toLocaleString()}</p>
+          <p class="total" style="text-align: right;">Total: ${currency} ${total.toLocaleString()}</p>
           
           <p style="text-align: center;">
             <a href="${trackUrl}" class="button">Track Your Order</a>
@@ -221,7 +222,7 @@ export async function sendOrderConfirmation(
     to: email,
     subject: `Order Confirmed - #${orderNumber}`,
     html,
-    text: `Your order #${orderNumber} has been confirmed. Total: KES ${total.toLocaleString()}. Track at: ${trackUrl}`,
+    text: `Your order #${orderNumber} has been confirmed. Total: ${currency} ${total.toLocaleString()}. Track at: ${trackUrl}`,
   });
 }
 

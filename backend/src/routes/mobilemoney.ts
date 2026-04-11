@@ -70,10 +70,13 @@ router.post("/initiate", async (req, res) => {
       return res.status(404).json({ error: "Order not found" });
     }
 
-    // Calculate fee
+    // Use order's total amount (authoritative) instead of client-supplied amount
+    const orderAmount = Number(order.totalAmount);
+
+    // Calculate fee based on authoritative order amount
     let fee = 0;
     if (providerData.feeType === "PERCENTAGE") {
-      fee = (amount * Number(providerData.feeValue)) / 100;
+      fee = (orderAmount * Number(providerData.feeValue)) / 100;
     } else {
       fee = Number(providerData.feeValue);
     }
@@ -95,7 +98,7 @@ router.post("/initiate", async (req, res) => {
         orderId,
         provider,
         phoneNumber: normalizedPhone,
-        amount,
+        amount: orderAmount,
         currency,
         externalRef,
         status: "PENDING",
@@ -109,7 +112,7 @@ router.post("/initiate", async (req, res) => {
       externalRef,
       provider: providerData.name,
       phoneNumber: normalizedPhone,
-      amount: amount + fee,
+      amount: orderAmount + fee,
       fee,
       currency,
       status: "PENDING",
@@ -128,7 +131,7 @@ router.post("/initiate", async (req, res) => {
 });
 
 // Check payment status
-router.get("/status/:transactionId", async (req, res) => {
+router.get("/status/:transactionId", authenticate, async (req, res) => {
   try {
     const { transactionId } = req.params;
 
@@ -250,37 +253,58 @@ router.post("/callback/:provider", async (req, res) => {
 
     // If successful, update order payment status
     if (status === "SUCCESSFUL" && transaction.orderId) {
+      const orderId = transaction.orderId;
       // Verify payment amount matches order total
-      const order = await prisma.order.findUnique({ where: { id: transaction.orderId } });
+      const order = await prisma.order.findUnique({ where: { id: orderId } });
       if (!order) {
         console.error(`Order not found for transaction ${transaction.id}`);
         return res.status(404).json({ error: "Order not found" });
       }
       if (Math.abs(Number(order.totalAmount) - Number(transaction.amount)) > 1) {
-        console.error(`Amount mismatch for order ${transaction.orderId}: expected ${order.totalAmount}, got ${transaction.amount}`);
+        console.error(`Amount mismatch for order ${orderId}: expected ${order.totalAmount}, got ${transaction.amount}`);
         return res.status(400).json({ error: "Amount mismatch" });
       }
       // Guard: don't overwrite terminal payment status
-      if (order.paymentStatus === "SUCCESSFUL") {
+      if (["SUCCESSFUL", "REFUNDED", "FAILED"].includes(order.paymentStatus)) {
         return res.json({ success: true, message: "Already processed" });
       }
 
-      await prisma.$transaction([
-        prisma.order.update({
-          where: { id: transaction.orderId },
+      await prisma.$transaction(async (tx) => {
+        await tx.order.update({
+          where: { id: orderId },
           data: { 
             paymentStatus: "SUCCESSFUL",
             status: "CONFIRMED",
           },
-        }),
-        prisma.orderEvent.create({
+        });
+        await tx.orderEvent.create({
           data: {
-            orderId: transaction.orderId,
+            orderId: orderId,
             status: "PAYMENT_RECEIVED",
             note: `Mobile money payment confirmed via ${provider.toUpperCase()}`,
           },
-        }),
-      ]);
+        });
+
+        // Finalize stock: decrement actual stock, release reservation
+        const reservations = await tx.stockReservation.findMany({
+          where: { orderId: orderId, released: false },
+        });
+        for (const reservation of reservations) {
+          await tx.product.update({
+            where: { id: reservation.productId },
+            data: {
+              stock: { decrement: reservation.quantity },
+              reservedStock: { decrement: reservation.quantity },
+            },
+          });
+          await tx.stockReservation.update({
+            where: { id: reservation.id },
+            data: { released: true },
+          });
+        }
+      });
+
+      // Note: Cart is cleared on the frontend upon redirect to success page
     }
 
     res.json({ success: true });
@@ -320,22 +344,40 @@ router.post("/simulate-complete/:transactionId", authenticate, requireAdmin, asy
     });
 
     if (success && transaction.orderId) {
-      await prisma.$transaction([
-        prisma.order.update({
-          where: { id: transaction.orderId },
+      await prisma.$transaction(async (tx) => {
+        await tx.order.update({
+          where: { id: transaction.orderId! },
           data: { 
             paymentStatus: "SUCCESSFUL",
             status: "CONFIRMED",
           },
-        }),
-        prisma.orderEvent.create({
+        });
+        await tx.orderEvent.create({
           data: {
-            orderId: transaction.orderId,
+            orderId: transaction.orderId!,
             status: "PAYMENT_RECEIVED",
             note: `Mobile money payment confirmed (${transaction.provider})`,
           },
-        }),
-      ]);
+        });
+
+        // Finalize stock: decrement actual stock, release reservation
+        const reservations = await tx.stockReservation.findMany({
+          where: { orderId: transaction.orderId!, released: false },
+        });
+        for (const reservation of reservations) {
+          await tx.product.update({
+            where: { id: reservation.productId },
+            data: {
+              stock: { decrement: reservation.quantity },
+              reservedStock: { decrement: reservation.quantity },
+            },
+          });
+          await tx.stockReservation.update({
+            where: { id: reservation.id },
+            data: { released: true },
+          });
+        }
+      });
     }
 
     res.json({ success: true, status });

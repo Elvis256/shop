@@ -24,7 +24,7 @@ export default function CartDrawer() {
       <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 shadow-xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">Your Cart ({items.length})</h2>
+          <h2 className="text-lg font-semibold">Your Cart ({items.reduce((sum, i) => sum + i.quantity, 0)})</h2>
           <button
             onClick={closeCart}
             className="p-2 hover:bg-gray-100 rounded-full transition"

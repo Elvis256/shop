@@ -60,30 +60,46 @@ router.post(
         return res.status(403).json({ error: "Not authorized" });
       }
 
+      // Cap amount to order total to prevent negative totals
+      const maxApplicable = Math.max(Number(order.totalAmount), 0);
+      const appliedAmount = Math.min(amount, maxApplicable);
+      if (appliedAmount <= 0) {
+        return res.status(400).json({ error: "No amount to apply — order total is already zero" });
+      }
+
       const result = await prisma.$transaction(async (tx) => {
         // Get or create store credit record
         let credit = await tx.storeCredit.findUnique({
           where: { userId: req.user!.id },
         });
 
-        if (!credit || Number(credit.balance) < amount) {
+        if (!credit || Number(credit.balance) < appliedAmount) {
           throw new Error("INSUFFICIENT_BALANCE");
         }
 
         // Deduct balance
         credit = await tx.storeCredit.update({
           where: { userId: req.user!.id },
-          data: { balance: { decrement: amount } },
+          data: { balance: { decrement: appliedAmount } },
         });
 
         // Create transaction record
         const transaction = await tx.storeCreditTx.create({
           data: {
             storeCreditId: credit.id,
-            amount: -amount,
+            amount: -appliedAmount,
             type: "REDEMPTION",
             description: `Applied to order ${order.orderNumber || orderId}`,
             orderId,
+          },
+        });
+
+        // Update order total to reflect store credit discount
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            discount: { increment: appliedAmount },
+            totalAmount: { decrement: appliedAmount },
           },
         });
 
@@ -92,6 +108,7 @@ router.post(
 
       return res.json({
         message: "Store credit applied",
+        applied: appliedAmount,
         balance: result.balance,
         transaction: result.transaction,
       });

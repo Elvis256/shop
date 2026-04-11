@@ -8,6 +8,7 @@ import { sendOrderReceivedEmail } from "../lib/email";
 import { sendOrderConfirmationWhatsApp } from "../services/whatsapp";
 import { sendOrderConfirmationSMS } from "../services/sms";
 import { sendMetaConversionEvent } from "../services/metaConversions";
+import { optionalAuth, AuthRequest } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 const router = Router();
@@ -36,7 +37,9 @@ const CheckoutSchema = z.object({
   customer: z.object({
     name: z.string(),
     email: z.string().email(),
+    phone: z.string().optional(),
   }),
+  couponCode: z.string().optional(),
   discreet: z.boolean().default(true),
   shippingAddress: z.any().optional(),
   affiliateCode: z.string().optional(),
@@ -45,20 +48,24 @@ const CheckoutSchema = z.object({
 // Helper: Check and reserve stock for cart items
 async function reserveStock(
   tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
-  cartItems: Array<{ productId: string; quantity: number; product: { stock: number; reservedStock: number; trackInventory: boolean; allowBackorder: boolean; name: string } }>,
+  cartItems: Array<{ productId: string; quantity: number; product: { name: string } }>,
   orderId: string
 ): Promise<{ success: boolean; error?: string }> {
   const reservations = [];
   
   for (const item of cartItems) {
-    const product = item.product;
+    // Re-fetch product inside transaction for consistent reads (prevents TOCTOU race)
+    const product = await tx.product.findUnique({ where: { id: item.productId } });
+    if (!product) {
+      return { success: false, error: `Product "${item.product.name}" no longer exists.` };
+    }
     
     // Skip inventory check if not tracking or allows backorder
     if (!product.trackInventory || product.allowBackorder) {
       continue;
     }
     
-    const availableStock = product.stock - product.reservedStock;
+    const availableStock = product.stock - (product.reservedStock || 0);
     
     if (availableStock < item.quantity) {
       return {
@@ -98,7 +105,7 @@ async function reserveStock(
 }
 
 // POST /api/checkout/create
-router.post("/create", async (req: Request, res: Response) => {
+router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
     // Idempotency: prevent duplicate checkout submissions
     const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
@@ -159,13 +166,67 @@ router.post("/create", async (req: Request, res: Response) => {
     }
 
     // Calculate total from DB prices (authoritative source of truth)
+    // Honor active flash sale and daily deal prices
+    const effectivePrices = new Map<string, number>();
     const calculatedTotal = cartItems.reduce((sum, item) => {
-      return sum + Math.round(Number(item.product.price)) * item.quantity;
+      const product = item.product;
+      let unitPrice = Math.round(Number(product.price));
+
+      // Check flash sale pricing
+      if (product.flashSalePrice && product.flashSaleEndsAt && new Date(product.flashSaleEndsAt) > new Date()) {
+        unitPrice = Math.round(Number(product.flashSalePrice));
+      }
+      // Check daily deal pricing
+      else if (product.dailyDealPrice && product.dailyDealDate) {
+        const dealDate = new Date(product.dailyDealDate).toDateString();
+        if (dealDate === new Date().toDateString()) {
+          unitPrice = Math.round(Number(product.dailyDealPrice));
+        }
+      }
+
+      effectivePrices.set(item.productId, unitPrice);
+      return sum + unitPrice * item.quantity;
     }, 0);
     const shippingAmount = body.shipping || 0;
 
-    // Create order with stock reservation in a transaction
+    // Apply coupon discount if provided
+    let couponDiscount = 0;
+    let appliedCouponId: string | undefined;
+    if (body.couponCode) {
+      const coupon = await prisma.coupon.findUnique({
+        where: { code: body.couponCode.toUpperCase() },
+      });
+      if (coupon && coupon.active) {
+        const now = new Date();
+        if (now >= coupon.validFrom && now <= coupon.validUntil) {
+          if (!coupon.usageLimit || coupon.usedCount < coupon.usageLimit) {
+            if (!coupon.minOrderAmount || calculatedTotal >= Number(coupon.minOrderAmount)) {
+              if (coupon.type === "PERCENTAGE") {
+                couponDiscount = calculatedTotal * (Number(coupon.value) / 100);
+                if (coupon.maxDiscount && couponDiscount > Number(coupon.maxDiscount)) {
+                  couponDiscount = Number(coupon.maxDiscount);
+                }
+              } else {
+                couponDiscount = Number(coupon.value);
+              }
+              couponDiscount = Math.round(Math.min(couponDiscount, calculatedTotal));
+              appliedCouponId = coupon.id;
+            }
+          }
+        }
+      }
+    }
+
+    // Move coupon increment inside transaction to prevent race condition
     const result = await prisma.$transaction(async (tx) => {
+      // Atomically increment coupon usage inside the transaction
+      if (appliedCouponId) {
+        await tx.coupon.update({
+          where: { id: appliedCouponId },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
+
       // Create order
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       const subtotal = calculatedTotal;
@@ -173,19 +234,23 @@ router.post("/create", async (req: Request, res: Response) => {
         data: {
           orderNumber,
           subtotal,
-          totalAmount: subtotal + shippingAmount,
+          discount: couponDiscount,
+          totalAmount: subtotal - couponDiscount + shippingAmount,
           shippingCost: shippingAmount,
           currency: body.currency,
           status: "PENDING",
           discreet: body.discreet,
           customerName: body.customer.name,
           customerEmail: body.customer.email,
+          customerPhone: body.customer.phone || "",
+          couponId: appliedCouponId,
+          userId: req.user?.id,
           shippingAddress: typeof body.shippingAddress === 'object' ? JSON.stringify(body.shippingAddress) : (body.shippingAddress || ""),
           items: {
             create: cartItems.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
-              price: item.product.price,
+              price: effectivePrices.get(item.productId) ?? item.product.price,
               name: item.product.name,
             })),
           },
@@ -200,6 +265,8 @@ router.post("/create", async (req: Request, res: Response) => {
 
       return order;
     });
+
+    const orderTotal = calculatedTotal - couponDiscount + shippingAmount;
 
     let paymentLink: string | undefined;
     let paymentRef: string | undefined;
@@ -220,12 +287,30 @@ router.post("/create", async (req: Request, res: Response) => {
             note: "Order confirmed — Cash on Delivery. Payment will be collected at delivery.",
           },
         });
+
+        // Finalize stock for COD orders
+        const reservations = await tx.stockReservation.findMany({
+          where: { orderId: result.id, released: false },
+        });
+        for (const reservation of reservations) {
+          await tx.product.update({
+            where: { id: reservation.productId },
+            data: {
+              stock: { decrement: reservation.quantity },
+              reservedStock: { decrement: reservation.quantity },
+            },
+          });
+          await tx.stockReservation.update({
+            where: { id: reservation.id },
+            data: { released: true },
+          });
+        }
       });
     } else if (body.paymentMethod === "paypal") {
       // PayPal Express Checkout
       const ppResult = await createPayPalCheckout({
         orderId: result.id,
-        amountUgx: calculatedTotal + shippingAmount,
+        amountUgx: orderTotal,
         customerEmail: body.customer.email,
         description: `Order ${result.orderNumber}`,
       });
@@ -236,7 +321,7 @@ router.post("/create", async (req: Request, res: Response) => {
       try {
         const paymentResponse = await createFlutterwavePayment({
           tx_ref: result.id,
-          amount: calculatedTotal + shippingAmount,
+          amount: orderTotal,
           currency: body.currency,
           customer: body.customer as any,
           paymentMethod: body.paymentMethod,
@@ -277,14 +362,17 @@ router.post("/create", async (req: Request, res: Response) => {
         provider: body.paymentMethod === "paypal" ? "paypal" : body.paymentMethod === "cod" ? "cod" : "flutterwave",
         method: methodMap[body.paymentMethod] || "CARD",
         status: "PENDING",
-        amount: calculatedTotal + shippingAmount,
+        amount: orderTotal,
         currency: body.currency,
         flwRef: paymentRef,
       },
     });
 
-    // Clear cart after order created
-    if (body.cartId) {
+    // Coupon usedCount is now incremented inside the order transaction above
+
+    // Only clear cart for COD (payment confirmed immediately).
+    // For other methods, cart is cleared after payment confirmation.
+    if (body.paymentMethod === "cod" && body.cartId) {
       await prisma.cartItem.deleteMany({ where: { cartId: body.cartId } }).catch(() => {});
     }
 
@@ -304,33 +392,37 @@ router.post("/create", async (req: Request, res: Response) => {
         sendOrderConfirmationSMS(orderWithItems.customerPhone, orderWithItems.orderNumber, orderWithItems.totalAmount.toString()).catch(() => {});
       }
 
-      // Meta Conversions API server-side tracking (fire-and-forget)
-      sendMetaConversionEvent({
-        eventName: "Purchase",
-        userData: {
-          email: orderWithItems.customerEmail,
-          phone: orderWithItems.customerPhone || undefined,
-          ip: req.ip,
-          userAgent: req.headers["user-agent"],
-        },
-        customData: {
-          value: Number(orderWithItems.totalAmount),
-          currency: "UGX",
-          orderId: orderWithItems.orderNumber,
-          numItems: orderWithItems.items.length,
-        },
-        eventSourceUrl: "https://ugsex.com/checkout",
-      }).catch(() => {});
+      // Meta Conversions API and affiliate tracking only fire immediately for COD
+      // (payment is confirmed at order creation). For other methods, these fire
+      // in the webhook/callback handlers after payment confirmation.
+      if (body.paymentMethod === "cod") {
+        sendMetaConversionEvent({
+          eventName: "Purchase",
+          userData: {
+            email: orderWithItems.customerEmail,
+            phone: orderWithItems.customerPhone || undefined,
+            ip: req.ip,
+            userAgent: req.headers["user-agent"],
+          },
+          customData: {
+            value: Number(orderWithItems.totalAmount),
+            currency: orderWithItems.currency || "UGX",
+            orderId: orderWithItems.orderNumber,
+            numItems: orderWithItems.items.length,
+          },
+          eventSourceUrl: `${process.env.FRONTEND_URL || "https://ugsex.com"}/checkout`,
+        }).catch(() => {});
+      }
     }
 
-    // Track affiliate conversion if referral code provided
-    if (body.affiliateCode) {
+    // Track affiliate conversion only for COD (immediate confirmation)
+    // For other payment methods, tracked after payment confirmation
+    if (body.affiliateCode && body.paymentMethod === "cod") {
       try {
         const affiliate = await prisma.affiliate.findUnique({
           where: { code: body.affiliateCode, status: "APPROVED" },
         });
         if (affiliate) {
-          const orderTotal = calculatedTotal + shippingAmount;
           const commissionAmount = orderTotal * (Number(affiliate.commissionRate) / 100);
           await prisma.affiliateConversion.create({
             data: {
@@ -392,6 +484,18 @@ router.get("/paypal-return", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Missing PayPal return parameters" });
     }
 
+    // Verify orderId has a pending PayPal payment (prevents arbitrary order manipulation)
+    const pendingPayment = await prisma.payment.findFirst({
+      where: { orderId, method: "PAYPAL", status: "PENDING" },
+    });
+    if (!pendingPayment) {
+      const existingOrder = await prisma.order.findUnique({ where: { id: orderId } });
+      if (existingOrder?.paymentStatus === "SUCCESSFUL") {
+        return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/orders/${orderId}?success=true`);
+      }
+      return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=invalid_payment`);
+    }
+
     // Get payment details from PayPal
     const details = await getPayPalCheckoutDetails(token);
 
@@ -403,6 +507,11 @@ router.get("/paypal-return", async (req: Request, res: Response) => {
       const order = await prisma.order.findUnique({ where: { id: orderId } });
       if (!order) {
         return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=order_not_found`);
+      }
+
+      // Idempotency guard: skip if already confirmed
+      if (order.status === "CONFIRMED" && order.paymentStatus === "SUCCESSFUL") {
+        return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/orders/${orderId}?success=true`);
       }
 
       // Import convertUgxToUsd from paypal service for amount verification
@@ -456,6 +565,9 @@ router.get("/paypal-return", async (req: Request, res: Response) => {
         console.error(`CJ auto-order failed for ${orderId}:`, err.message)
       );
 
+      // Clear cart after payment confirmation
+      // Note: Cart is cleared on the frontend upon redirect to success page
+
       // Redirect to success page
       return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/orders/${orderId}?success=true`);
     } else {
@@ -503,7 +615,12 @@ router.get("/paypal-cancel", async (req: Request, res: Response) => {
 
         await tx.order.update({
           where: { id: orderId },
-          data: { status: "CANCELLED" },
+          data: { status: "CANCELLED", paymentStatus: "FAILED" },
+        });
+
+        await tx.payment.updateMany({
+          where: { orderId, status: "PENDING" },
+          data: { status: "FAILED" },
         });
       });
     } catch (e) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Section from "@/components/Section";
@@ -64,11 +64,23 @@ export default function CheckoutPage() {
     discreet: true,
   });
 
+  // Stable idempotency key — generated once per checkout session, reused on retries
+  const idempotencyKeyRef = useRef(`ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`);
+
   // Store credit state
   const [storeCreditBalance, setStoreCreditBalance] = useState(0);
   const [storeCreditAmount, setStoreCreditAmount] = useState(0);
   const [storeCreditApplied, setStoreCreditApplied] = useState(false);
   const [storeCreditLoading, setStoreCreditLoading] = useState(false);
+
+  // Coupon state (synced from OrderSummary)
+  const [couponCode, setCouponCode] = useState("");
+  const [couponDiscount, setCouponDiscount] = useState(0);
+
+  const handleCouponChange = (code: string, discount: number) => {
+    setCouponCode(code);
+    setCouponDiscount(discount);
+  };
 
   // Fetch store credit balance for authenticated users
   useEffect(() => {
@@ -120,7 +132,7 @@ export default function CheckoutPage() {
   // Dynamic shipping calculation from admin settings
   const shippingCalc = calculateShipping(items, shipping.city || "Kampala");
   const shippingCost = shippingCalc.total;
-  const orderTotal = cartTotal + shippingCost;
+  const orderTotal = cartTotal - couponDiscount + shippingCost;
   const creditDiscount = storeCreditApplied ? Math.min(storeCreditAmount, orderTotal) : 0;
   const finalTotal = orderTotal - creditDiscount;
 
@@ -238,13 +250,14 @@ export default function CheckoutPage() {
           phone: shipping.phone,
         },
         discreet: shipping.discreet,
+        ...(couponCode ? { couponCode } : {}),
         // Include affiliate referral code if present
         ...(typeof window !== "undefined" && localStorage.getItem("affiliate_ref")
           ? { affiliateCode: localStorage.getItem("affiliate_ref") }
           : {}),
       };
 
-      const idempotencyKey = `ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`;
+      const idempotencyKey = idempotencyKeyRef.current;
       const data = await apiFetch("/api/checkout/create", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
@@ -252,6 +265,21 @@ export default function CheckoutPage() {
       });
 
       setOrderId(data.orderId);
+
+      // Apply store credit server-side if selected
+      if (storeCreditApplied && creditDiscount > 0 && data.orderId) {
+        try {
+          await apiFetch("/api/store-credit/apply", {
+            method: "POST",
+            body: JSON.stringify({
+              amount: creditDiscount,
+              orderId: data.orderId,
+            }),
+          });
+        } catch (e) {
+          console.error("Store credit apply failed:", e);
+        }
+      }
 
       // Create installment plan if enabled
       if (installmentsEnabled && data.orderId) {
@@ -294,14 +322,30 @@ export default function CheckoutPage() {
     }
   };
 
+  // Ref to cancel payment polling on unmount
+  const pollingCancelRef = useRef(false);
+  const pollingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      pollingCancelRef.current = true;
+      if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
+    };
+  }, []);
+
   const pollPaymentStatus = async (orderId: string) => {
     let attempts = 0;
-    const maxAttempts = 60; // 5 minutes with 5-second intervals
+    const maxAttempts = 60;
+    pollingCancelRef.current = false;
 
     const checkStatus = async () => {
+      if (pollingCancelRef.current) return;
       try {
-        const res = await fetch(`${API_URL}/api/orders/${orderId}`);
+        const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status`);
         const data = await res.json();
+
+        if (pollingCancelRef.current) return;
 
         if (data.paymentStatus === "SUCCESSFUL") {
           clearCart();
@@ -317,14 +361,18 @@ export default function CheckoutPage() {
         }
 
         attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(checkStatus, 5000);
+        if (attempts < maxAttempts && !pollingCancelRef.current) {
+          pollingTimeoutRef.current = setTimeout(checkStatus, 5000);
         } else {
           setPaymentPending(false);
           setError("Payment timeout. Please check your order status.");
         }
       } catch (err) {
         console.error("Failed to check payment status:", err);
+        attempts++;
+        if (attempts < maxAttempts && !pollingCancelRef.current) {
+          pollingTimeoutRef.current = setTimeout(checkStatus, 5000);
+        }
       }
     };
 
@@ -650,7 +698,7 @@ export default function CheckoutPage() {
                     <select
                       className="input-select"
                       value={mobileNetwork}
-                      onChange={(e) => setMobileNetwork(e.target.value as any)}
+                      onChange={(e) => setMobileNetwork(e.target.value as "MPESA" | "AIRTEL" | "MTN")}
                     >
                       <option value="MTN">MTN MoMo Uganda</option>
                       <option value="AIRTEL">Airtel Money Uganda</option>
@@ -978,7 +1026,7 @@ export default function CheckoutPage() {
 
         {/* Order Summary */}
         <div>
-          <OrderSummary city={shipping.city} />
+          <OrderSummary city={shipping.city} onCouponChange={handleCouponChange} />
         </div>
       </div>
     </Section>

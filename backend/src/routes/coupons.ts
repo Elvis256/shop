@@ -38,7 +38,7 @@ router.get("/validate", async (req: Request, res: Response) => {
     const orderAmount = parseFloat(amount as string) || 0;
     if (coupon.minOrderAmount && orderAmount < Number(coupon.minOrderAmount)) {
       return res.status(400).json({
-        error: `Minimum order amount is KES ${Number(coupon.minOrderAmount).toLocaleString()}`,
+        error: `Minimum order amount is UGX ${Number(coupon.minOrderAmount).toLocaleString()}`,
       });
     }
 
@@ -52,6 +52,8 @@ router.get("/validate", async (req: Request, res: Response) => {
     } else {
       discount = Number(coupon.value);
     }
+    // Cap discount to order amount to prevent negative totals
+    discount = Math.min(discount, orderAmount);
 
     return res.json({
       valid: true,
@@ -99,7 +101,7 @@ router.post("/apply", async (req: Request, res: Response) => {
 
     if (coupon.minOrderAmount && body.amount < Number(coupon.minOrderAmount)) {
       return res.status(400).json({
-        error: `Minimum order amount is KES ${Number(coupon.minOrderAmount).toLocaleString()}`,
+        error: `Minimum order amount is UGX ${Number(coupon.minOrderAmount).toLocaleString()}`,
       });
     }
 
@@ -113,6 +115,8 @@ router.post("/apply", async (req: Request, res: Response) => {
     } else {
       discount = Number(coupon.value);
     }
+    // Cap discount to order amount to prevent negative totals
+    discount = Math.min(discount, body.amount);
 
     return res.json({
       applied: true,

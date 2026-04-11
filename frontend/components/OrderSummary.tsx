@@ -7,7 +7,7 @@ import { useCurrency } from "@/contexts/CurrencyContext";
 import ProductImage from "@/components/ProductImage";
 import { Plane, Zap, Truck, Tag, Minus, Plus, Trash2 } from "lucide-react";
 
-export default function OrderSummary({ city }: { city?: string }) {
+export default function OrderSummary({ city, onCouponChange }: { city?: string; onCouponChange?: (code: string, discount: number) => void }) {
   const { items, total, updateQuantity, removeItem } = useCart();
   const { config, calculateShipping } = useShippingConfig();
   const { formatPrice } = useCurrency();
@@ -31,11 +31,7 @@ export default function OrderSummary({ city }: { city?: string }) {
     }
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}/api/coupons/validate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: promoCode, subtotal: total }),
-      });
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}/api/coupons/validate?code=${encodeURIComponent(promoCode)}&amount=${total}`);
       const data = await res.json();
 
       if (!res.ok) {
@@ -45,6 +41,7 @@ export default function OrderSummary({ city }: { city?: string }) {
 
       setDiscount(data.discount);
       setPromoApplied(promoCode.toUpperCase());
+      onCouponChange?.(promoCode.toUpperCase(), data.discount);
     } catch (e) {
       setPromoError("Failed to validate code");
     }
@@ -194,6 +191,7 @@ export default function OrderSummary({ city }: { city?: string }) {
                 setPromoCode("");
                 setPromoApplied("");
                 setDiscount(0);
+                onCouponChange?.("", 0);
               }}
             >
               Remove

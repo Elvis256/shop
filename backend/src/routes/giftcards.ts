@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../lib/prisma";
-import { authenticate, AuthRequest } from "../middleware/auth";
+import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 import { sendEmail } from "../services/email";
 
 const router = Router();
@@ -52,8 +52,8 @@ router.get("/check/:code", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/gift-cards/purchase - Purchase a gift card
-router.post("/purchase", async (req: Request, res: Response) => {
+// POST /api/gift-cards/purchase - Purchase a gift card (admin only)
+router.post("/purchase", authenticate, requireAdmin, async (req: Request, res: Response) => {
   try {
     const {
       amount,
@@ -121,7 +121,7 @@ router.post("/purchase", async (req: Request, res: Response) => {
 });
 
 // POST /api/gift-cards/redeem - Redeem gift card (apply to order)
-router.post("/redeem", async (req: Request, res: Response) => {
+router.post("/redeem", authenticate, async (req: Request, res: Response) => {
   try {
     const { code, amount, orderId } = req.body;
 
@@ -129,52 +129,68 @@ router.post("/redeem", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Code and amount are required" });
     }
 
-    const giftCard = await prisma.giftCard.findUnique({
-      where: { code: code.toUpperCase() },
-    });
+    // Perform all reads and writes inside an interactive transaction to prevent race conditions
+    const result = await prisma.$transaction(async (tx) => {
+      const giftCard = await tx.giftCard.findUnique({
+        where: { code: code.toUpperCase() },
+      });
 
-    if (!giftCard) {
-      return res.status(404).json({ error: "Gift card not found" });
-    }
+      if (!giftCard) {
+        throw Object.assign(new Error("Gift card not found"), { statusCode: 404 });
+      }
 
-    if (!giftCard.isActive) {
-      return res.status(400).json({ error: "Gift card is inactive" });
-    }
+      if (!giftCard.isActive) {
+        throw Object.assign(new Error("Gift card is inactive"), { statusCode: 400 });
+      }
 
-    if (giftCard.expiresAt && giftCard.expiresAt < new Date()) {
-      return res.status(400).json({ error: "Gift card has expired" });
-    }
+      if (giftCard.expiresAt && giftCard.expiresAt < new Date()) {
+        throw Object.assign(new Error("Gift card has expired"), { statusCode: 400 });
+      }
 
-    const redeemAmount = Math.min(Number(amount), Number(giftCard.currentValue));
+      const redeemAmount = Math.min(Number(amount), Number(giftCard.currentValue));
 
-    if (redeemAmount <= 0) {
-      return res.status(400).json({ error: "Gift card has no remaining balance" });
-    }
+      if (redeemAmount <= 0) {
+        throw Object.assign(new Error("Gift card has no remaining balance"), { statusCode: 400 });
+      }
 
-    // Update gift card and create redemption record
-    const [updatedCard, redemption] = await prisma.$transaction([
-      prisma.giftCard.update({
+      const updatedCard = await tx.giftCard.update({
         where: { id: giftCard.id },
         data: {
           currentValue: { decrement: redeemAmount },
           isActive: Number(giftCard.currentValue) - redeemAmount > 0,
         },
-      }),
-      prisma.giftCardRedemption.create({
+      });
+
+      await tx.giftCardRedemption.create({
         data: {
           giftCardId: giftCard.id,
           orderId,
           amount: redeemAmount,
         },
-      }),
-    ]);
+      });
+
+      // Update order total to reflect gift card discount
+      if (orderId) {
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            discount: { increment: redeemAmount },
+            totalAmount: { decrement: redeemAmount },
+          },
+        });
+      }
+
+      return { amountRedeemed: redeemAmount, remainingBalance: updatedCard.currentValue };
+    });
 
     return res.json({
       message: "Gift card redeemed successfully",
-      amountRedeemed: redeemAmount,
-      remainingBalance: updatedCard.currentValue,
+      ...result,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     console.error("Redeem gift card error:", error);
     return res.status(500).json({ error: "Failed to redeem gift card" });
   }

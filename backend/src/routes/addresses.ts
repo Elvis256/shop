@@ -15,7 +15,7 @@ const AddressSchema = z.object({
   city: z.string().min(2),
   county: z.string().optional(),
   postalCode: z.string().optional(),
-  country: z.string().default("Kenya"),
+  country: z.string().default("Uganda"),
   isDefault: z.boolean().default(false),
 });
 

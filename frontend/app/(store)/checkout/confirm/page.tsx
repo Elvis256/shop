@@ -1,17 +1,75 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Section from "@/components/Section";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useCart } from "@/lib/hooks/useCart";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 function ConfirmContent() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
-  const status = searchParams.get("status") || "success";
+  const [status, setStatus] = useState<"loading" | "success" | "failed" | "pending">("loading");
+  const { clearCart } = useCart();
+  const clearCartRef = useRef(clearCart);
+  clearCartRef.current = clearCart;
 
-  if (status === "pending") {
+  useEffect(() => {
+    if (!orderId) {
+      setStatus("failed");
+      return;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 30;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let cancelled = false;
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status`);
+        const data = await res.json();
+
+        if (cancelled) return;
+
+        if (data.paymentStatus === "SUCCESSFUL") {
+          setStatus("success");
+          clearCartRef.current();
+          return;
+        }
+        if (data.paymentStatus === "FAILED") {
+          setStatus("failed");
+          return;
+        }
+
+        attempts++;
+        if (attempts < maxAttempts && !cancelled) {
+          timeoutId = setTimeout(checkStatus, 3000);
+        } else {
+          setStatus("pending");
+        }
+      } catch {
+        attempts++;
+        if (attempts < maxAttempts && !cancelled) {
+          timeoutId = setTimeout(checkStatus, 3000);
+        } else {
+          setStatus("pending");
+        }
+      }
+    };
+
+    checkStatus();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [orderId]);
+
+  if (status === "loading" || status === "pending") {
     return (
       <Section>
         <div className="max-w-md mx-auto text-center py-16">
@@ -58,7 +116,7 @@ function ConfirmContent() {
         </p>
         <div className="card text-left mb-8">
           <p className="text-small text-text-muted">Order ID</p>
-          <p className="font-mono font-semibold">{orderId || "ORD-123456"}</p>
+          <p className="font-mono font-semibold">{orderId}</p>
         </div>
         <div className="space-y-4">
           <Link href={`/orders/${orderId}`} className="btn-primary w-full">

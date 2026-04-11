@@ -229,7 +229,7 @@ export function requirePermission(...permissions: string[]) {
   };
 }
 
-export async function requireRole(roles: string[]) {
+export function requireRole(roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ error: "Authentication required" });

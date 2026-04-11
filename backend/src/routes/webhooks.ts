@@ -50,13 +50,17 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
 
       if (!order) {
         console.warn(`Order not found for tx_ref: ${tx_ref}`);
-        return res.status(404).json({ error: "Order not found" });
+        return res.status(200).json({ error: "Order not found", received: true });
       }
 
-      // Verify amount matches
+      // Verify amount AND currency match
+      if (currency !== order.currency) {
+        console.warn(`Currency mismatch for order ${tx_ref}: expected ${order.currency}, got ${currency}`);
+        return res.status(200).json({ error: "Currency mismatch", received: true });
+      }
       if (Number(order.totalAmount) !== amount) {
         console.warn(`Amount mismatch for order ${tx_ref}: expected ${order.totalAmount}, got ${amount}`);
-        return res.status(400).json({ error: "Amount mismatch" });
+        return res.status(200).json({ error: "Amount mismatch", received: true });
       }
 
       // Process webhook in a transaction
@@ -78,7 +82,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
           }
 
           await tx.payment.updateMany({
-            where: { orderId: tx_ref },
+            where: { orderId: tx_ref, flwRef: flw_ref },
             data: {
               status: "SUCCESSFUL",
               flwTxId: flw_ref,
@@ -137,8 +141,10 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
         }
       });
 
-      // Auto-place AliExpress dropshipping orders (async, non-blocking)
+      // After successful payment: place dropshipping orders
+      // Note: Cart is cleared on the frontend upon redirect to success page
       if (status === "successful") {
+
         placeAliExpressOrdersForOrder(tx_ref).catch((err) => {
           console.error(`AliExpress auto-order failed for ${tx_ref}:`, err.message);
         });
