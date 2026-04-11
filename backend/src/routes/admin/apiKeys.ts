@@ -1,11 +1,10 @@
 import { Router, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../../middleware/auth";
 import { hashApiKey } from "../../middleware/apiKeyAuth";
 import crypto from "crypto";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate, requireAdmin);
 

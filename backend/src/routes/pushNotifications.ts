@@ -13,9 +13,8 @@ if (!vapidPublicKey || !vapidPrivateKey) {
   const keys = webpush.generateVAPIDKeys();
   vapidPublicKey = keys.publicKey;
   vapidPrivateKey = keys.privateKey;
-  console.log("⚠️  VAPID keys generated. Set these in your .env:");
-  console.log(`VAPID_PUBLIC_KEY=${vapidPublicKey}`);
-  console.log(`VAPID_PRIVATE_KEY=${vapidPrivateKey}`);
+  // Log only the public key; private key must be set via .env
+  console.warn("VAPID keys not configured. Generated temporary keys — set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in .env for production.");
 }
 
 webpush.setVapidDetails(
@@ -75,7 +74,10 @@ router.post("/admin/send", authenticate, requireAdmin, async (req: AuthRequest, 
       return res.status(400).json({ error: "title and body are required" });
     }
 
-    const subscriptions = await prisma.pushSubscription.findMany();
+    const subscriptions = await prisma.pushSubscription.findMany({
+      take: 1000,
+      orderBy: { createdAt: "desc" },
+    });
     const payload = JSON.stringify({ title, body, url: url || "/" });
 
     let sent = 0;

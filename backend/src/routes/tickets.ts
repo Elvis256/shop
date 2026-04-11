@@ -1,11 +1,11 @@
 import { Router, Response } from "express";
-import { PrismaClient, TicketCategory, TicketPriority } from "@prisma/client";
+import { TicketCategory, TicketPriority } from "@prisma/client";
 import { z } from "zod";
 import { authenticate, optionalAuth, AuthRequest, requireAdmin } from "../middleware/auth";
 import { v4 as uuidv4 } from "uuid";
+import prisma from "../lib/prisma";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Create ticket schema
 const createTicketSchema = z.object({

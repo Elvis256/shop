@@ -1,9 +1,8 @@
 import { Router, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // HTML-escape to prevent XSS in invoice output
 function escapeHtml(str: string): string {

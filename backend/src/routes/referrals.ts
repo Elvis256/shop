@@ -1,10 +1,9 @@
 import { Router, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 import crypto from "crypto";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Referral reward amounts
 const REFERRER_REWARD = 500; // KES discount for referrer

@@ -1,8 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../lib/prisma";
 import crypto from "crypto";
 
-const prisma = new PrismaClient();
 
 // In-memory rate limiter with periodic cleanup
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();

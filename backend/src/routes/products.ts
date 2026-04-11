@@ -216,7 +216,7 @@ router.get("/:slug/related", async (req: Request, res: Response) => {
         { isBestseller: "desc" },
         { rating: "desc" },
       ],
-      take: parseInt(limit as string, 10),
+      take: Math.min(parseInt(limit as string, 10) || 4, 50),
       include: {
         category: { select: { name: true } },
         images: { take: 1, orderBy: { position: 'asc' } },

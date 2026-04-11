@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 import { Package, Eye, ChevronLeft, RefreshCw, Loader2 } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
@@ -26,28 +26,13 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [reorderingId, setReorderingId] = useState<string | null>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-
   const handleReorder = async (orderId: string) => {
     setReorderingId(orderId);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/orders/${orderId}/reorder`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        alert(data.error || "Failed to reorder");
-        return;
-      }
-      router.push("/cart");
-    } catch {
-      alert("Failed to reorder. Please try again.");
+      await apiFetch(`/api/orders/${orderId}/reorder`, { method: "POST" });
+      window.location.href = "/cart";
+    } catch (err: any) {
+      alert(err.message || "Failed to reorder");
     } finally {
       setReorderingId(null);
     }

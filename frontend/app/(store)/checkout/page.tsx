@@ -12,14 +12,9 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { parseDaysRange, formatDateRange } from "@/components/DeliveryEstimate";
 import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck, Banknote, Wallet } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-
-function getCsrfToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/csrf_token=([^;]+)/);
-  return match ? match[1] : null;
-}
 
 type Step = 1 | 2 | 3;
 
@@ -78,12 +73,7 @@ export default function CheckoutPage() {
   // Fetch store credit balance for authenticated users
   useEffect(() => {
     if (user) {
-      const token = localStorage.getItem("token");
-      fetch(`${API_URL}/api/store-credit`, {
-        credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-        .then((r) => (r.ok ? r.json() : null))
+      apiFetch("/api/store-credit")
         .then((d) => {
           if (d && d.balance > 0) setStoreCreditBalance(d.balance);
         })
@@ -190,7 +180,7 @@ export default function CheckoutPage() {
       setError("Please fill in all required fields");
       return false;
     }
-    if (!/\S+@\S+\.\S+/.test(shipping.email)) {
+    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(shipping.email)) {
       setError("Please enter a valid email address");
       return false;
     }
@@ -217,8 +207,6 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
-      const token = localStorage.getItem("token");
-      
       const payload = {
         cartId: cartId || undefined,
         items: items.map((item) => ({
@@ -256,38 +244,20 @@ export default function CheckoutPage() {
           : {}),
       };
 
-      const csrf = getCsrfToken();
       const idempotencyKey = `ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`;
-      const res = await fetch(`${API_URL}/api/checkout/create`, {
+      const data = await apiFetch("/api/checkout/create", {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": idempotencyKey,
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(csrf ? { "x-csrf-token": csrf } : {}),
-        },
+        headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify(payload),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Payment failed");
-      }
 
       setOrderId(data.orderId);
 
       // Create installment plan if enabled
       if (installmentsEnabled && data.orderId) {
         try {
-          const installHeaders: Record<string, string> = { "Content-Type": "application/json" };
-          if (token) installHeaders["Authorization"] = `Bearer ${token}`;
-          if (csrf) installHeaders["x-csrf-token"] = csrf;
-          await fetch(`${API_URL}/api/installments/create`, {
+          await apiFetch("/api/installments/create", {
             method: "POST",
-            headers: installHeaders,
-            credentials: "include",
             body: JSON.stringify({
               orderId: data.orderId,
               totalAmount: finalTotal,

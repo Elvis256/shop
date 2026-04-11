@@ -1,9 +1,8 @@
 import { Router, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../lib/prisma";
 import { AuthRequest, authenticate } from "../middleware/auth";
 import crypto from "crypto";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // POST /api/social/price-slash - Start a price slash for a product

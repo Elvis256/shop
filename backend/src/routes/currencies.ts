@@ -1,9 +1,8 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../lib/prisma";
 import { getLastUpdated } from "../services/exchangeRates";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Get all active currencies
 router.get("/", async (req, res) => {

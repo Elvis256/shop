@@ -1,9 +1,9 @@
 import { Router, Response } from "express";
-import { PrismaClient, LoyaltyTxType } from "@prisma/client";
+import { LoyaltyTxType } from "@prisma/client";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import prisma from "../lib/prisma";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Points earning rates
 const POINTS_PER_CURRENCY = 0.01; // 1 point per 100 KES spent

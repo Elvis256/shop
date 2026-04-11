@@ -99,7 +99,7 @@ export default function AdminSellersPage() {
       if (search) params.set("search", search);
       const data = await apiFetch(`/api/admin/sellers?${params}`);
       setSellers(data.sellers || []);
-      setTotalPages(data.pagination?.totalPages || 1);
+      setTotalPages(data.pagination?.totalPages || data.pagination?.pages || 1);
     } catch {
       setSellers([]);
     } finally {
@@ -155,7 +155,7 @@ export default function AdminSellersPage() {
     { label: "Total Sellers", value: stats.totalSellers, icon: Users, color: "text-blue-600 bg-blue-50" },
     { label: "Pending Approval", value: stats.pendingApproval, icon: Clock, color: "text-yellow-600 bg-yellow-50" },
     { label: "Active Sellers", value: stats.activeSellers, icon: Store, color: "text-green-600 bg-green-50" },
-    { label: "Total Commissions", value: `UGX ${stats.totalCommissions.toLocaleString()}`, icon: DollarSign, color: "text-purple-600 bg-purple-50" },
+    { label: "Total Commissions", value: `UGX ${Number(stats.totalCommissions || 0).toLocaleString()}`, icon: DollarSign, color: "text-purple-600 bg-purple-50" },
   ];
 
   return (
@@ -263,11 +263,11 @@ export default function AdminSellersPage() {
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <Star className="w-3.5 h-3.5 fill-yellow-400 text-yellow-400" />
-                        <span className="text-gray-700">{seller.rating.toFixed(1)}</span>
+                        <span className="text-gray-700">{Number(seller.rating || 0).toFixed(1)}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-gray-700 font-medium">
-                      UGX {seller.totalEarnings.toLocaleString()}
+                      UGX {Number(seller.totalEarnings || 0).toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusColors[seller.status]}`}>
@@ -445,11 +445,11 @@ export default function AdminSellersPage() {
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
                     <p className="text-xs text-gray-500">Rating</p>
-                    <p className="text-lg font-bold text-gray-900">{selectedSeller.rating.toFixed(1)}</p>
+                    <p className="text-lg font-bold text-gray-900">{Number(selectedSeller.rating || 0).toFixed(1)}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
                     <p className="text-xs text-gray-500">Earnings</p>
-                    <p className="text-lg font-bold text-gray-900">UGX {selectedSeller.totalEarnings.toLocaleString()}</p>
+                    <p className="text-lg font-bold text-gray-900">UGX {Number(selectedSeller.totalEarnings || 0).toLocaleString()}</p>
                   </div>
                 </div>
               </div>

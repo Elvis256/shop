@@ -6,13 +6,12 @@ import Link from "next/link";
 import Section from "@/components/Section";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import ProductImage from "@/components/ProductImage";
+import { apiFetch } from "@/lib/api";
 import {
   Package, Truck, CheckCircle, Clock, AlertCircle, CreditCard,
   Smartphone, Banknote, MapPin, ShieldCheck, Eye, Copy, Check,
   FileText, RefreshCw, Loader2,
 } from "lucide-react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 interface OrderItem {
   id: string;
@@ -104,18 +103,7 @@ export default function OrderDetailPage() {
 
   const loadOrder = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
-        credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-
-      if (!res.ok) {
-        setError(res.status === 404 ? "Order not found" : "Failed to load order");
-        return;
-      }
-
-      const data = await res.json();
+      const data = await apiFetch(`/api/orders/${orderId}`);
       setOrder(data);
     } catch {
       setError("Failed to load order");
@@ -135,24 +123,11 @@ export default function OrderDetailPage() {
     if (!order) return;
     setCancelling(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/orders/${order.id}/cancel`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        alert(data.error || "Failed to cancel order");
-        return;
-      }
+      await apiFetch(`/api/orders/${order.id}/cancel`, { method: "POST" });
       setCancelConfirm(false);
       loadOrder();
-    } catch {
-      alert("Failed to cancel order");
+    } catch (err: any) {
+      alert(err.message || "Failed to cancel order");
     } finally {
       setCancelling(false);
     }
@@ -166,30 +141,19 @@ export default function OrderDetailPage() {
     setModifying(true);
     setModifySuccess(false);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/orders/${order.id}/modify`, {
+      await apiFetch(`/api/orders/${order.id}/modify`, {
         method: "PUT",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
         body: JSON.stringify({
           shippingAddress: modifyAddress || undefined,
           notes: modifyNotes || undefined,
         }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to modify order");
-        return;
-      }
       setModifySuccess(true);
       setShowModify(false);
       loadOrder();
       setTimeout(() => setModifySuccess(false), 4000);
-    } catch {
-      alert("Failed to modify order");
+    } catch (err: any) {
+      alert(err.message || "Failed to modify order");
     } finally {
       setModifying(false);
     }
@@ -200,23 +164,10 @@ export default function OrderDetailPage() {
     setReordering(true);
     setReorderError(null);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/orders/${order.id}/reorder`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setReorderError(data.error || "Some products may no longer be available");
-        return;
-      }
+      await apiFetch(`/api/orders/${order.id}/reorder`, { method: "POST" });
       window.location.href = "/cart";
-    } catch {
-      setReorderError("Failed to reorder. Please try again.");
+    } catch (err: any) {
+      setReorderError(err.message || "Failed to reorder. Please try again.");
     } finally {
       setReordering(false);
     }
@@ -224,7 +175,7 @@ export default function OrderDetailPage() {
 
   const handleDownloadInvoice = () => {
     if (!order) return;
-    const token = localStorage.getItem("token");
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
     const url = `${API_URL}/api/invoices/${order.id}?format=html`;
     const win = window.open(url, "_blank");
     if (win) {

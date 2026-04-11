@@ -6,9 +6,8 @@ import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import { apiFetch } from "@/lib/api";
 import { Wallet, ChevronLeft, ArrowUpRight, ArrowDownLeft, Clock } from "lucide-react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 interface Transaction {
   id: string;
@@ -43,15 +42,7 @@ export default function WalletPage() {
 
   useEffect(() => {
     if (user) {
-      const token = localStorage.getItem("token");
-      fetch(`${API_URL}/api/store-credit`, {
-        credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-        .then((r) => {
-          if (!r.ok) throw new Error("Failed to load");
-          return r.json();
-        })
+      apiFetch("/api/store-credit")
         .then((d) => setData(d))
         .catch((e) => setError(e.message))
         .finally(() => setLoading(false));

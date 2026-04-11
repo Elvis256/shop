@@ -27,7 +27,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       where.status = status;
     }
 
-    const [sellers, total] = await Promise.all([
+    const [rawSellers, total] = await Promise.all([
       prisma.seller.findMany({
         where,
         skip,
@@ -41,9 +41,21 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       prisma.seller.count({ where }),
     ]);
 
+    const sellers = rawSellers.map((s) => ({
+      ...s,
+      storeLogo: s.logo,
+      storeDescription: s.description,
+      rating: Number(s.rating),
+      totalEarnings: Number(s.totalEarnings),
+      commissionRate: s.commissionRate != null ? Number(s.commissionRate) : null,
+      balance: Number(s.balance),
+      productCount: s._count.products,
+      orderCount: s._count.orderItems,
+    }));
+
     return res.json({
       sellers,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
     console.error("List sellers error:", error);
@@ -78,11 +90,11 @@ router.get("/stats", async (req: AuthRequest, res: Response) => {
 
     return res.json({
       totalSellers,
-      pendingApprovals,
+      pendingApproval: pendingApprovals,
       activeSellers,
-      totalSellerRevenue: totalSellerRevenue._sum.totalEarnings || 0,
-      totalCommissions: totalCommissions._sum.commission || 0,
-      pendingPayouts: pendingPayouts._sum.amount || 0,
+      totalSellerRevenue: Number(totalSellerRevenue._sum.totalEarnings || 0),
+      totalCommissions: Number(totalCommissions._sum.commission || 0),
+      pendingPayouts: Number(pendingPayouts._sum.amount || 0),
     });
   } catch (error) {
     console.error("Marketplace stats error:", error);

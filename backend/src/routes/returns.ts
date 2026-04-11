@@ -1,10 +1,10 @@
 import { Router, Response } from "express";
-import { PrismaClient, ReturnReason, ReturnStatus } from "@prisma/client";
+import { ReturnReason, ReturnStatus } from "@prisma/client";
 import { z } from "zod";
 import { authenticate, optionalAuth, AuthRequest, requireAdmin } from "../middleware/auth";
+import prisma from "../lib/prisma";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Create return request schema
 const createReturnSchema = z.object({

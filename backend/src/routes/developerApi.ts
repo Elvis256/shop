@@ -1,9 +1,8 @@
 import { Router, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../lib/prisma";
 import { authenticateApiKey, requirePermission, ApiKeyRequest } from "../middleware/apiKeyAuth";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const VALID_ORDER_STATUSES = ["PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED", "REFUNDED"];
 
