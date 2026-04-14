@@ -227,7 +227,7 @@ export default function CheckoutPage() {
           price: item.price,
         })),
         currency: "UGX",
-        amount: orderTotal,
+        amount: cartTotal + shippingCost,
         shipping: shippingCost,
         paymentMethod,
         ...(paymentMethod === "mobile_money" && {
@@ -251,6 +251,8 @@ export default function CheckoutPage() {
         },
         discreet: shipping.discreet,
         ...(couponCode ? { couponCode } : {}),
+        ...(storeCreditApplied && creditDiscount > 0 ? { storeCreditAmount: creditDiscount } : {}),
+        ...(installmentsEnabled ? { installments: installmentCount } : {}),
         // Include affiliate referral code if present
         ...(typeof window !== "undefined" && localStorage.getItem("affiliate_ref")
           ? { affiliateCode: localStorage.getItem("affiliate_ref") }
@@ -266,41 +268,14 @@ export default function CheckoutPage() {
 
       setOrderId(data.orderId);
 
-      // Apply store credit server-side if selected
-      if (storeCreditApplied && creditDiscount > 0 && data.orderId) {
-        try {
-          await apiFetch("/api/store-credit/apply", {
-            method: "POST",
-            body: JSON.stringify({
-              amount: creditDiscount,
-              orderId: data.orderId,
-            }),
-          });
-        } catch (e) {
-          console.error("Store credit apply failed:", e);
-        }
-      }
-
-      // Create installment plan if enabled
-      if (installmentsEnabled && data.orderId) {
-        try {
-          await apiFetch("/api/installments/create", {
-            method: "POST",
-            body: JSON.stringify({
-              orderId: data.orderId,
-              totalAmount: finalTotal,
-              installments: installmentCount,
-              currency: "UGX",
-            }),
-          });
-        } catch {
-          // Installment creation failure is non-blocking
-        }
-      }
-
       if (data.paymentLink) {
         // Redirect to PayPal or Flutterwave
         window.location.href = data.paymentLink;
+      } else if (data.status === "SUCCESSFUL") {
+        // Fully paid (e.g., store credit covered the entire amount)
+        clearCart();
+        showToast("Payment successful!", "success");
+        router.push(`/orders/${data.orderId}?success=true`);
       } else if (data.paymentMethod === "cod" || paymentMethod === "cod") {
         // Cash on Delivery - order placed, redirect to confirmation
         clearCart();

@@ -43,6 +43,8 @@ const CheckoutSchema = z.object({
   discreet: z.boolean().default(true),
   shippingAddress: z.any().optional(),
   affiliateCode: z.string().optional(),
+  storeCreditAmount: z.number().min(0).optional(),
+  installments: z.number().int().min(2).max(4).optional(),
 });
 
 // Helper: Check and reserve stock for cart items
@@ -218,7 +220,7 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
     }
 
     // Move coupon increment inside transaction to prevent race condition
-    const result = await prisma.$transaction(async (tx) => {
+    const txResult = await prisma.$transaction(async (tx) => {
       // Atomically increment coupon usage inside the transaction
       if (appliedCouponId) {
         await tx.coupon.update({
@@ -263,16 +265,114 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
         throw new Error(stockResult.error);
       }
 
-      return order;
+      // Apply store credit if requested
+      let storeCreditUsed = 0;
+      if (body.storeCreditAmount && body.storeCreditAmount > 0 && req.user?.id) {
+        const credit = await tx.storeCredit.findUnique({
+          where: { userId: req.user.id },
+        });
+        const maxCredit = Math.min(body.storeCreditAmount, subtotal - couponDiscount + shippingAmount);
+        if (credit && Number(credit.balance) >= maxCredit && maxCredit > 0) {
+          storeCreditUsed = maxCredit;
+          await tx.storeCredit.update({
+            where: { userId: req.user.id },
+            data: { balance: { decrement: storeCreditUsed } },
+          });
+          await tx.storeCreditTx.create({
+            data: {
+              storeCreditId: credit.id,
+              amount: -storeCreditUsed,
+              type: "REDEMPTION",
+              description: `Applied to order ${orderNumber}`,
+              orderId: order.id,
+            },
+          });
+          await tx.order.update({
+            where: { id: order.id },
+            data: {
+              discount: { increment: storeCreditUsed },
+              totalAmount: { decrement: storeCreditUsed },
+            },
+          });
+        }
+      }
+
+      // Create installment plan if requested (not applicable to COD)
+      if (body.installments && body.installments >= 2 && body.paymentMethod !== "cod") {
+        const planTotal = subtotal - couponDiscount + shippingAmount - storeCreditUsed;
+        if (planTotal > 0) {
+          const perInstallment = Math.ceil(planTotal / body.installments);
+          const intervalDays = body.installments <= 2 ? 14 : 30;
+          await tx.installmentPlan.create({
+            data: {
+              orderId: order.id,
+              totalAmount: planTotal,
+              installments: body.installments,
+              paidCount: 1,
+              nextDueDate: new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000),
+              status: "ACTIVE",
+              payments: {
+                create: Array.from({ length: body.installments }, (_, i) => ({
+                  number: i + 1,
+                  amount: i === body.installments! - 1 ? planTotal - perInstallment * (body.installments! - 1) : perInstallment,
+                  status: i === 0 ? "PAID" : "PENDING",
+                  dueDate: new Date(Date.now() + i * intervalDays * 24 * 60 * 60 * 1000),
+                  paidAt: i === 0 ? new Date() : null,
+                })),
+              },
+            },
+          });
+        }
+      }
+
+      return { order, storeCreditUsed };
     });
 
+    const result = txResult.order;
+    const storeCreditUsed = txResult.storeCreditUsed;
     const orderTotal = calculatedTotal - couponDiscount + shippingAmount;
+    const paymentAmount = orderTotal - storeCreditUsed;
+    const chargeAmount = body.installments && body.installments >= 2 && body.paymentMethod !== "cod"
+      ? Math.ceil(paymentAmount / body.installments)
+      : paymentAmount;
 
     let paymentLink: string | undefined;
     let paymentRef: string | undefined;
     let paymentStatus = "PENDING";
 
-    if (body.paymentMethod === "cod") {
+    if (chargeAmount <= 0) {
+      // Fully paid with store credit — confirm order directly
+      paymentStatus = "SUCCESSFUL";
+      await prisma.$transaction(async (tx) => {
+        await tx.order.update({
+          where: { id: result.id },
+          data: { status: "CONFIRMED", paymentStatus: "SUCCESSFUL" },
+        });
+        await tx.orderEvent.create({
+          data: {
+            orderId: result.id,
+            status: "CONFIRMED",
+            note: "Order confirmed — fully paid with store credit.",
+          },
+        });
+        const reservations = await tx.stockReservation.findMany({
+          where: { orderId: result.id, released: false },
+        });
+        for (const reservation of reservations) {
+          await tx.product.update({
+            where: { id: reservation.productId },
+            data: {
+              stock: { decrement: reservation.quantity },
+              reservedStock: { decrement: reservation.quantity },
+            },
+          });
+          await tx.stockReservation.update({
+            where: { id: reservation.id },
+            data: { released: true },
+          });
+        }
+      });
+    } else if (body.paymentMethod === "cod") {
       // Cash on Delivery — auto-confirm, payment collected on delivery
       paymentStatus = "PENDING";
       await prisma.$transaction(async (tx) => {
@@ -310,7 +410,7 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
       // PayPal Express Checkout
       const ppResult = await createPayPalCheckout({
         orderId: result.id,
-        amountUgx: orderTotal,
+        amountUgx: chargeAmount,
         customerEmail: body.customer.email,
         description: `Order ${result.orderNumber}`,
       });
@@ -321,7 +421,7 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
       try {
         const paymentResponse = await createFlutterwavePayment({
           tx_ref: result.id,
-          amount: orderTotal,
+          amount: chargeAmount,
           currency: body.currency,
           customer: body.customer as any,
           paymentMethod: body.paymentMethod,
@@ -361,8 +461,8 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
         orderId: result.id,
         provider: body.paymentMethod === "paypal" ? "paypal" : body.paymentMethod === "cod" ? "cod" : "flutterwave",
         method: methodMap[body.paymentMethod] || "CARD",
-        status: "PENDING",
-        amount: orderTotal,
+        status: chargeAmount <= 0 ? "SUCCESSFUL" : "PENDING",
+        amount: chargeAmount,
         currency: body.currency,
         flwRef: paymentRef,
       },
@@ -372,7 +472,7 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
 
     // Only clear cart for COD (payment confirmed immediately).
     // For other methods, cart is cleared after payment confirmation.
-    if (body.paymentMethod === "cod" && body.cartId) {
+    if ((body.paymentMethod === "cod" || chargeAmount <= 0) && body.cartId) {
       await prisma.cartItem.deleteMany({ where: { cartId: body.cartId } }).catch(() => {});
     }
 
