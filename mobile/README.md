@@ -1,87 +1,97 @@
-# Shop Mobile App
+This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
-React Native (Expo) Android app for the Shop e-commerce platform.
+# Getting Started
 
-## Prerequisites
+> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
 
-- Node.js 18+
-- Android Studio with an emulator (or a physical device)
-- Expo CLI: `npm install -g expo-cli`
+## Step 1: Start Metro
 
-## Setup
+First, you will need to run **Metro**, the JavaScript build tool for React Native.
 
-```bash
-cd mobile
-npm install
+To start the Metro dev server, run the following command from the root of your React Native project:
+
+```sh
+# Using npm
+npm start
+
+# OR using Yarn
+yarn start
 ```
 
-Create a `.env` file from the example:
+## Step 2: Build and run your app
 
-```bash
-cp .env.example .env
+With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+
+### Android
+
+```sh
+# Using npm
+npm run android
+
+# OR using Yarn
+yarn android
 ```
 
-Edit `.env` and set your backend API URL:
+### iOS
 
-```
-EXPO_PUBLIC_API_URL=http://YOUR_BACKEND_IP:5000/api
-```
+For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
 
-> For emulator use `http://10.0.2.2:5000/api` (Android emulator) or `http://localhost:5000/api` (iOS simulator).
+The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
 
-## Running
-
-```bash
-npx expo start
+```sh
+bundle install
 ```
 
-Then press `a` to open on Android emulator, or scan the QR code with Expo Go on your phone.
+Then, and every time you update your native dependencies, run:
 
-## Building APK
-
-```bash
-npx expo prebuild --platform android
-cd android && ./gradlew assembleRelease
+```sh
+bundle exec pod install
 ```
 
-Or use EAS Build:
+For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
 
-```bash
-npm install -g eas-cli
-eas build --platform android
+```sh
+# Using npm
+npm run ios
+
+# OR using Yarn
+yarn ios
 ```
 
-## Project Structure
+If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
 
-```
-mobile/
-├── app/                    # Screens (Expo Router file-based routing)
-│   ├── (tabs)/             # Tab screens (Home, Categories, Cart, Wishlist, Account)
-│   ├── auth/               # Login, Register, Forgot Password
-│   ├── product/            # Product detail
-│   ├── category/           # Category products
-│   ├── search/             # Search
-│   ├── checkout/           # Checkout flow
-│   ├── orders/             # Orders list & detail
-│   ├── account/            # Profile, Addresses, Change Password
-│   ├── admin/              # Admin Dashboard, Products, Orders, Customers, Coupons
-│   └── _layout.tsx         # Root layout
-├── components/             # Shared UI components
-├── constants/              # Theme (colors, spacing, fonts)
-├── contexts/               # Auth & Cart context providers
-└── lib/                    # API client, types, storage, hooks
-```
+This is one way to run your app — you can also build it directly from Android Studio or Xcode.
 
-## Features
+## Step 3: Modify your app
 
-- **Full product catalog** with categories, search, filtering, and sorting
-- **Product details** with image gallery, variants, reviews & ratings
-- **Shopping cart** with quantity management and server sync
-- **Checkout** with address selection, M-Pesa/Airtel/MTN/Card payments via Flutterwave
-- **Wishlist** with optional PIN lock
-- **Order tracking** with status timeline
-- **User account** management (profile, addresses, password)
-- **Admin panel** (dashboard, product/order/customer/coupon management)
-- **Age verification** gate
-- **Dark/light theme** support
-- **Secure token storage** with auto-refresh
+Now that you have successfully run the app, let's make changes!
+
+Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+
+When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+
+- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
+- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+
+## Congratulations! :tada:
+
+You've successfully run and modified your React Native App. :partying_face:
+
+### Now what?
+
+- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
+- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+
+# Troubleshooting
+
+If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+
+# Learn More
+
+To learn more about React Native, take a look at the following resources:
+
+- [React Native Website](https://reactnative.dev) - learn more about React Native.
+- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
+- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
+- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
+- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
