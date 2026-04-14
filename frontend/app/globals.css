@@ -318,3 +318,12 @@ h3 { @apply text-xl font-semibold tracking-tight; }
   transform: translateY(-4px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
 }
+
+/* App download banner slide up */
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out;
+}

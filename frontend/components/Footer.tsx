@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Shield, Lock, Truck, Package } from "lucide-react";
+import { Shield, Lock, Truck, Package, Smartphone } from "lucide-react";
 import Logo from "@/components/Logo";
 
 export default function Footer() {
@@ -50,6 +50,10 @@ export default function Footer() {
               <Link href="/policies/privacy" className="block text-text-muted hover:text-text transition-colors duration-200">Privacy</Link>
               <Link href="/policies/terms" className="block text-text-muted hover:text-text transition-colors duration-200">Terms</Link>
               <Link href="/affiliate/signup" className="block text-text-muted hover:text-text transition-colors duration-200">Affiliate Program</Link>
+              <a href="/shop-app.apk" download="PleasureZone.apk" className="inline-flex items-center gap-1.5 text-primary hover:text-primary/80 font-medium transition-colors duration-200">
+                <Smartphone className="w-3.5 h-3.5" />
+                Get Android App
+              </a>
             </nav>
           </div>
 
