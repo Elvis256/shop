@@ -9,12 +9,13 @@ type CreatePaymentInput = {
     name: string;
     email: string;
   };
-  paymentMethod: "card" | "mobile_money";
+  paymentMethod: string;
   mobileMoney?: {
     network: "MPESA" | "AIRTEL" | "MTN";
     phone: string;
   };
   redirect_url: string;
+  meta?: Record<string, any>;
 };
 
 type FlutterwaveResponse = {
@@ -80,8 +81,11 @@ export async function createFlutterwavePayment(
 
   if (input.paymentMethod === "mobile_money" && input.mobileMoney) {
     payload.payment_options = "mobilemoneyuganda";
-  } else {
-    payload.payment_options = "card";
+  }
+  // For "card" / general Flutterwave, omit payment_options to allow all methods
+
+  if (input.meta) {
+    payload.meta = input.meta;
   }
 
   try {

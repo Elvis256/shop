@@ -73,6 +73,11 @@ export default function CheckoutPage() {
   const [storeCreditApplied, setStoreCreditApplied] = useState(false);
   const [storeCreditLoading, setStoreCreditLoading] = useState(false);
 
+  // Regenerate idempotency key when payment-affecting settings change
+  useEffect(() => {
+    idempotencyKeyRef.current = `ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`;
+  }, [installmentsEnabled, installmentCount, paymentMethod, storeCreditApplied]);
+
   // Coupon state (synced from OrderSummary)
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -135,6 +140,9 @@ export default function CheckoutPage() {
   const orderTotal = cartTotal - couponDiscount + shippingCost;
   const creditDiscount = storeCreditApplied ? Math.min(storeCreditAmount, orderTotal) : 0;
   const finalTotal = orderTotal - creditDiscount;
+  const firstInstallmentAmount = installmentsEnabled && installmentCount >= 2
+    ? Math.ceil(finalTotal / installmentCount)
+    : finalTotal;
 
   // Auto-fill from logged-in user
   useEffect(() => {
@@ -781,10 +789,11 @@ export default function CheckoutPage() {
                       <p className="text-sm font-medium text-gray-900">Payment schedule:</p>
                       {Array.from({ length: installmentCount }).map((_, i) => {
                         const amount = Math.ceil(finalTotal / installmentCount);
+                        const intervalWeeks = installmentCount <= 2 ? 2 : 4;
                         const isFirst = i === 0;
                         return (
                           <p key={i} className="text-xs text-gray-600 flex justify-between">
-                            <span>{isFirst ? "Today" : `In ${i * 2} weeks`}</span>
+                            <span>{isFirst ? "Today" : `In ${i * intervalWeeks} weeks`}</span>
                             <span className="font-medium">{formatPrice(i === installmentCount - 1 ? finalTotal - amount * (installmentCount - 1) : amount)}</span>
                           </p>
                         );
@@ -979,7 +988,9 @@ export default function CheckoutPage() {
                   ) : (
                     <>
                       <Lock className="w-4 h-4" />
-                      {`Pay ${formatPrice(finalTotal)}`}
+                      {installmentsEnabled && installmentCount >= 2
+                        ? `Pay ${formatPrice(firstInstallmentAmount)} (1st of ${installmentCount})`
+                        : `Pay ${formatPrice(finalTotal)}`}
                     </>
                   )}
                 </button>

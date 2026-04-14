@@ -108,16 +108,23 @@ async function reserveStock(
 
 // POST /api/checkout/create
 router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => {
+  const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
   try {
     // Idempotency: prevent duplicate checkout submissions
-    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
     if (idempotencyKey) {
       const redisKey = `idempotency:checkout:${idempotencyKey}`;
       try {
         const existing = await redis.get(redisKey);
         if (existing) {
           const cached = JSON.parse(existing);
-          return res.status(cached.statusCode || 200).json(cached.body);
+          // Only return cached response if it's a completed (non-pending) result
+          if (cached.body && !cached.pending) {
+            return res.status(cached.statusCode || 200).json(cached.body);
+          }
+          // If still pending from a previous attempt, treat as in-flight
+          if (cached.pending) {
+            return res.status(409).json({ error: "Checkout already in progress. Please wait." });
+          }
         }
         // Claim the key with a short TTL to prevent races (extend after completion)
         const claimed = await redis.set(redisKey, JSON.stringify({ pending: true }), "EX", 300, "NX");
@@ -419,6 +426,11 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
     } else {
       // Flutterwave (card or mobile money)
       try {
+        const flutterwaveMeta: Record<string, any> = {};
+        if (body.installments && body.installments >= 2) {
+          flutterwaveMeta.installment = `1 of ${body.installments}`;
+          flutterwaveMeta.totalOrderAmount = paymentAmount;
+        }
         const paymentResponse = await createFlutterwavePayment({
           tx_ref: result.id,
           amount: chargeAmount,
@@ -427,6 +439,7 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
           paymentMethod: body.paymentMethod,
           mobileMoney: body.mobileMoney as any,
           redirect_url: `${process.env.BASE_URL}/checkout/confirm?orderId=${result.id}`,
+          ...(Object.keys(flutterwaveMeta).length > 0 ? { meta: flutterwaveMeta } : {}),
         });
         paymentLink = paymentResponse.data?.link;
         paymentRef = paymentResponse.data?.flw_ref;
@@ -441,6 +454,10 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
           ...reservations.map((r) => prisma.product.update({ where: { id: r.productId }, data: { reservedStock: { decrement: r.quantity } } })),
           ...reservations.map((r) => prisma.stockReservation.update({ where: { id: r.id }, data: { released: true } })),
         ]);
+        // Release idempotency key so user can retry
+        if (idempotencyKey) {
+          redis.del(`idempotency:checkout:${idempotencyKey}`).catch(() => {});
+        }
         const msg = flwErr.message?.includes("authorization key")
           ? "Payment processing is temporarily unavailable. Please try PayPal or contact support."
           : "Payment initiation failed. Please try again or use a different method.";
@@ -563,6 +580,11 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
     return res.json(responseBody);
   } catch (error) {
     console.error("Checkout error:", error);
+    // Release the idempotency key so the user can retry
+    if (idempotencyKey) {
+      const redisKey = `idempotency:checkout:${idempotencyKey}`;
+      redis.del(redisKey).catch(() => {});
+    }
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
