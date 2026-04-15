@@ -135,51 +135,58 @@ router.get("/:slug", async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
 
-    const product = await prisma.product.findUnique({
-      where: { slug },
-      include: {
-        category: { select: { id: true, name: true, slug: true } },
-        images: { orderBy: { position: 'asc' } },
-        variants: true,
-      },
-    });
+    const product = await cacheGetOrSet(`product:${slug}`, async () => {
+      const p = await prisma.product.findUnique({
+        where: { slug },
+        include: {
+          category: { select: { id: true, name: true, slug: true } },
+          images: { orderBy: { position: 'asc' } },
+          variants: true,
+        },
+      });
+      if (!p) return null;
+
+      const now = new Date();
+      const flashActive = p.flashSalePrice && p.flashSaleEndsAt && p.flashSaleEndsAt > now;
+
+      return {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        description: p.description,
+        price: p.price,
+        comparePrice: p.comparePrice,
+        currency: p.currency,
+        rating: p.rating,
+        reviewCount: p.reviewCount,
+        imageUrl: p.images[0]?.url || null,
+        images: p.images.map(img => img.url),
+        category: p.category,
+        inStock: p.stock > 0,
+        stock: p.stock,
+        lowStockAlert: p.lowStockAlert,
+        isNew: p.isNew,
+        isBestseller: p.isBestseller,
+        badgeText: p.badgeText,
+        shippingBadge: (p.cjProductId || p.aliexpressProductId) ? "From Abroad" : "Express",
+        hasVariants: p.hasVariants,
+        variants: p.variants,
+        weight: p.weight ? Number(p.weight) : null,
+        specifications: p.specifications,
+        tags: p.tags,
+        flashSalePrice: flashActive ? Number(p.flashSalePrice) : null,
+        flashSaleEndsAt: flashActive ? p.flashSaleEndsAt!.toISOString() : null,
+        averageRating: p.rating,
+        sku: p.sku,
+        status: p.status,
+      };
+    }, LONG_TTL);
 
     if (!product) {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    // Check if flash sale is still active
-    const now = new Date();
-    const flashActive = product.flashSalePrice && product.flashSaleEndsAt && product.flashSaleEndsAt > now;
-
-    return res.json({
-      id: product.id,
-      name: product.name,
-      slug: product.slug,
-      description: product.description,
-      price: product.price,
-      comparePrice: product.comparePrice,
-      currency: product.currency,
-      rating: product.rating,
-      reviewCount: product.reviewCount,
-      imageUrl: product.images[0]?.url || null,
-      images: product.images.map(img => img.url),
-      category: product.category,
-      inStock: product.stock > 0,
-      stock: product.stock,
-      lowStockAlert: product.lowStockAlert,
-      isNew: product.isNew,
-      isBestseller: product.isBestseller,
-      badgeText: product.badgeText,
-      shippingBadge: (product.cjProductId || product.aliexpressProductId) ? "From Abroad" : "Express",
-      hasVariants: product.hasVariants,
-      variants: product.variants,
-      weight: product.weight ? Number(product.weight) : null,
-      specifications: product.specifications,
-      tags: product.tags,
-      flashSalePrice: flashActive ? Number(product.flashSalePrice) : null,
-      flashSaleEndsAt: flashActive ? product.flashSaleEndsAt!.toISOString() : null,
-    });
+    return res.json(product);
   } catch (error) {
     console.error("Get product error:", error);
     return res.status(500).json({ error: "Failed to fetch product" });
@@ -246,20 +253,21 @@ router.get("/:slug/related", async (req: Request, res: Response) => {
 // GET /api/products/categories
 router.get("/categories/list", async (_req: Request, res: Response) => {
   try {
-    const categories = await prisma.category.findMany({
-      include: {
-        _count: { select: { products: true } },
-      },
-    });
-
-    return res.json(
-      categories.map((c) => ({
+    const categories = await cacheGetOrSet("categories:list", async () => {
+      const cats = await prisma.category.findMany({
+        include: {
+          _count: { select: { products: true } },
+        },
+      });
+      return cats.map((c) => ({
         id: c.id,
         name: c.name,
         slug: c.slug,
         productCount: c._count.products,
-      }))
-    );
+      }));
+    }, 86400); // 24 hour cache
+
+    return res.json(categories);
   } catch (error) {
     console.error("Get categories error:", error);
     return res.status(500).json({ error: "Failed to fetch categories" });

@@ -3,6 +3,7 @@ import { z } from "zod";
 import multer from "multer";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { cacheDel } from "../../lib/cache";
 import { uploadMultiple, validateUploadedFiles } from "../../middleware/upload";
 
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -327,6 +328,11 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       data,
     });
 
+    // Invalidate product cache
+    await cacheDel(`product:${product.slug}`);
+    if (body.slug && body.slug !== product.slug) await cacheDel(`product:${body.slug}`);
+    await cacheDel("categories:list");
+
     return res.json({ message: "Product updated", product: updated });
   } catch (error) {
     console.error("Admin update product error:", error);
@@ -352,6 +358,9 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
       where: { id },
       data: { status: "ARCHIVED" },
     });
+
+    await cacheDel(`product:${product.slug}`);
+    await cacheDel("categories:list");
 
     return res.json({ message: "Product archived" });
   } catch (error) {

@@ -302,6 +302,7 @@ model CartItem {
   quantity  Int     @default(1)
   
   @@unique([cartId, productId])
+  @@index([cartId])
 }
 
 model Order {
@@ -450,6 +451,8 @@ model Review {
   updatedAt DateTime @updatedAt
 
   @@unique([productId, userId])
+  @@index([productId])
+  @@index([userId])
 }
 
 model ReviewImage {
