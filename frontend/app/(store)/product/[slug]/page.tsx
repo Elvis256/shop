@@ -1,7 +1,8 @@
 import { Metadata } from "next";
 import ProductPageClient from "./ProductPageClient";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+// Prefer BACKEND_URL (runtime, e.g. http://backend:4000 in Docker) for SSR fetches
+const API_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
 
 interface Props {
