@@ -7,7 +7,7 @@ import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
 
 export default function CartDrawer() {
-  const { items, isOpen, closeCart, total, updateQuantity, removeItem } = useCart();
+  const { items, isOpen, closeCart, total, updateQuantity, removeItem, syncError, dismissSyncError } = useCart();
   const { formatPrice } = useCurrency();
 
   if (!isOpen) return null;
@@ -35,6 +35,14 @@ export default function CartDrawer() {
             </svg>
           </button>
         </div>
+
+        {/* Sync Error */}
+        {syncError && (
+          <div className="mx-4 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+            <span className="text-amber-600 text-sm flex-1">{syncError}</span>
+            <button onClick={dismissSyncError} className="text-amber-400 hover:text-amber-600 text-lg leading-none">&times;</button>
+          </div>
+        )}
 
         {/* Free Shipping Bar */}
         {items.length > 0 && (

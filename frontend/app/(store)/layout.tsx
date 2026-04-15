@@ -15,6 +15,7 @@ import DailyCheckIn from "@/components/DailyCheckIn";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import TrackingScripts from "@/components/TrackingScripts";
 import AppDownloadBanner from "@/components/AppDownloadBanner";
+import FloatingWhatsApp from "@/components/FloatingWhatsApp";
 import { OrganizationSchema, WebsiteSchema } from "@/components/StructuredData";
 
 export const metadata: Metadata = {
@@ -56,6 +57,7 @@ export default function StoreLayout({
       <ErrorBoundary><LivePurchaseFeed /></ErrorBoundary>
       <ErrorBoundary><DailyCheckIn /></ErrorBoundary>
       <ErrorBoundary><AppDownloadBanner /></ErrorBoundary>
+      <ErrorBoundary><FloatingWhatsApp /></ErrorBoundary>
       <TrackingScripts />
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import ProductImage from "@/components/ProductImage";
-import { Star, Heart, Plus, Check } from "lucide-react";
+import { Star, Heart, Plus, Check, Eye } from "lucide-react";
 import { useState } from "react";
 import { useCart } from "@/lib/hooks/useCart";
 import { useToast } from "@/lib/hooks/useToast";
@@ -26,6 +26,7 @@ type ProductCardProps = {
   shippingBadge?: "From Abroad" | "Express";
   flashSalePrice?: number | null;
   flashSaleEndsAt?: string | null;
+  onQuickView?: (slug: string) => void;
 };
 
 export default function ProductCard({
@@ -46,6 +47,7 @@ export default function ProductCard({
   shippingBadge,
   flashSalePrice,
   flashSaleEndsAt,
+  onQuickView,
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false);
   const { addItem } = useCart();
@@ -156,6 +158,19 @@ export default function ProductCard({
             >
               <Heart className={`w-4 h-4 ${isWishlisted ? "fill-current" : ""}`} />
             </button>
+            {onQuickView && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onQuickView(slug);
+                }}
+                className="p-2.5 rounded-full shadow-soft backdrop-blur-sm bg-white/90 text-text-muted hover:text-primary hover:bg-white transition-all duration-200"
+                aria-label="Quick view"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           {/* Quick Add Button */}

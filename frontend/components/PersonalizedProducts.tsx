@@ -62,7 +62,7 @@ export default function PersonalizedProducts() {
               name={product.name}
               slug={product.slug}
               price={Number(product.price)}
-              comparePrice={product.compareAtPrice ? Number(product.compareAtPrice) : product.comparePrice ? Number(product.comparePrice) : undefined}
+              comparePrice={product.comparePrice ? Number(product.comparePrice) : undefined}
               rating={Number(product.rating)}
               imageUrl={product.imageUrl}
               category={product.category || undefined}

@@ -192,13 +192,54 @@ router.get("/viewers/:productId", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/recommendations/best-sellers - Top products by total order volume
+router.get("/best-sellers", async (_req: Request, res: Response) => {
+  try {
+    const data = await cacheGetOrSet("reco:best-sellers", async () => {
+      const topSold = await prisma.orderItem.groupBy({
+        by: ["productId"],
+        where: { order: { status: { notIn: ["CANCELLED", "REFUNDED"] } } },
+        _sum: { quantity: true },
+        orderBy: { _sum: { quantity: "desc" } },
+        take: 12,
+      });
+
+      if (topSold.length === 0) {
+        // Fallback: highest-rated active products
+        const products = await prisma.product.findMany({
+          where: { status: "ACTIVE" },
+          include: { images: { take: 1, orderBy: { position: "asc" } }, category: { select: { name: true } } },
+          orderBy: [{ rating: "desc" }, { reviewCount: "desc" }],
+          take: 12,
+        });
+        return products.map(formatProduct);
+      }
+
+      const products = await prisma.product.findMany({
+        where: { id: { in: topSold.map((r) => r.productId) }, status: "ACTIVE" },
+        include: { images: { take: 1, orderBy: { position: "asc" } }, category: { select: { name: true } } },
+      });
+      const idOrder = topSold.map((r) => r.productId);
+      return idOrder
+        .map((id) => products.find((p) => p.id === id))
+        .filter(Boolean)
+        .map((p) => ({ ...formatProduct(p!), totalSold: topSold.find((r) => r.productId === p!.id)?._sum.quantity || 0 }));
+    }, LONG_TTL);
+
+    return res.json({ products: data });
+  } catch (error) {
+    console.error("Best-sellers error:", error);
+    return res.status(500).json({ error: "Failed to load best sellers" });
+  }
+});
+
 function formatProduct(p: any) {
   return {
     id: p.id,
     name: p.name,
     slug: p.slug,
     price: Number(p.price),
-    compareAtPrice: p.compareAtPrice ? Number(p.compareAtPrice) : null,
+    comparePrice: p.comparePrice ? Number(p.comparePrice) : null,
     imageUrl: p.images?.[0]?.url || null,
     category: p.category?.name || null,
     rating: p.rating ? Number(p.rating) : null,

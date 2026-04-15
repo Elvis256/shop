@@ -225,6 +225,30 @@ app.use("/api/admin/permissions", adminPermissions);
 app.use("/api/settings", settingsRoutes);
 
 // Health check — verifies database and Redis connectivity
+app.get("/api/health", async (_req, res) => {
+  const checks: Record<string, string> = {};
+  let healthy = true;
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = "ok";
+  } catch {
+    checks.database = "unavailable";
+    healthy = false;
+  }
+
+  try {
+    await redis.ping();
+    checks.redis = "ok";
+  } catch {
+    checks.redis = "unavailable";
+    healthy = false;
+  }
+
+  const status = healthy ? "ok" : "degraded";
+  res.status(healthy ? 200 : 503).json({ status, timestamp: new Date().toISOString(), checks });
+});
+
 app.get("/health", async (_req, res) => {
   const checks: Record<string, string> = {};
   let healthy = true;

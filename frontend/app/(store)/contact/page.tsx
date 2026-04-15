@@ -118,7 +118,7 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <h3 className="font-medium">Email</h3>
-                  <a href="mailto:support@adultstore.com" className="text-accent hover:underline">
+                  <a href={`mailto:${contactInfo.email}`} className="text-accent hover:underline">
                     {contactInfo.email}
                   </a>
                   <p className="text-sm text-gray-500 mt-1">We respond within 24 hours</p>

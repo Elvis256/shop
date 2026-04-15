@@ -22,6 +22,8 @@ interface CartContextType {
   itemCount: number;
   total: number;
   cartId: string | null;
+  syncError: string | null;
+  dismissSyncError: () => void;
   addItem: (product: Omit<CartItem, "quantity"> & { quantity?: number }) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   updateItemBadge: (productId: string, badge: "From Abroad" | "Express") => void;
@@ -40,6 +42,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [cartId, setCartId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const { user } = useAuth();
 
   // Load cart from localStorage on mount
@@ -83,6 +86,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       
       if (result.id) {
         setCartId(result.id);
+        setSyncError(null);
         // Update local items with backend response (stock-adjusted quantities)
         const newItems: CartItem[] = (result.items as any[]).map((item) => ({
           id: item.id,
@@ -98,6 +102,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error("Failed to sync cart:", error);
+      setSyncError("Some items in your cart may have changed. Please review your cart.");
     }
   }, [items]);
 
@@ -166,6 +171,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const openCart = () => setIsOpen(true);
   const closeCart = () => setIsOpen(false);
   const toggleCart = () => setIsOpen((prev) => !prev);
+  const dismissSyncError = () => setSyncError(null);
 
   return (
     <CartContext.Provider
@@ -175,6 +181,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
         itemCount,
         total,
         cartId,
+        syncError,
+        dismissSyncError,
         addItem,
         updateQuantity,
         updateItemBadge,

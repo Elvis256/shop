@@ -13,6 +13,7 @@ import NewsletterSignup from "@/components/NewsletterSignup";
 import RecentlyViewed from "@/components/RecentlyViewed";
 import FlashSaleCountdown from "@/components/FlashSaleCountdown";
 import DailyDeal from "@/components/DailyDeal";
+import QuickView from "@/components/QuickView";
 const ScrollProgress = dynamic(() => import("@/components/ScrollProgress"), { ssr: false });
 const AnimateOnScroll = dynamic(() => import("@/components/AnimateOnScroll").then(m => m.default), { ssr: false });
 const StaggerGrid = dynamic(() => import("@/components/AnimateOnScroll").then(m => m.StaggerGrid), { ssr: false });
@@ -112,6 +113,7 @@ export default function Home() {
   const [flashSaleProducts, setFlashSaleProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [quickViewSlug, setQuickViewSlug] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -212,6 +214,7 @@ export default function Home() {
                     inStock={p.inStock}
                     badgeText="🔥 SALE"
                     shippingBadge={p.shippingBadge}
+                    onQuickView={setQuickViewSlug}
                   />
                 </CarouselItem>
               ))}
@@ -246,13 +249,14 @@ export default function Home() {
                     name={product.name}
                     slug={product.slug}
                     price={Number(product.price)}
-                    comparePrice={product.compareAtPrice ? Number(product.compareAtPrice) : undefined}
+                    comparePrice={product.comparePrice ? Number(product.comparePrice) : undefined}
                     rating={Number(product.rating)}
                     imageUrl={product.imageUrl}
                     category={product.category || undefined}
                     inStock={product.stock !== 0}
                     badgeText={product.soldRecently ? `${product.soldRecently} sold` : undefined}
                     shippingBadge={product.shippingBadge}
+                    onQuickView={setQuickViewSlug}
                   />
                 </CarouselItem>
               ))}
@@ -322,6 +326,7 @@ export default function Home() {
                   isNew={true}
                   isBestseller={product.isBestseller}
                   shippingBadge={product.shippingBadge}
+                  onQuickView={setQuickViewSlug}
                 />
               </StaggerItem>
             ))
@@ -352,12 +357,13 @@ export default function Home() {
                     name={product.name}
                     slug={product.slug}
                     price={Number(product.price)}
-                    comparePrice={product.compareAtPrice ? Number(product.compareAtPrice) : undefined}
+                    comparePrice={product.comparePrice ? Number(product.comparePrice) : undefined}
                     rating={Number(product.rating)}
                     imageUrl={product.imageUrl}
                     category={product.category || undefined}
                     inStock={product.stock !== 0}
                     shippingBadge={product.shippingBadge}
+                    onQuickView={setQuickViewSlug}
                   />
                 </CarouselItem>
               ))}
@@ -396,6 +402,7 @@ export default function Home() {
                   isNew={product.isNew}
                   isBestseller={true}
                   shippingBadge={product.shippingBadge}
+                  onQuickView={setQuickViewSlug}
                 />
               </StaggerItem>
             ))
@@ -421,6 +428,9 @@ export default function Home() {
           </div>
         </AnimateOnScroll>
       </Section>
+
+      {/* Quick View Modal */}
+      <QuickView productSlug={quickViewSlug} onClose={() => setQuickViewSlug(null)} />
     </div>
   );
 }
