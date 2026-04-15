@@ -65,9 +65,10 @@ const ChangePasswordSchema = z.object({
 router.post("/register", async (req, res: Response) => {
   try {
     const body = RegisterSchema.parse(req.body);
+    const normalizedEmail = body.email.toLowerCase().trim();
 
     // Check if email already exists
-    const existing = await prisma.user.findUnique({ where: { email: body.email } });
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) {
       return res.status(400).json({ error: "Email already registered" });
     }
@@ -78,7 +79,7 @@ router.post("/register", async (req, res: Response) => {
     // Create user
     const user = await prisma.user.create({
       data: {
-        email: body.email,
+        email: normalizedEmail,
         password: hashedPassword,
         name: body.name,
         phone: body.phone,
@@ -88,6 +89,7 @@ router.post("/register", async (req, res: Response) => {
 
     // Generate tokens
     const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal: "customer" });
+    const refreshToken = await createRefreshToken(user.id);
     const verificationToken = uuidv4();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
@@ -98,6 +100,10 @@ router.post("/register", async (req, res: Response) => {
         expiresAt,
       },
     });
+
+    // Set httpOnly cookies so user is logged in after registration
+    res.cookie("auth_token", accessToken, COOKIE_OPTIONS);
+    res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
 
     // Send verification email (async, don't wait)
     sendVerificationEmail(user.email, verificationToken, user.name || undefined).catch(console.error);
@@ -133,9 +139,9 @@ async function checkAccountLockout(email: string): Promise<{ locked: boolean; re
     }
     return { locked: false };
   } catch {
-    // Redis down — fail closed for security (block login)
-    console.error("Redis unavailable — blocking login for safety");
-    return { locked: true, remainingTime: 5 };
+    // Redis down — fail open to avoid blocking all logins; rate limiting still applies
+    console.error("Redis unavailable for lockout check — allowing login");
+    return { locked: false };
   }
 }
 
@@ -199,6 +205,7 @@ async function clearIpAttempts(ip: string): Promise<void> {
 router.post("/login", async (req, res: Response) => {
   try {
     const body = LoginSchema.parse(req.body);
+    const normalizedEmail = body.email.toLowerCase().trim();
     const clientIp = req.ip || "unknown";
 
     // Check IP-based lockout first (blocks brute-force across emails)
@@ -210,7 +217,7 @@ router.post("/login", async (req, res: Response) => {
     }
 
     // Check for account lockout (Redis-backed)
-    const lockoutStatus = await checkAccountLockout(body.email);
+    const lockoutStatus = await checkAccountLockout(normalizedEmail);
     if (lockoutStatus.locked) {
       return res.status(429).json({ 
         error: `Account temporarily locked. Try again in ${lockoutStatus.remainingTime} minutes.` 
@@ -219,26 +226,30 @@ router.post("/login", async (req, res: Response) => {
 
     // Find user
     const user = await prisma.user.findUnique({
-      where: { email: body.email },
-      select: { id: true, email: true, name: true, password: true, role: true },
+      where: { email: normalizedEmail },
+      select: { id: true, email: true, name: true, password: true, role: true, isBlocked: true },
     });
 
     if (!user) {
-      await recordFailedLogin(body.email);
+      await recordFailedLogin(normalizedEmail);
       await recordFailedIpAttempt(clientIp);
       return res.status(401).json({ error: "Invalid email or password" });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ error: "Account has been suspended. Please contact support." });
     }
 
     // Verify password
     const validPassword = await bcrypt.compare(body.password, user.password);
     if (!validPassword) {
-      await recordFailedLogin(body.email);
+      await recordFailedLogin(normalizedEmail);
       await recordFailedIpAttempt(clientIp);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
     // Clear failed attempts on successful login
-    await clearLoginAttempts(body.email);
+    await clearLoginAttempts(normalizedEmail);
     await clearIpAttempts(clientIp);
 
     // For admin/manager: check if 2FA is enabled — require TOTP code if so

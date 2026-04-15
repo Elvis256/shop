@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import DOMPurify from "dompurify";
+import DOMPurify from "isomorphic-dompurify";
 import { Star, ThumbsUp, ShieldCheck, Truck, RotateCcw } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Review, ReviewsResponse } from "@/lib/types/api";

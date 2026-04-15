@@ -1,9 +1,9 @@
 import { Router, Response } from "express";
-import { AuthRequest, requireAdmin } from "../../middleware/auth";
+import { AuthRequest, authenticate, requireAdmin } from "../../middleware/auth";
 import { uploadSingle, validateUploadedFiles } from "../../middleware/upload";
 
 const router = Router();
-router.use(requireAdmin);
+router.use(authenticate, requireAdmin);
 
 // POST /api/admin/upload — standalone image upload for rich text editor
 router.post("/", uploadSingle, validateUploadedFiles, async (req: AuthRequest, res: Response) => {

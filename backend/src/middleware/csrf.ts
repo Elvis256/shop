@@ -42,7 +42,7 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction) {
   }
 
   // Skip for webhooks (they use their own verification)
-  if (req.path.startsWith("/webhooks")) {
+  if (req.path === "/webhooks/flutterwave") {
     return next();
   }
 

@@ -74,7 +74,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 
 const AddItemSchema = z.object({
   productId: z.string(),
-  quantity: z.number().int().positive().default(1),
+  quantity: z.number().int().positive().max(100).default(1),
 });
 
 // POST /api/cart/:id/items
@@ -251,14 +251,17 @@ router.post("/sync", async (req: Request, res: Response) => {
 
     const productMap = new Map(products.map(p => [p.id, p]));
 
-    // Filter to valid products with stock
+    // Filter to valid products with available stock (accounting for reservations)
     const validItems = items.filter(item => {
       const product = productMap.get(item.productId);
-      return product && product.stock > 0;
+      if (!product) return false;
+      const availableStock = product.stock - (product.reservedStock || 0);
+      return availableStock > 0;
     }).map(item => {
       const product = productMap.get(item.productId)!;
+      const availableStock = product.stock - (product.reservedStock || 0);
       // Cap quantity to available stock
-      const quantity = Math.min(item.quantity, product.stock);
+      const quantity = Math.min(item.quantity, availableStock, 100);
       return { productId: item.productId, quantity };
     });
 

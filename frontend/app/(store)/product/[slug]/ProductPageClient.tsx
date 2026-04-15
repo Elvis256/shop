@@ -223,6 +223,13 @@ export default function ProductPageClient() {
     setShowShareMenu(false);
   };
 
+  // ── Derived pricing/stock values ──
+  const basePrice = selectedVariant?.price || product?.price || 0;
+  const hasFlashSale = product?.flashSalePrice && product?.flashSaleEndsAt && new Date(product.flashSaleEndsAt) > new Date();
+  const effectivePrice = hasFlashSale ? product.flashSalePrice! : basePrice;
+  const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
+  const isLowStock = product && effectiveStock > 0 && effectiveStock <= product.lowStockAlert;
+
   // ── Buy Now ──
   const handleBuyNow = () => {
     if (!product || effectiveStock <= 0) return;
@@ -239,12 +246,6 @@ export default function ProductPageClient() {
     });
     router.push("/checkout");
   };
-
-  const basePrice = selectedVariant?.price || product?.price || 0;
-  const hasFlashSale = product?.flashSalePrice && product?.flashSaleEndsAt && new Date(product.flashSaleEndsAt) > new Date();
-  const effectivePrice = hasFlashSale ? product.flashSalePrice! : basePrice;
-  const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
-  const isLowStock = product && effectiveStock > 0 && effectiveStock <= product.lowStockAlert;
 
   if (loading) {
     return (

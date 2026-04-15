@@ -135,14 +135,18 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
       return res.status(401).json({ error: "Invalid token" });
     }
 
-    // Verify user still exists
+    // Verify user still exists and is not blocked
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      select: { id: true, email: true, role: true },
+      select: { id: true, email: true, role: true, isBlocked: true },
     });
 
     if (!user) {
       return res.status(401).json({ error: "User not found" });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ error: "Account has been suspended" });
     }
 
     req.user = { ...user, portal: decoded.portal };

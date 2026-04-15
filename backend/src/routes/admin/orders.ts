@@ -267,102 +267,46 @@ router.put("/:id/status", async (req: AuthRequest, res: Response) => {
 
     // Restore inventory if cancelled
     if (status === "CANCELLED" && order.status !== "CANCELLED") {
-      // Set payment status to FAILED for non-paid orders
-      if (order.paymentStatus !== "SUCCESSFUL") {
-        await prisma.order.update({
-          where: { id },
-          data: { paymentStatus: "FAILED" },
+      await prisma.$transaction(async (tx) => {
+        // Set payment status to FAILED for non-paid orders
+        if (order.paymentStatus !== "SUCCESSFUL") {
+          await tx.order.update({
+            where: { id },
+            data: { paymentStatus: "FAILED" },
+          });
+          await tx.payment.updateMany({
+            where: { orderId: id },
+            data: { status: "FAILED" },
+          });
+        }
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+        // Release stock reservations
+        const reservations = await tx.stockReservation.findMany({
+          where: { orderId: id, released: false },
         });
-        await prisma.payment.updateMany({
-          where: { orderId: id },
-          data: { status: "FAILED" },
-        });
-      }
-      sendCancelledNotification(order, note).catch(console.error);
-      for (const item of order.items) {
-        await prisma.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        });
-      }
-      // Release stock reservations
-      const reservations = await prisma.stockReservation.findMany({
-        where: { orderId: id, released: false },
+        for (const reservation of reservations) {
+          await tx.product.update({
+            where: { id: reservation.productId },
+            data: { reservedStock: { decrement: reservation.quantity } },
+          });
+          await tx.stockReservation.update({
+            where: { id: reservation.id },
+            data: { released: true },
+          });
+        }
       });
-      for (const reservation of reservations) {
-        await prisma.product.update({
-          where: { id: reservation.productId },
-          data: { reservedStock: { decrement: reservation.quantity } },
-        });
-        await prisma.stockReservation.update({
-          where: { id: reservation.id },
-          data: { released: true },
-        });
-      }
+      sendCancelledNotification(order, note).catch(console.error);
     }
 
     return res.json({ message: "Order status updated" });
   } catch (error) {
     console.error("Admin update order status error:", error);
     return res.status(500).json({ error: "Failed to update order status" });
-  }
-});
-
-// POST /api/admin/orders/:id/refund
-router.post("/:id/refund", async (req: AuthRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { amount, reason } = z
-      .object({
-        amount: z.number().positive().optional(),
-        reason: z.string().optional(),
-      })
-      .parse(req.body);
-
-    const order = await prisma.order.findUnique({
-      where: { id },
-      include: { payments: true, items: true },
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: "Order not found" });
-    }
-
-    const refundAmount = amount || Number(order.totalAmount);
-
-    // In production, call Flutterwave refund API here
-    // For now, just update the status
-
-    await prisma.$transaction([
-      prisma.order.update({
-        where: { id },
-        data: { status: "REFUNDED", paymentStatus: "REFUNDED" },
-      }),
-      prisma.payment.updateMany({
-        where: { orderId: id },
-        data: { status: "REFUNDED" },
-      }),
-      prisma.orderEvent.create({
-        data: {
-          orderId: id,
-          status: "REFUNDED",
-          note: `Refund of KES ${refundAmount} processed. ${reason || ""}`,
-        },
-      }),
-    ]);
-
-    // Restore inventory
-    for (const item of order.items) {
-      await prisma.product.update({
-        where: { id: item.productId },
-        data: { stock: { increment: item.quantity } },
-      });
-    }
-
-    return res.json({ message: "Refund processed", amount: refundAmount });
-  } catch (error) {
-    console.error("Admin refund order error:", error);
-    return res.status(500).json({ error: "Failed to process refund" });
   }
 });
 
@@ -446,7 +390,7 @@ router.post("/:id/refund", async (req: AuthRequest, res: Response) => {
 
     const order = await prisma.order.findUnique({
       where: { id },
-      include: { payments: true },
+      include: { payments: true, items: true },
     });
 
     if (!order) return res.status(404).json({ error: "Order not found" });
@@ -456,6 +400,11 @@ router.post("/:id/refund", async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Only paid orders can be refunded" });
     }
 
+    const refundAmount = amount || Number(order.totalAmount);
+    if (refundAmount > Number(order.totalAmount)) {
+      return res.status(400).json({ error: "Refund amount cannot exceed order total" });
+    }
+
     // Initiate refund via Flutterwave
     const refundResult = await refundFlutterwaveTransaction(
       payment.flwTxId!,
@@ -463,24 +412,32 @@ router.post("/:id/refund", async (req: AuthRequest, res: Response) => {
       reason
     );
 
-    // Update order and payment status
-    await prisma.$transaction([
-      prisma.payment.update({
+    // Update order/payment status and restore inventory atomically
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.update({
         where: { id: payment.id },
         data: { status: "REFUNDED" },
-      }),
-      prisma.order.update({
+      });
+      await tx.order.update({
         where: { id },
         data: { status: "REFUNDED", paymentStatus: "REFUNDED" },
-      }),
-      prisma.orderEvent.create({
+      });
+      await tx.orderEvent.create({
         data: {
           orderId: id,
           status: "REFUNDED",
           note: reason || "Refund processed by admin",
         },
-      }),
-    ]);
+      });
+
+      // Restore inventory inside transaction
+      for (const item of order.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+    });
 
     // Log admin activity
     await prisma.activityLog.create({
