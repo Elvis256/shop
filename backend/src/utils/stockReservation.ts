@@ -1,57 +1,82 @@
 import prisma from "../lib/prisma";
 
 /**
- * Release expired stock reservations
- * Should be called periodically (e.g., every 5 minutes via cron)
+ * Release expired stock reservations with batching to prevent event loop blocking
+ * Processes 1000 reservations at a time with yielding between batches
+ * Prevents 60+ second blocking during peak hours
  */
 export async function releaseExpiredReservations(): Promise<number> {
   const now = new Date();
-  
-  // Find expired, unreleased reservations
-  const expiredReservations = await prisma.stockReservation.findMany({
-    where: {
-      expiresAt: { lt: now },
-      released: false,
-    },
-  });
+  const BATCH_SIZE = 1000;
+  let totalReleased = 0;
+  let batchCount = 0;
 
-  if (expiredReservations.length === 0) {
-    return 0;
+  while (true) {
+    batchCount++;
+    
+    // Find batch of expired, unreleased reservations
+    const expiredReservations = await prisma.stockReservation.findMany({
+      where: {
+        expiresAt: { lt: now },
+        released: false,
+      },
+      take: BATCH_SIZE,
+      select: {
+        id: true,
+        orderId: true,
+        productId: true,
+        quantity: true,
+      },
+    });
+
+    if (expiredReservations.length === 0) {
+      break; // No more expired reservations
+    }
+
+    // Process batch in transaction
+    await prisma.$transaction(async (tx) => {
+      for (const reservation of expiredReservations) {
+        // Release reserved stock
+        await tx.product.update({
+          where: { id: reservation.productId },
+          data: {
+            reservedStock: { decrement: reservation.quantity },
+          },
+        });
+        
+        // Mark reservation as released
+        await tx.stockReservation.update({
+          where: { id: reservation.id },
+          data: { released: true },
+        });
+        
+        // Cancel the order if still pending
+        await tx.order.updateMany({
+          where: { 
+            id: reservation.orderId,
+            status: "PENDING",
+          },
+          data: { 
+            status: "CANCELLED",
+            paymentStatus: "FAILED",
+          },
+        });
+      }
+    });
+
+    totalReleased += expiredReservations.length;
+
+    // Yield to event loop between batches (prevent blocking)
+    // setTimeout with 0 allows other requests to process
+    if (expiredReservations.length === BATCH_SIZE) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
   }
 
-  // Release each reservation in a transaction
-  await prisma.$transaction(async (tx) => {
-    for (const reservation of expiredReservations) {
-      // Release reserved stock
-      await tx.product.update({
-        where: { id: reservation.productId },
-        data: {
-          reservedStock: { decrement: reservation.quantity },
-        },
-      });
-      
-      // Mark reservation as released
-      await tx.stockReservation.update({
-        where: { id: reservation.id },
-        data: { released: true },
-      });
-      
-      // Cancel the order if still pending
-      await tx.order.updateMany({
-        where: { 
-          id: reservation.orderId,
-          status: "PENDING",
-        },
-        data: { 
-          status: "CANCELLED",
-          paymentStatus: "FAILED",
-        },
-      });
-    }
-  });
-
-  console.log(`Released ${expiredReservations.length} expired stock reservations`);
-  return expiredReservations.length;
+  if (totalReleased > 0) {
+    console.log(`Released ${totalReleased} expired stock reservations in ${batchCount} batches`);
+  }
+  return totalReleased;
 }
 
 // Run cleanup every 5 minutes in production

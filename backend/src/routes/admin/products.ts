@@ -300,11 +300,25 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 router.put("/:id", async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const body = ProductSchema.partial().parse(req.body);
+    const { updatedAt, ...bodyWithoutVersion } = req.body;
+    const body = ProductSchema.partial().parse(bodyWithoutVersion);
 
     const product = await prisma.product.findUnique({ where: { id } });
     if (!product) {
       return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Optimistic locking: Detect concurrent modifications using updatedAt version
+    // If client sends an older updatedAt, another user modified the product
+    if (updatedAt) {
+      const clientVersion = new Date(updatedAt);
+      const serverVersion = new Date(product.updatedAt);
+      if (clientVersion.getTime() !== serverVersion.getTime()) {
+        return res.status(409).json({
+          error: "Conflict: Product was modified by another user. Please refresh and try again.",
+          currentProduct: product, // Return current version so user can see what changed
+        });
+      }
     }
 
     // Check slug uniqueness if changing
@@ -332,6 +346,10 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     await cacheDel(`product:${product.slug}`);
     if (body.slug && body.slug !== product.slug) await cacheDel(`product:${body.slug}`);
     await cacheDel("categories:list");
+    // Also invalidate flash sale cache on any update
+    const now = new Date();
+    const hourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
+    await cacheDel(`products:flash-sale:${hourStart.getTime()}`);
 
     return res.json({ message: "Product updated", product: updated });
   } catch (error) {

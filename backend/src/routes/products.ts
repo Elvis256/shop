@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
-import { cacheGetOrSet, cacheDel, trackTrending, SHORT_TTL, LONG_TTL } from "../lib/cache";
+import { cacheGetOrSet, cacheGet, cacheDel, cacheSet, trackTrending, SHORT_TTL, LONG_TTL } from "../lib/cache";
 
 const router = Router();
 
@@ -12,6 +12,33 @@ router.get("/", async (req: Request, res: Response) => {
     const take = Math.min(parseInt(limit as string, 10) || 20, 100);
     const pageNum = Math.max(parseInt(page as string, 10) || 1, 1);
     const skip = (pageNum - 1) * take;
+
+    // Build cache key with time partitioning for flash sales
+    // Use hourly granularity: products:flash-sale:{HOUR_TIMESTAMP}
+    // This ensures cache expires within 1 hour of sale end
+    let cacheKey: string | null = null;
+    if (flashSale === "true" && !category && !minPrice && !maxPrice && !search && pageNum === 1) {
+      // Only cache full flash sale listing (no filters, first page)
+      const now = new Date();
+      const hourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
+      cacheKey = `products:flash-sale:${hourStart.getTime()}`;
+
+      // Check cache first (fast path for flash sales)
+      const cached = await cacheGet<any>(cacheKey);
+      if (cached) {
+        // Validate cached results: ensure flashSaleEndsAt is still in future
+        // (prevents showing expired sales if cache somehow persists beyond hour boundary)
+        const now = new Date();
+        const allSalesActive = cached.products?.every((p: any) => {
+          if (!p.flashSaleEndsAt) return false;
+          return new Date(p.flashSaleEndsAt) > now;
+        });
+        if (allSalesActive) {
+          return res.json(cached);
+        }
+        // Sales expired — proceed to fetch fresh
+      }
+    }
 
     const where: any = {};
 
@@ -96,7 +123,7 @@ router.get("/", async (req: Request, res: Response) => {
       prisma.product.count({ where }),
     ]);
 
-    return res.json({
+    const responseBody = {
       products: products.map((p) => ({
         id: p.id,
         name: p.name,
@@ -123,7 +150,15 @@ router.get("/", async (req: Request, res: Response) => {
         limit: take,
         totalPages: Math.ceil(total / take),
       },
-    });
+    };
+
+    // Cache flash sale results with hourly time partitioning
+    // Ensures cache auto-expires within 1 hour of sale end
+    if (cacheKey) {
+      await cacheSet(cacheKey, responseBody, 3600); // 1 hour TTL
+    }
+
+    return res.json(responseBody);
   } catch (error) {
     console.error("Get products error:", error);
     return res.status(500).json({ error: "Failed to fetch products" });
