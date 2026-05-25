@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import BlogPostClient from "./BlogPostClient";
+import ArticleSchema from "@/components/schemas/ArticleSchema";
 
 const API_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
@@ -49,6 +50,35 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-export default function BlogPostPage() {
-  return <BlogPostClient />;
+async function getBlogPost(slug: string) {
+  try {
+    const res = await fetch(`${API_URL}/api/blog/${slug}`, { next: { revalidate: 3600 } });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export default async function BlogPostPage({ params }: Props) {
+  const { slug } = await params;
+  const post = await getBlogPost(slug);
+
+  return (
+    <>
+      {post && (
+        <ArticleSchema
+          title={post.title}
+          description={post.excerpt || post.content?.replace(/<[^>]*>/g, "").slice(0, 160) || ""}
+          image={post.featuredImage}
+          publishedAt={post.publishedAt}
+          updatedAt={post.updatedAt || post.publishedAt}
+          author={{ name: post.author || "PleasureZone" }}
+          content={post.content}
+          postUrl={`${SITE_URL}/blog/${slug}`}
+        />
+      )}
+      <BlogPostClient />
+    </>
+  );
 }

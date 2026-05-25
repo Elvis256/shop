@@ -1,5 +1,7 @@
 import { Metadata } from "next";
 import ProductPageClient from "./ProductPageClient";
+import ProductSchema from "@/components/schemas/ProductSchema";
+import Breadcrumb from "@/components/schemas/BreadcrumbSchema";
 
 const API_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
@@ -60,62 +62,30 @@ function ProductJsonLd({ product, slug }: { product: Record<string, unknown>; sl
   const reviewCount = product.reviewCount as number | undefined;
   const category = product.category as { name: string } | undefined;
 
-  const productSchema: Record<string, unknown> = {
-    '@context': 'https://schema.org',
-    '@type': 'Product',
-    name: product.name,
-    description: plainDescription,
-    image: image || undefined,
-    sku: product.sku || product.id,
-    brand: { '@type': 'Brand', name: 'PleasureZone' },
-    offers: {
-      '@type': 'Offer',
-      url: `${SITE_URL}/product/${slug}`,
-      priceCurrency: 'UGX',
-      price: price.toString(),
-      availability: inStock
-        ? 'https://schema.org/InStock'
-        : 'https://schema.org/OutOfStock',
-      seller: { '@type': 'Organization', name: 'PleasureZone' },
-    },
-  };
-
-  if (rating && reviewCount) {
-    productSchema.aggregateRating = {
-      '@type': 'AggregateRating',
-      ratingValue: rating.toString(),
-      reviewCount: reviewCount.toString(),
-      bestRating: '5',
-      worstRating: '1',
-    };
-  }
-
-  const breadcrumbSchema = {
-    '@context': 'https://schema.org',
-    '@type': 'BreadcrumbList',
-    itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Home', item: SITE_URL },
-      ...(category ? [{
-        '@type': 'ListItem', position: 2,
-        name: category.name,
-        item: `${SITE_URL}/category?cat=${encodeURIComponent(category.name)}`,
-      }] : []),
-      {
-        '@type': 'ListItem', position: category ? 3 : 2,
-        name: product.name as string,
-      },
-    ],
-  };
-
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }}
+      <ProductSchema
+        name={product.name as string}
+        description={plainDescription}
+        image={image}
+        sku={product.sku as string || product.id as string}
+        brand="PleasureZone"
+        offers={{
+          priceCurrency: 'UGX',
+          price: price.toString(),
+          availability: inStock ? 'InStock' : 'OutOfStock',
+          url: `${SITE_URL}/product/${slug}`,
+        }}
+        ratingValue={rating}
+        reviewCount={reviewCount}
+        category={category?.name}
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      <Breadcrumb
+        items={[
+          { name: 'Home', url: SITE_URL },
+          ...(category ? [{ name: category.name, url: `${SITE_URL}/category?cat=${encodeURIComponent(category.name)}` }] : []),
+          { name: product.name as string, url: `${SITE_URL}/product/${slug}` }
+        ]}
       />
     </>
   );

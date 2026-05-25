@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/lib/hooks/useTheme";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorker";
+import OrganizationSchema from "@/components/schemas/OrganizationSchema";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
 
@@ -81,6 +82,7 @@ export default function RootLayout({
       <body className="min-h-screen flex flex-col bg-bg text-text transition-colors" suppressHydrationWarning>
         <GoogleAnalytics />
         <ServiceWorkerRegistration />
+        <OrganizationSchema />
         <ThemeProvider>
         <ToastProvider>
           <AuthProvider>
