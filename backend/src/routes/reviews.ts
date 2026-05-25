@@ -52,7 +52,12 @@ router.get("/product/:productId", async (req: Request, res: Response) => {
         title: r.title,
         content: r.content,
         verified: r.verified,
-        author: r.user.name || "Anonymous",
+        // Anonymous by default — show "Verified Buyer in [City]" instead of real name
+        author: r.isAnonymous
+          ? (r.displayCity ? `Verified Buyer in ${r.displayCity}` : "Verified Buyer")
+          : (r.user.name || "Customer"),
+        avatarUrl: r.isAnonymous ? null : undefined,
+        isAnonymous: r.isAnonymous,
         images: r.images.map((img) => ({ id: img.id, url: img.url, position: img.position })),
         createdAt: r.createdAt,
       })),
@@ -78,6 +83,7 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       rating: z.number().int().min(1).max(5),
       title: z.string().max(100).optional(),
       content: z.string().max(2000).optional(),
+      isAnonymous: z.boolean().default(true),
       images: z.array(z.string().url()).max(3).optional(),
     });
 
@@ -105,6 +111,18 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // Get display city from latest delivered order address
+    let displayCity: string | null = null;
+    if (body.isAnonymous && hasPurchased) {
+      const order = await prisma.order.findFirst({
+        where: { userId: req.user!.id, status: { in: ["DELIVERED"] } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (order?.shippingAddress) {
+        try { displayCity = JSON.parse(order.shippingAddress)?.city || null; } catch {}
+      }
+    }
+
     const review = await prisma.review.create({
       data: {
         productId: body.productId,
@@ -113,7 +131,9 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
         title: body.title,
         content: body.content,
         verified: !!hasPurchased,
-        approved: true, // Auto-approve for now; could add moderation
+        approved: true,
+        isAnonymous: body.isAnonymous,
+        displayCity,
       },
     });
 

@@ -52,6 +52,7 @@ const UpdateProfileSchema = z.object({
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
   smsOptIn: z.boolean().optional(),
+  orderHistoryDays: z.number().int().positive().nullable().optional(),
 });
 
 const ChangePasswordSchema = z.object({
@@ -388,6 +389,7 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
         role: true,
         emailVerified: true,
         smsOptIn: true,
+        orderHistoryDays: true,
         createdAt: true,
         _count: { select: { orders: true, wishlist: true } },
       },

@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
+import Breadcrumbs from "@/components/Breadcrumbs";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { api, apiFetch } from "@/lib/api";
-import { Package, Eye, ChevronLeft, RefreshCw, Loader2 } from "lucide-react";
+import { Package, Eye, ChevronLeft, RefreshCw, Loader2, AlertCircle, X } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
 interface Order {
@@ -25,14 +26,16 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
 
   const handleReorder = async (orderId: string) => {
     setReorderingId(orderId);
+    setReorderError(null);
     try {
       await apiFetch(`/api/orders/${orderId}/reorder`, { method: "POST" });
       window.location.href = "/cart";
     } catch (err: any) {
-      alert(err.message || "Failed to reorder");
+      setReorderError(err.message || "Failed to reorder. Please try again.");
     } finally {
       setReorderingId(null);
     }
@@ -80,6 +83,7 @@ export default function OrdersPage() {
   return (
     <Section>
       <div className="max-w-4xl mx-auto">
+        <Breadcrumbs items={[{ label: "Account", href: "/account" }, { label: "My Orders" }]} />
         <div className="flex items-center gap-4 mb-8">
           <Link href="/account" className="btn-icon">
             <ChevronLeft className="w-5 h-5" />
@@ -87,8 +91,39 @@ export default function OrdersPage() {
           <h1>My Orders</h1>
         </div>
 
+        {reorderError && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{reorderError}</span>
+            </div>
+            <button onClick={() => setReorderError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {loading ? (
-          <div className="text-center py-16 text-text-muted">Loading orders...</div>
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="card animate-pulse">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-2">
+                    <div className="h-4 bg-surface-secondary rounded w-40" />
+                    <div className="h-3 bg-surface-secondary rounded w-28" />
+                  </div>
+                  <div className="space-y-2 text-right">
+                    <div className="h-4 bg-surface-secondary rounded w-20 ml-auto" />
+                    <div className="h-5 bg-surface-secondary rounded w-16 ml-auto" />
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-border flex justify-end gap-2">
+                  <div className="h-8 bg-surface-secondary rounded w-24" />
+                  <div className="h-8 bg-surface-secondary rounded w-28" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : orders.length === 0 ? (
           <div className="card text-center py-16">
             <Package className="w-16 h-16 mx-auto mb-4 text-text-muted" />

@@ -10,6 +10,7 @@ import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
 import { useToast } from "@/lib/hooks/useToast";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import { useCountry } from "@/contexts/CountryContext";
 import { parseDaysRange, formatDateRange } from "@/components/DeliveryEstimate";
 import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck, Banknote, Wallet } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -36,6 +37,7 @@ export default function CheckoutPage() {
   const { showToast } = useToast();
   const { user } = useAuth();
   const { formatPrice } = useCurrency();
+  const { country } = useCountry();
   const { config: shippingConfig, calculateShipping } = useShippingConfig();
   
   const [step, setStep] = useState<Step>(1);
@@ -235,7 +237,7 @@ export default function CheckoutPage() {
           price: item.price,
         })),
         currency: "UGX",
-        amount: cartTotal + shippingCost,
+        amount: Math.max(0, cartTotal - couponDiscount + shippingCost),
         shipping: shippingCost,
         paymentMethod,
         ...(paymentMethod === "mobile_money" && {
@@ -683,16 +685,19 @@ export default function CheckoutPage() {
                       value={mobileNetwork}
                       onChange={(e) => setMobileNetwork(e.target.value as "MPESA" | "AIRTEL" | "MTN")}
                     >
-                      <option value="MTN">MTN MoMo Uganda</option>
-                      <option value="AIRTEL">Airtel Money Uganda</option>
-                      <option value="MPESA">M-Pesa (Kenya/Uganda)</option>
+                      {(country.mobileNetworks && country.mobileNetworks.length > 0
+                        ? country.mobileNetworks
+                        : [{ id: "MTN", name: "MTN MoMo" }, { id: "AIRTEL", name: "Airtel Money" }, { id: "MPESA", name: "M-Pesa" }]
+                      ).map((n) => (
+                        <option key={n.id} value={n.id}>{n.name}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-small font-medium mb-2">Phone Number *</label>
                     <input
                       className="input"
-                      placeholder="+256 700 000 000"
+                      placeholder={`${country.dialCode} ${country.phonePlaceholder || "700 000 000"}`}
                       value={mobilePhone}
                       onChange={(e) => setMobilePhone(e.target.value)}
                     />

@@ -24,6 +24,7 @@ export default function Footer() {
             <nav className="space-y-3 text-sm">
               <Link href="/category" className="block text-text-muted hover:text-text transition-colors duration-200">All Products</Link>
               <Link href="/sales" className="block text-text-muted hover:text-text transition-colors duration-200">Sales & Deals</Link>
+              <Link href="/subscription-boxes" className="block text-text-muted hover:text-text transition-colors duration-200">Subscription Boxes</Link>
               <Link href="/category?cat=toys" className="block text-text-muted hover:text-text transition-colors duration-200">Toys</Link>
               <Link href="/category?cat=lingerie" className="block text-text-muted hover:text-text transition-colors duration-200">Lingerie</Link>
               <Link href="/category?cat=wellness" className="block text-text-muted hover:text-text transition-colors duration-200">Wellness</Link>

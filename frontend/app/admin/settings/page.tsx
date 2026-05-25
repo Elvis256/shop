@@ -206,6 +206,21 @@ const settingDefinitions: Record<string, SettingDef> = {
   sms_sender_id: { label: "Sender ID", type: "text", description: "Your registered sender ID (or 'AFRICASTKNG' for sandbox)", section: "SMS (Africa's Talking)", placeholder: "UGSEX" },
   sms_order_confirmation: { label: "Order Confirmation SMS", type: "toggle", description: "Send SMS when order is placed", section: "SMS Notifications" },
   sms_shipping_update: { label: "Shipping Update SMS", type: "toggle", description: "Send SMS when order ships", section: "SMS Notifications" },
+
+  // ── Payment: Stripe (Diaspora) ──
+  payment_stripe_enabled: { label: "Enable Stripe (Diaspora Gifting)", type: "toggle", description: "Accept international card payments for the diaspora send-a-gift flow", section: "Stripe API" },
+  payment_stripe_publishable_key: { label: "Stripe Publishable Key", type: "text", description: "Starts with pk_live_ or pk_test_", section: "Stripe API", placeholder: "pk_live_..." },
+  payment_stripe_secret_key: { label: "Stripe Secret Key", type: "password", description: "Keep this secret — never share it. Starts with sk_live_ or sk_test_", section: "Stripe API", placeholder: "sk_live_..." },
+  payment_stripe_webhook_secret: { label: "Stripe Webhook Secret", type: "password", description: "From Stripe Dashboard → Webhooks → Signing secret (whsec_...)", section: "Stripe API", placeholder: "whsec_..." },
+
+  // ── Integrations: SafeBoda Courier ──
+  courier_safeboda_enabled: { label: "Enable SafeBoda", type: "toggle", description: "Use SafeBoda API for real-time Kampala delivery quotes & booking", section: "SafeBoda Courier" },
+  courier_safeboda_api_key: { label: "SafeBoda API Key", type: "password", description: "Get your key from SafeBoda Partner Portal", section: "SafeBoda Courier", placeholder: "sb_..." },
+
+  // ── Integrations: Sendy Courier ──
+  courier_sendy_enabled: { label: "Enable Sendy", type: "toggle", description: "Use Sendy for last-mile delivery across East Africa", section: "Sendy Courier" },
+  courier_sendy_api_key: { label: "Sendy API Username", type: "text", description: "Your Sendy API username", section: "Sendy Courier", placeholder: "sendy_user" },
+  courier_sendy_vendor_id: { label: "Sendy Vendor ID", type: "password", description: "Your Sendy vendor/API key from the dashboard", section: "Sendy Courier", placeholder: "sendy_key" },
 };
 
 /* ------------------------------------------------------------------ */
@@ -221,7 +236,7 @@ function keyToCategory(key: string): string {
   if (key.startsWith("email_")) return "email";
   if (key.startsWith("notifications_") || key.startsWith("low_stock_")) return "notifications";
   if (key.startsWith("security_")) return "security";
-  if (key.startsWith("tracking_") || key.startsWith("whatsapp_") || key.startsWith("sms_")) return "integrations";
+  if (key.startsWith("tracking_") || key.startsWith("whatsapp_") || key.startsWith("sms_") || key.startsWith("courier_")) return "integrations";
   return "store";
 }
 

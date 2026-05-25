@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-import { api } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -76,6 +75,7 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [touched, setTouched] = useState({ email: false, password: false });
@@ -91,12 +91,15 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const response = await api.login(email, password);
-      const userRole = (response.user?.role || "") as string;
-      
+      const response = await login(email, password);
+      const userRole = ((response as any)?.user?.role || (response as any)?.role || "") as string;
+
+      if (rememberMe) {
+        try { localStorage.setItem("rememberMe", "true"); } catch {}
+      }
+
       const explicitRedirect = searchParams.get("redirect");
       let redirectTo = "/account";
-      
       if (explicitRedirect) {
         redirectTo = explicitRedirect;
       } else if (userRole === "ADMIN" || userRole === "STAFF" || userRole === "MANAGER") {
@@ -104,8 +107,6 @@ function LoginForm() {
       } else if (userRole === "SELLER") {
         redirectTo = "/seller";
       }
-      
-      await login(email, password).catch(() => {});
       router.push(redirectTo);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Login failed";
@@ -142,8 +143,7 @@ function LoginForm() {
       } else if (userRole === "SELLER") {
         redirectTo = "/seller";
       }
-      router.push(redirectTo);
-      // Reload to pick up new auth state
+      // Hard redirect so auth cookies are picked up fresh
       window.location.href = redirectTo;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Google login failed");
@@ -208,8 +208,13 @@ function LoginForm() {
             </div>
 
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-small cursor-pointer">
-                <input type="checkbox" className="rounded" />
+              <label className="flex items-center gap-2 text-small cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="rounded accent-primary"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
                 Remember me
               </label>
               <Link href="/auth/forgot-password" className="text-small link">

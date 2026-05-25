@@ -30,7 +30,8 @@ const withPWA = require('@ducanh2912/next-pwa').default({
       options: { cacheName: 'apis', networkTimeoutSeconds: 10, expiration: { maxEntries: 32, maxAgeSeconds: 24 * 60 * 60 } },
     },
     {
-      urlPattern: /.*/i,
+      // Only cache same-origin pages — do NOT intercept external scripts/analytics
+      urlPattern: ({ url }) => url.origin === self.location.origin,
       handler: 'NetworkFirst',
       options: { cacheName: 'pages', networkTimeoutSeconds: 10, expiration: { maxEntries: 50, maxAgeSeconds: 24 * 60 * 60 } },
     },
@@ -50,11 +51,11 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://www.paypal.com https://www.google-analytics.com https://www.googletagmanager.com https://connect.facebook.net",
+              "script-src 'self' 'unsafe-inline' https://www.paypal.com https://www.google-analytics.com https://www.googletagmanager.com https://connect.facebook.net https://static.cloudflareinsights.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: blob: https: http:",
-              "font-src 'self' https://fonts.gstatic.com",
-              "connect-src 'self' https://www.paypal.com https://www.google-analytics.com https://www.facebook.com https://region1.google-analytics.com",
+              "font-src 'self' https://fonts.gstatic.com data:",
+              "connect-src 'self' https://www.paypal.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com https://region1.analytics.google.com https://www.facebook.com https://connect.facebook.net https://fonts.googleapis.com https://fonts.gstatic.com https://ae01.alicdn.com https://*.alicdn.com https://*.aliexpress.com https://*.cjdropshipping.com https://res.cloudinary.com https://static.cloudflareinsights.com",
               "frame-src 'self' https://www.paypal.com https://www.google.com",
               "object-src 'none'",
               "base-uri 'self'",

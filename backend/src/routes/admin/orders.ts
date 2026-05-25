@@ -20,6 +20,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       paymentStatus,
       dateFrom,
       dateTo,
+      isGift,
       sort = "createdAt",
       order = "desc",
       page = "1",
@@ -53,6 +54,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       if (dateTo) where.createdAt.lte = new Date(dateTo as string);
     }
 
+    if (isGift === "true") {
+      where.isGift = true;
+    }
+
     const orderBy: any = {};
     orderBy[sort as string] = order;
 
@@ -83,6 +88,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         paymentMethod: o.payments[0]?.method,
         itemCount: o.items.reduce((sum, item) => sum + item.quantity, 0),
         discreet: o.discreet,
+        isGift: o.isGift,
+        giftAddressSet: o.giftAddressSet,
+        giftMessage: o.giftMessage,
+        giftRecipientPhone: o.giftRecipientPhone,
         createdAt: o.createdAt,
       })),
       pagination: {

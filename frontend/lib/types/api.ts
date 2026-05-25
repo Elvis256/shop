@@ -154,6 +154,8 @@ export interface OrderListItem {
   paymentMethod: PaymentMethod | null;
   itemCount: number;
   discreet: boolean;
+  isGift: boolean;
+  giftMessage: string | null;
   createdAt: string;
 }
 

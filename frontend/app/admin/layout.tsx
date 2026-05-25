@@ -100,6 +100,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/referrals", icon: Share2, label: "Referrals" },
       { href: "/admin/loyalty", icon: Award, label: "Loyalty Program" },
       { href: "/admin/push-notifications", icon: BellRing, label: "Push Notifications" },
+      { href: "/admin/broadcast", icon: MessageSquare, label: "Broadcast" },
       { href: "/admin/content", icon: FileText, label: "Content" },
     ],
   },

@@ -50,7 +50,7 @@ const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterC
 };
 
 // Validate magic bytes in memory, then write safe files to disk
-export function validateUploadedFiles(req: any, res: any, next: any) {
+export async function validateUploadedFiles(req: any, res: any, next: any) {
   const files = req.files as Express.Multer.File[] | undefined;
   const file = req.file as Express.Multer.File | undefined;
   
@@ -65,12 +65,12 @@ export function validateUploadedFiles(req: any, res: any, next: any) {
       return res.status(400).json({ error: "Invalid file content. File does not match declared type." });
     }
 
-    // Write validated file to disk
+    // Write validated file to disk (non-blocking async I/O)
     const ext = path.extname(uploadedFile.originalname).toLowerCase();
     const filename = `${uuidv4()}${ext}`;
     const filepath = path.join(UPLOAD_DIR, filename);
     try {
-      fs.writeFileSync(filepath, uploadedFile.buffer, { mode: 0o644 });
+      await fs.promises.writeFile(filepath, uploadedFile.buffer, { mode: 0o644 });
     } catch (err) {
       return res.status(500).json({ error: "Failed to save file" });
     }

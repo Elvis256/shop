@@ -873,7 +873,7 @@ export default function ProductPageClient() {
       )}
 
       {/* Sticky Mobile CTA */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t p-3 lg:hidden z-20">
+      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t p-3 lg:hidden z-30">
         <div className="flex items-center gap-3">
           <div className="flex-shrink-0">
             <p className="font-semibold text-gray-900">{formatPrice(Number(effectivePrice))}</p>

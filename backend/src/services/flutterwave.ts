@@ -74,7 +74,7 @@ export async function createFlutterwavePayment(
       name: input.customer.name,
     },
     customizations: {
-      title: "UGSex Store",
+      title: "PleasureZone",
       description: "Order Payment",
     },
   };

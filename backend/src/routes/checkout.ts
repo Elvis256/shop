@@ -109,41 +109,118 @@ async function reserveStock(
 // POST /api/checkout/create
 router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => {
   const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+  let checkoutAttemptId: string | undefined;
+  const redisKey = idempotencyKey ? `idempotency:checkout:${idempotencyKey}` : undefined;
   try {
-    // Idempotency: prevent duplicate checkout submissions
+    // Idempotency: Database-backed primary defense, Redis as cache layer
+    // This prevents duplicate orders even if Redis is unavailable
     if (idempotencyKey) {
-      const redisKey = `idempotency:checkout:${idempotencyKey}`;
       try {
-        const existing = await redis.get(redisKey);
-        if (existing) {
-          const cached = JSON.parse(existing);
-          // Only return cached response if it's a completed (non-pending) result
-          if (cached.body && !cached.pending) {
-            return res.status(cached.statusCode || 200).json(cached.body);
-          }
-          // If still pending from a previous attempt, treat as in-flight
-          if (cached.pending) {
+        // Check Redis cache first (fast path)
+        const cached = await redis.get(redisKey!);
+        if (cached) {
+          const cachedResult = JSON.parse(cached);
+          if (!cachedResult.pending) {
+            // Return cached successful/failed result
+            return res.status(cachedResult.statusCode || 200).json(cachedResult.body);
+          } else {
+            // Checkout still in progress
             return res.status(409).json({ error: "Checkout already in progress. Please wait." });
           }
         }
-        // Claim the key with a short TTL to prevent races (extend after completion)
-        const claimed = await redis.set(redisKey, JSON.stringify({ pending: true }), "EX", 300, "NX");
-        if (!claimed) {
-          // Another request already claimed this key — it's in-flight
+      } catch (redisError) {
+        // Redis error logged but doesn't block — DB will be primary
+      }
+
+      // PRIMARY DEFENSE: Check database for existing checkout attempt
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hour expiry
+      try {
+        // Attempt to create new checkout attempt record
+        const checkoutAttempt = await prisma.checkoutAttempt.create({
+          data: {
+            idempotencyKey,
+            userId: req.user?.id || null,
+            status: "PENDING",
+            expiresAt,
+          },
+        });
+
+        checkoutAttemptId = checkoutAttempt.id;
+
+        // Successfully claimed this idempotency key
+        // Store in Redis for fast retrieval on retry (cache layer)
+        try {
+          await redis.setex(
+            redisKey!,
+            300, // 5 min cache TTL
+            JSON.stringify({ pending: true, attemptId: checkoutAttempt.id })
+          );
+        } catch {
+          // Redis write failure doesn't block — DB is source of truth
+        }
+      } catch (error: any) {
+        // Database constraint violation: duplicate idempotency key
+        if (error.code === "P2002") {
+          // Someone else already processing this key — check status
+          const existingAttempt = await prisma.checkoutAttempt.findUnique({
+            where: { idempotencyKey },
+            include: { order: true },
+          });
+
+          if (existingAttempt?.status === "PENDING") {
+            return res.status(409).json({ error: "Checkout already in progress. Please wait." });
+          }
+
+          if (existingAttempt?.orderId && existingAttempt.order) {
+           // Return previously created order response
+           const cachedResponse = {
+             statusCode: 200,
+             body: {
+               message: "Order already created",
+               orderId: existingAttempt.order.id,
+               orderNumber: existingAttempt.order.orderNumber,
+             },
+           };
+           try {
+             await redis.setex(redisKey!, 300, JSON.stringify(cachedResponse));
+           } catch {
+             // Redis failure doesn't matter
+           }
+           return res.status(200).json(cachedResponse.body);
+          }
+
+          // Attempt exists but no order yet — return error (shouldn't happen but handle gracefully)
           return res.status(409).json({ error: "Checkout already in progress. Please wait." });
         }
-      } catch {
-        // Redis unavailable — proceed without idempotency rather than blocking checkout
+
+        throw error; // Re-throw other errors
       }
     }
 
     const body = CheckoutSchema.parse(req.body);
 
-    // Fetch cart items - try cartId first, fall back to items array
+    // Fetch cart items — body.items is the authoritative source (it reflects the
+    // user's actual current cart). Fall back to the server-side cart only when
+    // body.items is absent, so a stale/incomplete server cart never silently
+    // under-charges the customer.
     let cartItems: Array<{ productId: string; quantity: number; product: any }> = [];
 
     let cartFound = false;
-    if (body.cartId) {
+    if (body.items && body.items.length > 0) {
+      const products = await prisma.product.findMany({
+        where: { id: { in: body.items.map((i) => i.productId) } },
+      });
+      const productMap = new Map(products.map((p) => [p.id, p]));
+      cartItems = body.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        product: productMap.get(item.productId),
+      })).filter((item) => item.product);
+      if (cartItems.length > 0) cartFound = true;
+    }
+
+    if (!cartFound && body.cartId) {
+      // Fall back to server cart when no items were submitted
       const cart = await prisma.cart.findUnique({
         where: { id: body.cartId },
         include: { items: { include: { product: true } } },
@@ -154,24 +231,8 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
       }
     }
 
-    if (!cartFound) {
-      if (body.items && body.items.length > 0) {
-        // Build cart items from the submitted items array
-        const products = await prisma.product.findMany({
-          where: { id: { in: body.items.map((i) => i.productId) } },
-        });
-        const productMap = new Map(products.map((p) => [p.id, p]));
-        cartItems = body.items.map((item) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-          product: productMap.get(item.productId),
-        })).filter((item) => item.product);
-        if (cartItems.length === 0) {
-          return res.status(400).json({ error: "No valid products found" });
-        }
-      } else {
-        return res.status(400).json({ error: "Cart is empty" });
-      }
+    if (!cartFound || cartItems.length === 0) {
+      return res.status(400).json({ error: "Cart is empty" });
     }
 
     // Calculate total from DB prices (authoritative source of truth)
@@ -571,6 +632,17 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
       status: paymentStatus,
     };
 
+    // Update checkout attempt with success status and order ID
+    if (checkoutAttemptId) {
+      await prisma.checkoutAttempt.update({
+        where: { id: checkoutAttemptId },
+        data: {
+          status: "SUCCESS",
+          orderId: result.id,
+        },
+      });
+    }
+
     // Cache successful response for idempotency (1 hour TTL)
     if (idempotencyKey) {
       const redisKey = `idempotency:checkout:${idempotencyKey}`;
@@ -580,7 +652,16 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
     return res.json(responseBody);
   } catch (error) {
     console.error("Checkout error:", error);
-    // Release the idempotency key so the user can retry
+    
+    // Mark checkout attempt as failed
+    if (checkoutAttemptId) {
+      await prisma.checkoutAttempt.update({
+        where: { id: checkoutAttemptId },
+        data: { status: "FAILED" },
+      }).catch(err => console.error("Failed to update checkout attempt:", err));
+    }
+    
+    // Delete the idempotency Redis key to allow retry
     if (idempotencyKey) {
       const redisKey = `idempotency:checkout:${idempotencyKey}`;
       redis.del(redisKey).catch(() => {});

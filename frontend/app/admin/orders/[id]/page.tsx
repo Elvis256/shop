@@ -23,6 +23,7 @@ import {
   Check,
   Banknote,
   MessageSquare,
+  Zap,
 } from "lucide-react";
 
 interface OrderDetail {
@@ -98,6 +99,16 @@ export default function OrderDetailPage() {
   const [noteText, setNoteText] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
+  const [showDispatchModal, setShowDispatchModal] = useState(false);
+  const [dispatchArea, setDispatchArea] = useState("");
+  const [dispatchRecipientName, setDispatchRecipientName] = useState("");
+  const [dispatchRecipientPhone, setDispatchRecipientPhone] = useState("");
+  const [dispatchNotes, setDispatchNotes] = useState("");
+  const [courierQuotes, setCourierQuotes] = useState<any[]>([]);
+  const [loadingQuote, setLoadingQuote] = useState(false);
+  const [selectedCourier, setSelectedCourier] = useState("auto");
+  const [bookingCourier, setBookingCourier] = useState(false);
+  const [dispatchResult, setDispatchResult] = useState<{ bookingRef: string; trackingUrl?: string; courier: string } | null>(null);
 
   const loadOrder = async () => {
     setLoading(true);
@@ -169,6 +180,64 @@ export default function OrderDetailPage() {
       alert("Failed to mark payment as received");
     } finally {
       setMarkingPaid(false);
+    }
+  };
+
+  const openDispatchModal = () => {
+    setDispatchArea(order?.shippingAddress?.city || "");
+    setDispatchRecipientName(order?.shippingAddress?.name || order?.customer.name || "");
+    setDispatchRecipientPhone(order?.shippingAddress?.phone || order?.customer.phone || "");
+    setDispatchNotes(`Order ${order?.orderNumber}. Discreet packaging.`);
+    setCourierQuotes([]);
+    setDispatchResult(null);
+    setSelectedCourier("auto");
+    setShowDispatchModal(true);
+  };
+
+  const handleGetQuote = async () => {
+    if (!dispatchArea) return;
+    setLoadingQuote(true);
+    try {
+      const res = await fetch(`/api/courier/quote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ deliveryArea: dispatchArea }),
+      });
+      const data = await res.json();
+      setCourierQuotes(data.quotes || []);
+    } catch {
+      alert("Failed to get delivery quote");
+    } finally {
+      setLoadingQuote(false);
+    }
+  };
+
+  const handleDispatch = async () => {
+    if (!order || !dispatchArea || !dispatchRecipientName || !dispatchRecipientPhone) return;
+    setBookingCourier(true);
+    try {
+      const res = await fetch(`/api/courier/book`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          orderId: order.id,
+          deliveryArea: dispatchArea,
+          recipientName: dispatchRecipientName,
+          recipientPhone: dispatchRecipientPhone,
+          notes: dispatchNotes,
+          preferredCourier: selectedCourier,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Booking failed");
+      setDispatchResult(data);
+      loadOrder();
+    } catch (err: any) {
+      alert(err.message || "Failed to dispatch order");
+    } finally {
+      setBookingCourier(false);
     }
   };
 
@@ -283,6 +352,15 @@ export default function OrderDetailPage() {
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
+          {["CONFIRMED", "PROCESSING"].includes(order.status) && (
+            <button
+              onClick={openDispatchModal}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            >
+              <Zap className="w-4 h-4" />
+              Dispatch
+            </button>
+          )}
           <button
             onClick={() => setShowStatusModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90"
@@ -615,6 +693,130 @@ export default function OrderDetailPage() {
                 {updating ? "Updating..." : "Update Status"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dispatch Modal */}
+      {showDispatchModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Truck className="w-5 h-5 text-indigo-500" />
+                Dispatch Order
+              </h2>
+              <button onClick={() => setShowDispatchModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <XCircle className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {dispatchResult ? (
+                <div className="text-center space-y-3">
+                  <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
+                  <p className="font-semibold text-gray-900">Order Dispatched!</p>
+                  <p className="text-sm text-gray-600">Courier: <strong>{dispatchResult.courier}</strong></p>
+                  <p className="text-sm text-gray-600">Ref: <strong>{dispatchResult.bookingRef}</strong></p>
+                  {dispatchResult.trackingUrl && (
+                    <a href={dispatchResult.trackingUrl} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">
+                      Track Delivery →
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Area *</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={dispatchArea}
+                          onChange={(e) => setDispatchArea(e.target.value)}
+                          placeholder="e.g. Ntinda, Kampala"
+                          className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                        <button
+                          onClick={handleGetQuote}
+                          disabled={!dispatchArea || loadingQuote}
+                          className="px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {loadingQuote ? "..." : "Get Quote"}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Recipient Name *</label>
+                      <input
+                        type="text"
+                        value={dispatchRecipientName}
+                        onChange={(e) => setDispatchRecipientName(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+                      <input
+                        type="text"
+                        value={dispatchRecipientPhone}
+                        onChange={(e) => setDispatchRecipientPhone(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                      <input
+                        type="text"
+                        value={dispatchNotes}
+                        onChange={(e) => setDispatchNotes(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+
+                  {courierQuotes.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-2">Select Courier</p>
+                      <div className="space-y-2">
+                        {courierQuotes.map((q: any) => (
+                          <label key={q.courier} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer ${selectedCourier === q.courier ? "border-indigo-400 bg-indigo-50" : "border-gray-200"}`}>
+                            <input type="radio" name="courier" value={q.courier} checked={selectedCourier === q.courier} onChange={() => setSelectedCourier(q.courier)} className="text-indigo-600" />
+                            <span className="text-lg">{q.logo}</span>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-900">{q.name}</p>
+                              <p className="text-xs text-gray-500">{q.etaText} · {q.note}</p>
+                            </div>
+                            <span className="text-sm font-semibold text-gray-900">UGX {q.price?.toLocaleString()}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            {!dispatchResult && (
+              <div className="px-6 py-4 border-t flex justify-end gap-3">
+                <button onClick={() => setShowDispatchModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDispatch}
+                  disabled={bookingCourier || !dispatchArea || !dispatchRecipientName || !dispatchRecipientPhone}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  <Truck className="w-4 h-4" />
+                  {bookingCourier ? "Booking..." : "Confirm Dispatch"}
+                </button>
+              </div>
+            )}
+            {dispatchResult && (
+              <div className="px-6 py-4 border-t flex justify-end">
+                <button onClick={() => setShowDispatchModal(false)} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90">
+                  Done
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -75,6 +75,12 @@ export default function AccountSettingsPage() {
   });
   const [notifSaved, setNotifSaved] = useState(false);
 
+  // Private order history
+  const [orderHistoryDays, setOrderHistoryDays] = useState<number | null>(null);
+  const [historySaving, setHistorySaving] = useState(false);
+  const [historySuccess, setHistorySuccess] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+
   // SMS Notifications
   const [smsOptIn, setSmsOptIn] = useState(false);
   const [smsPhone, setSmsPhone] = useState("");
@@ -95,6 +101,7 @@ export default function AccountSettingsPage() {
         setPhone(data.phone || "");
         setSmsOptIn(data.smsOptIn || false);
         setSmsPhone(data.phone || "");
+        setOrderHistoryDays(data.orderHistoryDays ?? null);
       })
       .catch(() => {});
 
@@ -198,6 +205,29 @@ export default function AccountSettingsPage() {
       setSmsError(err instanceof Error ? err.message : "Failed to save SMS preferences");
     } finally {
       setSmsSaving(false);
+    }
+  };
+
+  const handleSaveHistory = async () => {
+    setHistorySaving(true);
+    setHistoryError("");
+    setHistorySuccess(false);
+    try {
+      const csrf = getCsrfToken();
+      const res = await fetch(`${API_URL}/api/auth/me`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
+        body: JSON.stringify({ orderHistoryDays }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save");
+      setHistorySuccess(true);
+      setTimeout(() => setHistorySuccess(false), 4000);
+    } catch (err: unknown) {
+      setHistoryError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setHistorySaving(false);
     }
   };
 
@@ -622,6 +652,65 @@ export default function AccountSettingsPage() {
                       Terms of Service
                     </Link>
                   </div>
+                </div>
+
+                {/* Private Order History */}
+                <div className="card">
+                  <div className="mb-4">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-accent" />Private Order History
+                    </h3>
+                    <p className="text-sm text-text-muted mt-1">
+                      Automatically erase your order history after a set period for extra privacy.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    {[
+                      { value: null, label: "Keep forever", desc: "Your order history is never deleted" },
+                      { value: 30, label: "30 days", desc: "Orders older than 30 days are erased" },
+                      { value: 60, label: "60 days", desc: "Orders older than 60 days are erased" },
+                      { value: 90, label: "90 days", desc: "Orders older than 90 days are erased" },
+                      { value: 180, label: "180 days", desc: "Orders older than 180 days are erased" },
+                    ].map((opt) => (
+                      <label key={String(opt.value)} className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${orderHistoryDays === opt.value ? "border-accent bg-accent/5" : "border-border hover:bg-surface-secondary"}`}>
+                        <input
+                          type="radio"
+                          name="orderHistoryDays"
+                          className="accent-accent"
+                          checked={orderHistoryDays === opt.value}
+                          onChange={() => setOrderHistoryDays(opt.value)}
+                        />
+                        <div>
+                          <p className="text-sm font-medium">{opt.label}</p>
+                          <p className="text-xs text-text-muted">{opt.desc}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  {historyError && (
+                    <div className="flex items-center gap-2 p-3 mt-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />{historyError}
+                    </div>
+                  )}
+                  {historySuccess && (
+                    <div className="flex items-center gap-2 p-3 mt-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+                      <CheckCircle className="w-4 h-4 shrink-0" />Privacy setting saved!
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleSaveHistory}
+                    disabled={historySaving}
+                    className="btn-primary mt-4 flex items-center gap-2"
+                  >
+                    {historySaving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><Lock className="w-4 h-4" />Save Setting</>}
+                  </button>
+
+                  <p className="text-xs text-text-muted mt-3">
+                    Erased orders cannot be recovered. Active subscriptions and pending orders are not affected.
+                  </p>
                 </div>
 
                 <div className="card border-red-200">

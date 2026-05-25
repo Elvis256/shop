@@ -176,6 +176,57 @@ router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/subscriptions/admin — List all subscriptions (admin) — alias for /admin/all
+router.get("/admin", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { status, search, page = "1", limit = "50" } = req.query;
+    const take = Math.min(parseInt(limit as string) || 50, 200);
+    const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
+
+    const where: any = {};
+    if (status) where.status = status;
+    if (search) {
+      where.OR = [
+        { user: { email: { contains: search as string, mode: "insensitive" } } },
+        { user: { name: { contains: search as string, mode: "insensitive" } } },
+        { product: { name: { contains: search as string, mode: "insensitive" } } },
+      ];
+    }
+
+    const [subscriptions, total] = await Promise.all([
+      prisma.subscription.findMany({
+        where,
+        include: {
+          user: { select: { id: true, email: true, name: true, phone: true } },
+          product: { select: { name: true, slug: true, price: true, images: { take: 1, select: { url: true } } } },
+        },
+        orderBy: { createdAt: "desc" },
+        take,
+        skip,
+      }),
+      prisma.subscription.count({ where }),
+    ]);
+
+    return res.json({ subscriptions, total });
+  } catch (error) {
+    console.error("Admin get subscriptions error:", error);
+    return res.status(500).json({ error: "Failed to fetch subscriptions" });
+  }
+});
+
+// DELETE /api/subscriptions/admin/:id — Admin cancel subscription
+router.delete("/admin/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    await prisma.subscription.update({
+      where: { id: req.params.id },
+      data: { status: "CANCELLED" },
+    });
+    return res.json({ message: "Subscription cancelled" });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to cancel subscription" });
+  }
+});
+
 // GET /api/subscriptions/admin/all — List all subscriptions (admin)
 router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
   try {

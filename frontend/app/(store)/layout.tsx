@@ -1,9 +1,5 @@
 import type { Metadata } from "next";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
 import AgeGate from "@/components/AgeGate";
-import CartDrawer from "@/components/CartDrawer";
-import MobileNav from "@/components/MobileNav";
 import PageTracker from "@/components/PageTracker";
 import AffiliateTracker from "@/components/AffiliateTracker";
 import ExitIntent from "@/components/ExitIntent";
@@ -16,7 +12,10 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import TrackingScripts from "@/components/TrackingScripts";
 import AppDownloadBanner from "@/components/AppDownloadBanner";
 import FloatingWhatsApp from "@/components/FloatingWhatsApp";
+import DiscreetModeButton, { DiscreetModeProvider } from "@/components/DiscreetMode";
+import { CountryProvider } from "@/contexts/CountryContext";
 import { OrganizationSchema, WebsiteSchema } from "@/components/StructuredData";
+import StoreChrome from "@/components/StoreChrome";
 
 export const metadata: Metadata = {
   title: {
@@ -39,26 +38,29 @@ export default function StoreLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex flex-col pb-16 lg:pb-0">
-      <OrganizationSchema />
-      <WebsiteSchema />
-      <PageTracker />
-      <AffiliateTracker />
-      <AgeGate />
-      <Header />
-      <main className="flex-1">{children}</main>
-      <Footer />
-      <CartDrawer />
-      <MobileNav />
-      <ErrorBoundary><ExitIntent /></ErrorBoundary>
-      <ErrorBoundary><SpinWheel /></ErrorBoundary>
-      <ErrorBoundary><InstallPrompt /></ErrorBoundary>
-      <ErrorBoundary><PushNotifications /></ErrorBoundary>
-      <ErrorBoundary><LivePurchaseFeed /></ErrorBoundary>
-      <ErrorBoundary><DailyCheckIn /></ErrorBoundary>
-      <ErrorBoundary><AppDownloadBanner /></ErrorBoundary>
-      <ErrorBoundary><FloatingWhatsApp /></ErrorBoundary>
-      <TrackingScripts />
-    </div>
+    <CountryProvider>
+    <DiscreetModeProvider>
+      <div className="min-h-screen flex flex-col pb-16 lg:pb-0">
+        <OrganizationSchema />
+        <WebsiteSchema />
+        <PageTracker />
+        <AffiliateTracker />
+        <AgeGate />
+        <StoreChrome>
+          {children}
+        </StoreChrome>
+        <ErrorBoundary><ExitIntent /></ErrorBoundary>
+        <ErrorBoundary><SpinWheel /></ErrorBoundary>
+        <ErrorBoundary><InstallPrompt /></ErrorBoundary>
+        <ErrorBoundary><PushNotifications /></ErrorBoundary>
+        <ErrorBoundary><LivePurchaseFeed /></ErrorBoundary>
+        <ErrorBoundary><DailyCheckIn /></ErrorBoundary>
+        <ErrorBoundary><AppDownloadBanner /></ErrorBoundary>
+        <ErrorBoundary><FloatingWhatsApp /></ErrorBoundary>
+        <ErrorBoundary><DiscreetModeButton /></ErrorBoundary>
+        <TrackingScripts />
+      </div>
+    </DiscreetModeProvider>
+    </CountryProvider>
   );
 }

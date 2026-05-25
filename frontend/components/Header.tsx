@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Heart, ShoppingBag, Menu, X, User, Search } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Heart, ShoppingBag, Menu, X, User, Search, ChevronDown, Sparkles, Gift, Package, Star } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/lib/hooks/useCart";
 import { useAuth } from "@/lib/hooks/useAuth";
 import SearchBar from "@/components/SearchBar";
-import CurrencySelector from "@/components/CurrencySelector";
+import { CountrySelector } from "@/components/CountrySelector";
 import Logo from "@/components/Logo";
 import ThemeToggle from "@/components/ThemeToggle";
 
@@ -17,6 +17,8 @@ export default function Header() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [scrolled, setScrolled] = useState(false);
+  const [shopMenuOpen, setShopMenuOpen] = useState(false);
+  const shopMenuTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { itemCount, openCart } = useCart();
   const { user } = useAuth();
   const [wishlistCount, setWishlistCount] = useState(0);
@@ -72,6 +74,7 @@ export default function Header() {
   const navLinks = [
     { href: "/category", label: "Shop" },
     { href: "/sales", label: "Sales" },
+    { href: "/subscription-boxes", label: "Subscriptions" },
     { href: "/category?cat=toys", label: "Toys" },
     { href: "/category?cat=lingerie", label: "Lingerie" },
     { href: "/category?cat=wellness", label: "Wellness" },
@@ -91,7 +94,100 @@ export default function Header() {
 
             {/* Desktop Nav */}
             <nav className="hidden lg:flex items-center gap-8">
-              {navLinks.map((link) => (
+              {/* Shop — with mega-menu */}
+              <div
+                className="relative"
+                onMouseEnter={() => {
+                  if (shopMenuTimeout.current) clearTimeout(shopMenuTimeout.current);
+                  setShopMenuOpen(true);
+                }}
+                onMouseLeave={() => {
+                  shopMenuTimeout.current = setTimeout(() => setShopMenuOpen(false), 150);
+                }}
+              >
+                <Link
+                  href="/category"
+                  className="flex items-center gap-1 text-sm font-medium text-text-muted hover:text-text transition-colors duration-200 relative after:absolute after:bottom-[-2px] after:left-0 after:w-0 after:h-[2px] after:bg-primary after:transition-all after:duration-300 hover:after:w-full"
+                >
+                  Shop
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${shopMenuOpen ? "rotate-180" : ""}`} />
+                </Link>
+
+                {/* Mega-menu dropdown */}
+                {shopMenuOpen && (
+                  <div className="absolute top-full left-0 mt-3 w-[520px] bg-surface border border-border rounded-2xl shadow-xl z-50 p-5 animate-fade-in">
+                    {/* Arrow */}
+                    <div className="absolute -top-1.5 left-8 w-3 h-3 bg-surface border-l border-t border-border rotate-45" />
+
+                    <div className="grid grid-cols-3 gap-5">
+                      {/* Categories */}
+                      <div>
+                        <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Categories</p>
+                        <div className="space-y-2">
+                          {[
+                            { href: "/category?cat=toys", label: "Toys & Vibrators" },
+                            { href: "/category?cat=lingerie", label: "Lingerie" },
+                            { href: "/category?cat=wellness", label: "Wellness" },
+                            { href: "/category?cat=lubricants", label: "Lubricants" },
+                            { href: "/category?cat=couples", label: "Couples" },
+                            { href: "/category", label: "View All →" },
+                          ].map((item) => (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              className="block text-sm text-text-muted hover:text-primary transition-colors"
+                              onClick={() => setShopMenuOpen(false)}
+                            >
+                              {item.label}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Specials */}
+                      <div>
+                        <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Specials</p>
+                        <div className="space-y-2">
+                          {[
+                            { href: "/sales", label: "Sales & Deals", icon: Star },
+                            { href: "/subscription-boxes", label: "Subscription Boxes", icon: Package },
+                            { href: "/send-to-uganda", label: "Send a Gift", icon: Gift },
+                          ].map(({ href, label, icon: Icon }) => (
+                            <Link
+                              key={href}
+                              href={href}
+                              className="flex items-center gap-2 text-sm text-text-muted hover:text-primary transition-colors"
+                              onClick={() => setShopMenuOpen(false)}
+                            >
+                              <Icon className="w-3.5 h-3.5" />
+                              {label}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Featured CTA */}
+                      <div>
+                        <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Featured</p>
+                        <Link
+                          href="/sales"
+                          className="block bg-primary/10 hover:bg-primary/15 rounded-xl p-3 transition-colors"
+                          onClick={() => setShopMenuOpen(false)}
+                        >
+                          <div className="flex items-center gap-1.5 text-primary font-semibold text-sm mb-1">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            Current Deals
+                          </div>
+                          <p className="text-xs text-text-muted leading-relaxed">Up to 40% off on selected wellness products.</p>
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Other nav links */}
+              {navLinks.filter(l => l.href !== "/category").map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
@@ -120,7 +216,7 @@ export default function Header() {
               </a>
 
               <div className="hidden sm:block">
-                <CurrencySelector variant="compact" />
+                <CountrySelector />
               </div>
               
               <div className="hidden sm:block">
@@ -182,7 +278,10 @@ export default function Header() {
                 ))}
                 <div className="pt-3 border-t border-border mt-3">
                   <div className="px-4 py-3 flex items-center justify-between">
-                    <CurrencySelector variant="default" />
+                    {/* Only show on <sm screens where header version is hidden */}
+                    <div className="sm:hidden">
+                      <CountrySelector />
+                    </div>
                     <ThemeToggle showLabel />
                   </div>
                   {user ? (

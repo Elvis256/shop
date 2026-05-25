@@ -64,6 +64,16 @@ import socialRoutes from "./routes/social";
 import sellerRoutes from "./routes/seller";
 import sellerAuthRoutes from "./routes/sellerAuth";
 import developerApiRoutes from "./routes/developerApi";
+import registryRoutes from "./routes/registry";
+import giftOrderRoutes from "./routes/giftOrder";
+import advisorRoutes from "./routes/advisor";
+import broadcastRoutes from "./routes/broadcast";
+import smartBundlesRoutes from "./routes/smartBundles";
+import whatsappBotRoutes from "./routes/whatsappBot";
+import ussdRoutes from "./routes/ussd";
+import diasporaRoutes from "./routes/diaspora";
+import countryConfigRoutes from "./routes/countryConfig";
+import localCourierRoutes from "./routes/localCourier";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -200,6 +210,18 @@ app.use("/api/daily-deal", dailyDealRoutes);
 app.use("/api/social", socialRoutes);
 app.use("/api/seller/auth", sellerAuthRoutes);
 app.use("/api/seller", sellerRoutes);
+app.use("/api/registry", registryRoutes);
+app.use("/api/gift", giftOrderRoutes);
+app.use("/api/advisor", advisorRoutes);
+app.use("/api/broadcast", broadcastRoutes);
+app.use("/api/smart-bundles", smartBundlesRoutes);
+app.use("/api/whatsapp-bot", whatsappBotRoutes);
+app.use("/api/ussd", ussdRoutes);
+// Diaspora webhook needs raw body for Stripe signature verification
+app.use("/api/diaspora/webhook", express.raw({ type: "application/json" }));
+app.use("/api/diaspora", diasporaRoutes);
+app.use("/api/country-config", countryConfigRoutes);
+app.use("/api/courier", localCourierRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);
@@ -306,6 +328,28 @@ const server = app.listen(Number(PORT), "0.0.0.0", () => {
   startJob("cj_tracking_sync", import("./services/cjSync"), "startCJTrackingSyncJob");
   startJob("cj_price_sync", import("./services/cjSync"), "startCJPriceSyncJob");
   startJob("review_requests", import("./services/reviewRequests"), "startReviewRequestJob");
+  startJob("restock_reminders", import("./services/restockReminder"), "startRestockReminderJob");
+  startJob("subscription_boxes", import("./services/subscriptionBoxes"), "startSubscriptionBoxJob");
+
+  // Private order history cleanup — runs daily
+  setInterval(async () => {
+    try {
+      const users = await prisma.user.findMany({
+        where: { orderHistoryDays: { not: null } },
+        select: { id: true, orderHistoryDays: true },
+      });
+      for (const user of users) {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - user.orderHistoryDays!);
+        await prisma.order.updateMany({
+          where: { userId: user.id, createdAt: { lt: cutoff }, status: { in: ["DELIVERED", "CANCELLED"] } },
+          data: { userId: null }, // Anonymise: detach from user, keep for admin
+        });
+      }
+    } catch (err: any) {
+      logger.error("order_history_cleanup_failed", { error: err.message });
+    }
+  }, 24 * 60 * 60 * 1000);
 
   // Expired refresh token cleanup — every 6 hours
   const tokenCleanupInterval = setInterval(async () => {

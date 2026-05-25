@@ -9,7 +9,7 @@ export default function MobileNav() {
   const pathname = usePathname();
   const { itemCount, openCart } = useCart();
 
-  if (pathname.startsWith("/admin")) return null;
+  if (pathname.startsWith("/admin") || pathname.startsWith("/checkout")) return null;
 
   const navItems = [
     { href: "/", icon: Home, label: "Home" },

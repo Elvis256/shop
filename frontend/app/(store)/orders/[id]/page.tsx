@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Section from "@/components/Section";
+import Breadcrumbs from "@/components/Breadcrumbs";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import ProductImage from "@/components/ProductImage";
 import { apiFetch } from "@/lib/api";
@@ -89,6 +90,7 @@ export default function OrderDetailPage() {
   const [copied, setCopied] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [reordering, setReordering] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [showModify, setShowModify] = useState(false);
@@ -96,6 +98,7 @@ export default function OrderDetailPage() {
   const [modifyNotes, setModifyNotes] = useState("");
   const [modifying, setModifying] = useState(false);
   const [modifySuccess, setModifySuccess] = useState(false);
+  const [modifyError, setModifyError] = useState<string | null>(null);
 
   useEffect(() => {
     loadOrder();
@@ -122,12 +125,13 @@ export default function OrderDetailPage() {
   const handleCancelOrder = async () => {
     if (!order) return;
     setCancelling(true);
+    setCancelError(null);
     try {
       await apiFetch(`/api/orders/${order.id}/cancel`, { method: "POST" });
       setCancelConfirm(false);
       loadOrder();
     } catch (err: any) {
-      alert(err.message || "Failed to cancel order");
+      setCancelError(err.message || "Failed to cancel order. Please try again.");
     } finally {
       setCancelling(false);
     }
@@ -140,6 +144,7 @@ export default function OrderDetailPage() {
     if (!order) return;
     setModifying(true);
     setModifySuccess(false);
+    setModifyError(null);
     try {
       await apiFetch(`/api/orders/${order.id}/modify`, {
         method: "PUT",
@@ -153,7 +158,7 @@ export default function OrderDetailPage() {
       loadOrder();
       setTimeout(() => setModifySuccess(false), 4000);
     } catch (err: any) {
-      alert(err.message || "Failed to modify order");
+      setModifyError(err.message || "Failed to modify order. Please try again.");
     } finally {
       setModifying(false);
     }
@@ -244,6 +249,12 @@ export default function OrderDetailPage() {
   return (
     <Section>
       <div className="max-w-3xl mx-auto">
+        <Breadcrumbs items={[
+          { label: "Account", href: "/account" },
+          { label: "Orders", href: "/account/orders" },
+          { label: order.orderNumber.split("-").slice(-1)[0] },
+        ]} />
+
         {/* Success Banner */}
         {isSuccess && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
@@ -521,6 +532,12 @@ export default function OrderDetailPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[60px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
+              {modifyError && (
+                <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  {modifyError}
+                </div>
+              )}
               <div className="flex gap-2">
                 <button
                   onClick={handleModifyOrder}
@@ -534,7 +551,7 @@ export default function OrderDetailPage() {
                   )}
                 </button>
                 <button
-                  onClick={() => setShowModify(false)}
+                  onClick={() => { setShowModify(false); setModifyError(null); }}
                   className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
                 >
                   Cancel
@@ -549,11 +566,17 @@ export default function OrderDetailPage() {
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl">
             <p className="font-semibold text-red-800 mb-2">Cancel this order?</p>
             <p className="text-sm text-red-700 mb-3">This action cannot be undone. Your items will be released and you will receive a confirmation email.</p>
+            {cancelError && (
+              <div className="mb-3 flex items-center gap-2 text-sm text-red-700 bg-red-100 border border-red-300 rounded-lg px-3 py-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                {cancelError}
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={handleCancelOrder} disabled={cancelling} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50">
                 {cancelling ? "Cancelling..." : "Yes, Cancel Order"}
               </button>
-              <button onClick={() => setCancelConfirm(false)} className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+              <button onClick={() => { setCancelConfirm(false); setCancelError(null); }} className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
                 Keep Order
               </button>
             </div>
@@ -571,7 +594,7 @@ export default function OrderDetailPage() {
         {/* Actions */}
         <div className="flex flex-wrap gap-3">
           <Link href="/account/orders" className="btn-secondary">← My Orders</Link>
-          <Link href="/track-order" className="btn-secondary flex items-center gap-2">
+          <Link href={`/track-order?order=${order.orderNumber}`} className="btn-secondary flex items-center gap-2">
             <Eye className="w-4 h-4" />Track Order
           </Link>
           {canModify && !showModify && (

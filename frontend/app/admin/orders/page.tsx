@@ -7,23 +7,11 @@ import { api } from "@/lib/api";
 import {
   Search, Eye, Truck, Package, RefreshCw, Download, CheckSquare, Square,
   Calendar, ShoppingCart, DollarSign, Clock, AlertTriangle,
-  CheckCircle, XCircle, ChevronRight,
+  CheckCircle, XCircle, ChevronRight, Gift,
 } from "lucide-react";
 
-interface Order {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerEmail: string;
-  totalAmount: number;
-  currency: string;
-  status: string;
-  paymentStatus: string;
-  paymentMethod: string | null;
-  discreet: boolean;
-  itemCount: number;
-  createdAt: string;
-}
+import type { OrderListItem } from "@/lib/types/api";
+type Order = OrderListItem;
 
 const statusConfig: Record<string, { bg: string; dot: string }> = {
   DELIVERED: { bg: "bg-green-50 text-green-700 border-green-200", dot: "bg-green-500" },
@@ -60,6 +48,7 @@ export default function AdminOrdersPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState("");
   const [pagination, setPagination] = useState({ total: 0, page: 1, totalPages: 1 });
+  const [giftFilter, setGiftFilter] = useState(false);
   const [quickActing, setQuickActing] = useState<string | null>(null);
   const [trackingInput, setTrackingInput] = useState<{ orderId: string; value: string } | null>(null);
   const loadOrders = (params: Record<string, string> = {}) => {
@@ -67,6 +56,7 @@ export default function AdminOrdersPage() {
     const extra: Record<string, string> = {};
     if (dateFrom) extra.dateFrom = dateFrom;
     if (dateTo) extra.dateTo = dateTo;
+    if (giftFilter) extra.isGift = "true";
     api.admin.getOrders({ search, status: statusFilter, ...extra, ...params })
       .then((data) => {
         setOrders(data.orders);
@@ -76,7 +66,7 @@ export default function AdminOrdersPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadOrders(); }, [search, statusFilter, dateFrom, dateTo]);
+  useEffect(() => { loadOrders(); }, [search, statusFilter, dateFrom, dateTo, giftFilter]);
 
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -262,6 +252,13 @@ export default function AdminOrdersPage() {
             <span className="text-gray-400 text-sm">–</span>
             <input type="date" className="input w-36 text-sm" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </div>
+          <button
+            onClick={() => setGiftFilter(!giftFilter)}
+            className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${giftFilter ? "bg-pink-50 text-pink-700 border-pink-300" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+          >
+            <Gift className="w-4 h-4" />
+            Gift Orders
+          </button>
           <button onClick={() => loadOrders()} className="btn-secondary gap-2 flex items-center text-sm">
             <RefreshCw className="w-4 h-4" />
             Refresh
@@ -352,7 +349,10 @@ export default function AdminOrdersPage() {
                   </td>
                   <td className="p-4">
                     <Link href={`/admin/orders/${order.id}`} className="hover:text-primary transition-colors">
-                      <p className="font-medium text-sm">#{order.orderNumber.split("-").slice(-1)[0]}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-medium text-sm">#{order.orderNumber.split("-").slice(-1)[0]}</p>
+                        {order.isGift && <span title="Gift order"><Gift className="w-3.5 h-3.5 text-pink-500" /></span>}
+                      </div>
                       <p className="text-xs text-gray-400">{order.itemCount} item{order.itemCount !== 1 ? "s" : ""}</p>
                     </Link>
                   </td>

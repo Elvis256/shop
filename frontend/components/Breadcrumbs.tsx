@@ -23,36 +23,36 @@ export default function Breadcrumbs({ items, showHome = true }: BreadcrumbsProps
   if (breadcrumbs.length === 0) return null;
 
   return (
-    <nav className="flex items-center text-sm text-gray-500 mb-4" aria-label="Breadcrumb">
+    <nav className="flex items-center text-sm text-text-muted mb-4" aria-label="Breadcrumb">
       {showHome && (
         <>
-          <Link 
-            href="/" 
+          <Link
+            href="/"
             className="flex items-center hover:text-primary transition-colors"
             aria-label="Home"
           >
             <Home className="w-4 h-4" />
           </Link>
-          <ChevronRight className="w-4 h-4 mx-2 text-gray-300" />
+          <ChevronRight className="w-4 h-4 mx-2 text-border" />
         </>
       )}
-      
+
       {breadcrumbs.map((item, index) => (
         <span key={index} className="flex items-center">
           {item.href && index < breadcrumbs.length - 1 ? (
-            <Link 
+            <Link
               href={item.href}
               className="hover:text-primary transition-colors"
             >
               {item.label}
             </Link>
           ) : (
-            <span className={index === breadcrumbs.length - 1 ? "text-gray-900 font-medium" : ""}>
+            <span className={index === breadcrumbs.length - 1 ? "text-text font-medium" : ""}>
               {item.label}
             </span>
           )}
           {index < breadcrumbs.length - 1 && (
-            <ChevronRight className="w-4 h-4 mx-2 text-gray-300" />
+            <ChevronRight className="w-4 h-4 mx-2 text-border" />
           )}
         </span>
       ))}
@@ -87,6 +87,24 @@ function generateBreadcrumbs(pathname: string): BreadcrumbItem[] {
     auth: "Account",
     login: "Sign In",
     register: "Register",
+    "forgot-password": "Forgot Password",
+    "track-order": "Track Order",
+    "subscription-boxes": "Subscription Boxes",
+    "send-to-uganda": "Send a Gift",
+    "smart-bundles": "Smart Bundles",
+    bundles: "Bundles",
+    search: "Search",
+    product: "Product",
+    blog: "Blog",
+    faq: "FAQ",
+    contact: "Contact",
+    about: "About",
+    policies: "Policies",
+    privacy: "Privacy Policy",
+    terms: "Terms & Conditions",
+    shipping: "Shipping Policy",
+    seller: "Seller Portal",
+    agent: "Agent Dashboard",
     new: "New",
     edit: "Edit",
   };

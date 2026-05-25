@@ -11,6 +11,8 @@
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.6",
     "@sentry/nextjs": "^10.39.0",
+    "@stripe/react-stripe-js": "^6.3.0",
+    "@stripe/stripe-js": "^9.5.0",
     "@tiptap/extension-image": "^3.20.1",
     "@tiptap/extension-link": "^3.20.1",
     "@tiptap/extension-placeholder": "^3.20.1",

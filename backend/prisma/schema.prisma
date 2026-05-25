@@ -54,6 +54,10 @@ model User {
   dailyCheckIns     DailyCheckIn[]
   priceSlashes      PriceSlash[]
   seller            Seller?
+  registries        Registry[]
+  restockReminders  RestockReminder[]
+  checkoutAttempts  CheckoutAttempt[]
+  orderHistoryDays  Int?              // Auto-delete order history after N days (null = keep forever)
 
   @@index([createdAt])
   @@index([role])
@@ -100,19 +104,20 @@ model Newsletter {
 }
 
 model Address {
-  id         String  @id @default(cuid())
-  userId     String
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name       String
-  phone      String
-  street     String
-  city       String
-  county     String?
-  postalCode String?
-  country    String  @default("Uganda")
-  isDefault  Boolean @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String  @id @default(cuid())
+  userId        String
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  phone         String
+  street        String
+  city          String
+  county        String?
+  postalCode    String?
+  country       String  @default("Uganda")
+  isDefault     Boolean @default(false)
+  deliveryAlias String? // Name shown on package label instead of real name
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Product {
@@ -205,6 +210,9 @@ model Product {
   cjCost        Decimal?  @db.Decimal(10, 2) // CJ supplier price in USD
   cjAutoSync    Boolean   @default(false)
 
+  // Auto-restock reminder (for consumables like lube, skincare)
+  avgDurationDays Int?    // How many days before product runs out
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
@@ -224,6 +232,8 @@ model Product {
   shareDiscounts   ShareDiscount[]
   groupBuys        GroupBuy[]
   priceSlashes     PriceSlash[]
+  registryItems    RegistryItem[]
+  restockReminders RestockReminder[]
 
   @@index([categoryId])
   @@index([status])
@@ -336,7 +346,14 @@ model Order {
   // Options
   discreet        Boolean     @default(true)
   notes           String?     @db.Text
-  
+
+  // Gift order
+  isGift              Boolean   @default(false)
+  giftRecipientPhone  String?   // Recipient's phone — gets WhatsApp with address request
+  giftMessage         String?   @db.Text
+  giftToken           String?   @unique // Secure token for recipient to confirm address
+  giftAddressSet      Boolean   @default(false)
+
   // Coupon
   couponId        String?
   coupon          Coupon?     @relation(fields: [couponId], references: [id])
@@ -350,7 +367,8 @@ model Order {
   aliexpressOrders AliExpressOrder[]
   cjOrders         CJOrder[]
   installmentPlan InstallmentPlan?
-  
+  checkoutAttempts CheckoutAttempt[]
+   
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -436,19 +454,21 @@ model WishlistItem {
 }
 
 model Review {
-  id        String   @id @default(cuid())
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rating    Int
-  title     String?
-  content   String?  @db.Text
-  verified  Boolean  @default(false)
-  approved  Boolean  @default(false)
-  images    ReviewImage[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating      Int
+  title       String?
+  content     String?  @db.Text
+  verified    Boolean  @default(false)
+  approved    Boolean  @default(false)
+  isAnonymous Boolean  @default(true)  // Default: hide real name
+  displayCity String?  // e.g. "Kampala" — shown instead of real name
+  images      ReviewImage[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([productId, userId])
   @@index([productId])
@@ -706,6 +726,24 @@ model ProcessedWebhook {
   processedAt DateTime @default(now())
   
   @@index([provider, webhookId])
+}
+
+// Checkout Idempotency Tracking (database-backed primary defense)
+// Prevents duplicate orders when Redis is unavailable
+model CheckoutAttempt {
+  id              String   @id @default(cuid())
+  userId          String?  // Null for guest checkout
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idempotencyKey  String   // Client-supplied unique key
+  orderId         String?  // Set after order is successfully created
+  order           Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  status          String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime // Cleanup after 24 hours to prevent unbounded growth
+  
+  @@unique([idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([expiresAt])
 }
 
 // Activity Log for Admin Audit Trail
@@ -1756,7 +1794,7 @@ model Permission {
   description String
   category    String
   createdAt   DateTime @default(now())
-  
+
   rolePermissions RolePermission[]
 }
 
@@ -1767,8 +1805,63 @@ model RolePermission {
   granted      Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  
+
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-  
+
   @@unique([role, permissionId])
+}
+
+// ─── Bridal/Kwanjula Registry ─────────────────────────────────────────────────
+
+model Registry {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug        String         @unique  // shareable URL token
+  title       String         // e.g. "Elvis & Aisha's Introduction"
+  eventDate   DateTime?
+  eventType   String         @default("introduction") // introduction, wedding, anniversary, birthday
+  message     String?        @db.Text
+  isPublic    Boolean        @default(false)
+  isActive    Boolean        @default(true)
+  items       RegistryItem[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([slug])
+}
+
+model RegistryItem {
+  id          String   @id @default(cuid())
+  registryId  String
+  registry    Registry @relation(fields: [registryId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity    Int      @default(1)
+  purchased   Int      @default(0)
+  priority    String   @default("medium") // high, medium, low
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([registryId])
+  @@index([productId])
+}
+
+// ─── Auto-Restock Reminder ────────────────────────────────────────────────────
+
+model RestockReminder {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderId     String?   // The original order that triggered this
+  remindAt    DateTime  // When to send the reminder
+  sent        Boolean   @default(false)
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([remindAt, sent])
+  @@index([userId])
 }

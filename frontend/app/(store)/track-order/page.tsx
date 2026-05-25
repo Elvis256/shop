@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import ProductImage from "@/components/ProductImage";
 import Section from "@/components/Section";
 import {
@@ -90,39 +91,27 @@ const paymentIcons: Record<string, any> = {
   COD: Banknote,
 };
 
-export default function TrackOrderPage() {
-  const [orderNumber, setOrderNumber] = useState("");
+function TrackOrderContent() {
+  const searchParams = useSearchParams();
+  const [orderNumber, setOrderNumber] = useState(searchParams.get("order") || "");
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!orderNumber.trim()) {
-      setError("Please enter an order number");
-      return;
-    }
-
+  const doSearch = useCallback(async (num: string) => {
+    if (!num.trim()) return;
     setLoading(true);
     setError(null);
     setSearched(true);
-
     try {
-      const res = await fetch(`${API_URL}/api/orders/track/${orderNumber.trim()}`);
-
+      const res = await fetch(`${API_URL}/api/orders/track/${num.trim()}`);
       if (!res.ok) {
-        if (res.status === 404) {
-          setError("Order not found. Please check your order number and try again.");
-        } else {
-          setError("Failed to fetch order. Please try again.");
-        }
+        setError(res.status === 404 ? "Order not found. Please check your order number and try again." : "Failed to fetch order. Please try again.");
         setOrder(null);
         return;
       }
-
       const data = await res.json();
       setOrder(data);
     } catch {
@@ -131,6 +120,21 @@ export default function TrackOrderPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Auto-search if ?order= param is present
+  useEffect(() => {
+    const param = searchParams.get("order");
+    if (param) doSearch(param);
+  }, [searchParams, doSearch]);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orderNumber.trim()) {
+      setError("Please enter an order number");
+      return;
+    }
+    doSearch(orderNumber);
   };
 
   const copyText = (text: string) => {
@@ -599,5 +603,19 @@ export default function TrackOrderPage() {
         </Section>
       )}
     </>
+  );
+}
+
+export default function TrackOrderPage() {
+  return (
+    <Suspense fallback={
+      <Section>
+        <div className="max-w-2xl mx-auto text-center py-16">
+          <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto" />
+        </div>
+      </Section>
+    }>
+      <TrackOrderContent />
+    </Suspense>
   );
 }
