@@ -57,6 +57,7 @@ export default function ProductImage({
       {...props}
       src={resolvedSrc}
       alt={alt || ""}
+      sizes={props.sizes || (props.fill ? "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" : undefined)}
       onError={() => setError(true)}
     />
   );

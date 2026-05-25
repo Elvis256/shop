@@ -18,8 +18,9 @@ const config: Config = {
     },
     extend: {
       fontFamily: {
-        head: ["SF Pro Display", "Inter", "sans-serif"],
-        body: ["SF Pro Text", "Inter", "sans-serif"],
+        sans: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
+        head: ["var(--font-inter)", "SF Pro Display", "Inter", "sans-serif"],
+        body: ["var(--font-inter)", "SF Pro Text", "Inter", "sans-serif"],
       },
       colors: {
         bg: "#fafafa",

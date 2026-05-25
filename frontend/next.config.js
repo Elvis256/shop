@@ -111,6 +111,8 @@ const nextConfig = {
     ];
   },
   images: {
+    minimumCacheTTL: 86400,
+    formats: ['image/avif', 'image/webp'],
     remotePatterns: [
       { protocol: 'https', hostname: 'localhost' },
       { protocol: 'http',  hostname: 'localhost' },
@@ -124,7 +126,8 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.cjdropshipping.com' },
       { protocol: 'https', hostname: '**.aliexpress.com' },
       { protocol: 'https', hostname: 'ae01.alicdn.com' },
-      { protocol: 'https', hostname: '**' },
+      { protocol: 'https', hostname: 'img.alicdn.com' },
+      { protocol: 'https', hostname: 'i.imgur.com' },
     ],
   },
 };

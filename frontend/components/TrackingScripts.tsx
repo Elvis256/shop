@@ -12,7 +12,10 @@ export default function TrackingScripts() {
       .catch(() => {});
   }, []);
 
-  const gaEnabled = settings.tracking_ga_enabled === "true";
+  // GA is handled by GoogleAnalytics component in root layout via NEXT_PUBLIC_GA_ID
+  // Only load from settings if env var is not set
+  const envGaId = process.env.NEXT_PUBLIC_GA_ID;
+  const gaEnabled = !envGaId && settings.tracking_ga_enabled === "true";
   const gaId = settings.tracking_ga_measurement_id;
   const fbEnabled = settings.tracking_fb_pixel_enabled === "true";
   const fbId = settings.tracking_fb_pixel_id;
