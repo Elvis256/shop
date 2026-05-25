@@ -2,6 +2,8 @@ import { Metadata } from "next";
 import ProductPageClient from "./ProductPageClient";
 import ProductSchema from "@/components/schemas/ProductSchema";
 import Breadcrumb from "@/components/schemas/BreadcrumbSchema";
+import BreadcrumbUI from "@/components/ui/BreadcrumbUI";
+import RelatedProducts from "@/components/ui/RelatedProducts";
 
 const API_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
@@ -20,15 +22,34 @@ async function getProduct(slug: string) {
   }
 }
 
+async function getRelatedProducts(categoryId: string, excludeSlug: string) {
+  try {
+    const res = await fetch(
+      `${API_URL}/api/products?category=${categoryId}&limit=4`,
+      { next: { revalidate: 3600 } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const products = data.products || data;
+    return (products as Array<Record<string, unknown>>)
+      .filter((p) => p.slug !== excludeSlug)
+      .slice(0, 4);
+  } catch {
+    return [];
+  }
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const product = await getProduct(slug);
   if (!product) return {};
 
-  const title = `${product.name} | PleasureZone`;
-  const description = product.description
-    ? product.description.replace(/<[^>]*>/g, '').slice(0, 160)
-    : `Buy ${product.name} online. Fast discreet delivery.`;
+  const category = product.category as { name: string } | undefined;
+  const title = `${product.name}${category ? ` - ${category.name}` : ''} | PleasureZone Uganda`;
+  const rawDesc = product.description?.replace(/<[^>]*>/g, '') || '';
+  const description = rawDesc
+    ? `${rawDesc.slice(0, 120)} Shop ${product.name} online at PleasureZone Uganda. Fast discreet delivery.`.slice(0, 160)
+    : `Buy ${product.name} online at PleasureZone Uganda. ${category ? `Best ${category.name} with` : 'Fast'} discreet delivery & secure checkout.`;
   const image = product.imageUrl || product.images?.[0]?.url;
   const canonicalUrl = `${SITE_URL}/product/${slug}`;
 
@@ -94,11 +115,39 @@ function ProductJsonLd({ product, slug }: { product: Record<string, unknown>; sl
 export default async function ProductPage({ params }: Props) {
   const { slug } = await params;
   const product = await getProduct(slug);
+  const category = product?.category as { id: string; name: string } | undefined;
+  const relatedProducts = category?.id
+    ? await getRelatedProducts(category.id, slug)
+    : [];
+
+  const breadcrumbItems = [
+    { name: "Home", url: "/" },
+    ...(category ? [{ name: category.name, url: `/category?cat=${encodeURIComponent(category.name)}` }] : []),
+    { name: product?.name as string || slug },
+  ];
 
   return (
     <>
       {product && <ProductJsonLd product={product} slug={slug} />}
+      <div className="max-w-7xl mx-auto px-4">
+        <BreadcrumbUI items={breadcrumbItems} className="my-4" />
+      </div>
       <ProductPageClient />
+      {relatedProducts.length > 0 && (
+        <div className="max-w-7xl mx-auto px-4">
+          <RelatedProducts
+            products={relatedProducts.map((p: Record<string, unknown>) => ({
+              id: p.id as string,
+              slug: p.slug as string,
+              name: p.name as string,
+              price: p.price as number,
+              salePrice: p.salePrice as number | undefined,
+              imageUrl: (p.imageUrl as string) || (p.images as { url: string }[])?.[0]?.url,
+            }))}
+            title="You May Also Like"
+          />
+        </div>
+      )}
     </>
   );
 }
