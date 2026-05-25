@@ -100,6 +100,9 @@ import settingsRoutes from "./routes/settings";
 
 // Middleware
 import { setupSecurity } from "./middleware/security";
+import { setupHealthChecks } from "./middleware/monitoring";
+import { errorHandler, asyncHandler } from "./middleware/errorHandler";
+import { suspiciousActivityMiddleware } from "./middleware/securityEvents";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -110,6 +113,9 @@ app.use(requestLogMiddleware);
 
 // Security middleware
 setupSecurity(app);
+
+// Suspicious activity detection (must be before other middleware that parse body)
+app.use(suspiciousActivityMiddleware);
 
 // CORS - Allow multiple origins for development and production
 const allowedOrigins = process.env.NODE_ENV === 'production'
@@ -246,64 +252,11 @@ app.use("/api/admin/sellers", adminSellers);
 app.use("/api/admin/permissions", adminPermissions);
 app.use("/api/settings", settingsRoutes);
 
-// Health check — verifies database and Redis connectivity
-app.get("/api/health", async (_req, res) => {
-  const checks: Record<string, string> = {};
-  let healthy = true;
+// Health check endpoints — comprehensive monitoring
+setupHealthChecks(app);
 
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    checks.database = "ok";
-  } catch {
-    checks.database = "unavailable";
-    healthy = false;
-  }
-
-  try {
-    await redis.ping();
-    checks.redis = "ok";
-  } catch {
-    checks.redis = "unavailable";
-    healthy = false;
-  }
-
-  const status = healthy ? "ok" : "degraded";
-  res.status(healthy ? 200 : 503).json({ status, timestamp: new Date().toISOString(), checks });
-});
-
-app.get("/health", async (_req, res) => {
-  const checks: Record<string, string> = {};
-  let healthy = true;
-
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    checks.database = "ok";
-  } catch {
-    checks.database = "unavailable";
-    healthy = false;
-  }
-
-  try {
-    await redis.ping();
-    checks.redis = "ok";
-  } catch {
-    checks.redis = "unavailable";
-    healthy = false;
-  }
-
-  const status = healthy ? "ok" : "degraded";
-  res.status(healthy ? 200 : 503).json({ status, timestamp: new Date().toISOString(), checks });
-});
-
-// Error handling
-app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  logger.error("unhandled_route_error", {
-    requestId: (req as any).requestId,
-    error: err.message,
-    path: req.path,
-  });
-  res.status(500).json({ error: "Internal server error" });
-});
+// Error handling middleware (must be last)
+app.use(errorHandler);
 
 // 404 handler
 app.use((_req, res) => {

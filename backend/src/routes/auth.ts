@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
+import logger from "../lib/logger";
 import { 
   generateToken, 
   authenticate, 
@@ -16,6 +17,7 @@ import {
 } from "../middleware/auth";
 import { sendWelcomeEmail, sendPasswordResetEmail } from "../lib/email";
 import { sendVerificationEmail, sendWelcomeEmail as sendVerifiedWelcome } from "../services/email";
+import { logSecurityEvent } from "../middleware/securityEvents";
 
 const router = Router();
 
@@ -234,6 +236,18 @@ router.post("/login", async (req, res: Response) => {
     if (!user) {
       await recordFailedLogin(normalizedEmail);
       await recordFailedIpAttempt(clientIp);
+      
+      // Log security event for non-existent user attempt
+      logSecurityEvent({
+        type: "failed_login",
+        email: normalizedEmail,
+        ipAddress: clientIp,
+        userAgent: req.headers["user-agent"] || "unknown",
+        path: "/auth/login",
+        details: { reason: "user_not_found" },
+        severity: "low",
+      }).catch(e => logger.error("security_event_log_failed", { error: String(e) }));
+      
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
@@ -246,6 +260,19 @@ router.post("/login", async (req, res: Response) => {
     if (!validPassword) {
       await recordFailedLogin(normalizedEmail);
       await recordFailedIpAttempt(clientIp);
+      
+      // Log security event for invalid password
+      logSecurityEvent({
+        type: "failed_login",
+        userId: user.id,
+        email: normalizedEmail,
+        ipAddress: clientIp,
+        userAgent: req.headers["user-agent"] || "unknown",
+        path: "/auth/login",
+        details: { reason: "invalid_password" },
+        severity: "low",
+      }).catch(e => logger.error("security_event_log_failed", { error: String(e) }));
+      
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
