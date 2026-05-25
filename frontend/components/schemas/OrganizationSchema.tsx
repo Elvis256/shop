@@ -15,15 +15,18 @@ interface OrganizationSchemaProps {
   supportPhone?: string;
 }
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
+
 export default function OrganizationSchema({
-  name = "PleasureZone",
-  url = "https://ugsex.com",
-  logo = "https://ugsex.com/logo.png",
-  description = "Premium wellness products with discreet shipping and secure checkout",
+  name = "PleasureZone Uganda",
+  url = SITE_URL,
+  logo = `${SITE_URL}/logo.png`,
+  description = "Uganda's premier online store for intimate wellness products. Discreet shipping, secure checkout & fast delivery nationwide.",
   sameAs = [
-    "https://facebook.com/pleasurezone",
-    "https://instagram.com/pleasurezone",
-    "https://twitter.com/pleasurezone",
+    "https://www.facebook.com/PleasureZoneUG",
+    "https://www.instagram.com/pleasurezone_ug",
+    "https://twitter.com/PleasureZoneUG",
+    "https://www.tiktok.com/@pleasurezoneug",
   ],
   addressCountry = "UG",
   contactEmail = "support@ugsex.com",

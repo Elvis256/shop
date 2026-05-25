@@ -16,34 +16,38 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
 
 export const metadata: Metadata = {
   title: {
-    default: "PleasureZone - Premium Wellness Products",
-    template: "%s | PleasureZone",
+    default: "PleasureZone Uganda - Intimate Wellness Products | Discreet Delivery",
+    template: "%s | PleasureZone Uganda",
   },
-  description: "Shop premium wellness products with discreet shipping and secure checkout. Anonymous billing, plain packaging guaranteed.",
-  keywords: ["wellness products", "discreet shipping", "adult store", "Uganda", "Kenya", "East Africa"],
-  authors: [{ name: "PleasureZone" }],
-  creator: "PleasureZone",
+  description: "Uganda's #1 online store for intimate wellness products. Shop vibrators, lingerie, lubricants & more with fast discreet delivery, plain packaging & secure checkout.",
+  keywords: [
+    "pleasure zone Uganda", "adult store Uganda", "buy vibrators Uganda",
+    "lingerie Kampala", "discreet delivery Uganda", "intimate products online",
+    "sexual wellness East Africa", "adult toys Kampala",
+  ],
+  authors: [{ name: "PleasureZone Uganda" }],
+  creator: "PleasureZone Uganda",
   metadataBase: new URL(SITE_URL),
   openGraph: {
     type: "website",
     locale: "en_US",
     url: SITE_URL,
-    siteName: "PleasureZone",
-    title: "PleasureZone - Premium Wellness Products",
-    description: "Shop premium wellness products with discreet shipping and secure checkout.",
+    siteName: "PleasureZone Uganda",
+    title: "PleasureZone Uganda - Intimate Wellness Products",
+    description: "Uganda's #1 online store for intimate wellness. Discreet delivery, plain packaging & secure checkout.",
     images: [
       {
         url: `${SITE_URL}/og-image.png`,
         width: 1200,
         height: 630,
-        alt: "PleasureZone",
+        alt: "PleasureZone Uganda - Intimate Wellness Products",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "PleasureZone - Premium Wellness Products",
-    description: "Shop premium wellness products with discreet shipping and secure checkout.",
+    title: "PleasureZone Uganda - Intimate Wellness Products",
+    description: "Uganda's #1 online store for intimate wellness. Discreet delivery & secure checkout.",
     images: [`${SITE_URL}/og-image.png`],
   },
   robots: {
