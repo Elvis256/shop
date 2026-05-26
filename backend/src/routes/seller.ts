@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { uploadMultiple, validateUploadedFiles } from "../middleware/upload";
 
 const router = Router();
 
@@ -934,6 +935,35 @@ router.get("/reviews", authenticate, async (req: AuthRequest, res: Response) => 
   } catch (error) {
     console.error("List reviews error:", error);
     return res.status(500).json({ error: "Failed to load reviews" });
+  }
+});
+
+// POST /upload-images — Upload product images (max 10 files)
+router.post("/upload-images", authenticate, uploadMultiple, validateUploadedFiles, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!requireSeller(req, res)) return;
+
+    const seller = await prisma.seller.findUnique({
+      where: { userId: req.user!.id },
+      select: { id: true, status: true },
+    });
+    if (!seller) {
+      return res.status(404).json({ error: "Seller account not found" });
+    }
+    if (seller.status !== "APPROVED") {
+      return res.status(403).json({ error: "Seller account is not approved" });
+    }
+
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    const urls = files.map((f) => `/uploads/${f.filename}`);
+    return res.json({ urls });
+  } catch (error) {
+    console.error("Upload images error:", error);
+    return res.status(500).json({ error: "Failed to upload images" });
   }
 });
 

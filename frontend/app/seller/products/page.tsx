@@ -13,6 +13,8 @@ import {
   ChevronRight,
   AlertTriangle,
   Image as ImageIcon,
+  Upload,
+  Loader2,
 } from "lucide-react";
 
 interface Product {
@@ -39,7 +41,7 @@ interface ProductForm {
   comparePrice: string;
   categoryId: string;
   stock: string;
-  images: string;
+  imageUrls: string[];
   tags: string;
 }
 
@@ -50,7 +52,7 @@ const emptyForm: ProductForm = {
   comparePrice: "",
   categoryId: "",
   stock: "",
-  images: "",
+  imageUrls: [],
   tags: "",
 };
 
@@ -69,6 +71,7 @@ export default function SellerProducts() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState("");
 
   const fetchProducts = useCallback(async () => {
@@ -120,11 +123,40 @@ export default function SellerProducts() {
       comparePrice: product.comparePrice?.toString() || "",
       categoryId: product.category?.id || "",
       stock: product.stock.toString(),
-      images: product.images?.join(", ") || "",
+      imageUrls: product.images || [],
       tags: "",
     });
     setFormError("");
     setShowModal(true);
+  };
+
+  const handleImageUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setFormError("");
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach((f) => formData.append("images", f));
+      const data = await apiFetch("/api/seller/upload-images", {
+        method: "POST",
+        body: formData,
+      });
+      setForm((prev) => ({
+        ...prev,
+        imageUrls: [...prev.imageUrls, ...data.urls],
+      }));
+    } catch (err: any) {
+      setFormError(err.message || "Failed to upload images");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      imageUrls: prev.imageUrls.filter((_, i) => i !== index),
+    }));
   };
 
   const handleSave = async () => {
@@ -142,9 +174,7 @@ export default function SellerProducts() {
         comparePrice: form.comparePrice ? parseFloat(form.comparePrice) : undefined,
         categoryId: form.categoryId || undefined,
         stock: form.stock ? parseInt(form.stock) : 0,
-        images: form.images
-          ? form.images.split(",").map((s) => s.trim()).filter(Boolean)
-          : [],
+        images: form.imageUrls.map((url) => ({ url })),
         tags: form.tags
           ? form.tags.split(",").map((s) => s.trim()).filter(Boolean)
           : [],
@@ -472,15 +502,63 @@ export default function SellerProducts() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Image URLs (comma-separated)
+                  Product Images
                 </label>
-                <input
-                  type="text"
-                  value={form.images}
-                  onChange={(e) => setForm({ ...form, images: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  placeholder="https://example.com/image1.jpg, https://example.com/image2.jpg"
-                />
+                {/* Image previews */}
+                {form.imageUrls.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {form.imageUrls.map((url, i) => (
+                      <div key={i} className="relative group w-20 h-20">
+                        <img
+                          src={url.startsWith("/") ? `${process.env.NEXT_PUBLIC_API_URL || ""}${url}` : url}
+                          alt={`Image ${i + 1}`}
+                          className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(i)}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Upload area */}
+                <label
+                  className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                    uploading
+                      ? "border-primary/40 bg-primary/5"
+                      : "border-gray-300 hover:border-primary/60 hover:bg-gray-50"
+                  }`}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleImageUpload(e.dataTransfer.files);
+                  }}
+                >
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    className="hidden"
+                    onChange={(e) => handleImageUpload(e.target.files)}
+                    disabled={uploading}
+                  />
+                  {uploading ? (
+                    <div className="flex items-center gap-2 text-primary">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="text-sm font-medium">Uploading...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 text-gray-500">
+                      <Upload className="w-6 h-6" />
+                      <span className="text-sm">Click or drag images here</span>
+                      <span className="text-xs text-gray-400">JPG, PNG, GIF, WebP (max 10MB each)</span>
+                    </div>
+                  )}
+                </label>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
