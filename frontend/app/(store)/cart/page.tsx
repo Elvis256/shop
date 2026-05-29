@@ -39,10 +39,42 @@ export default function CartPage() {
   const [couponError, setCouponError] = useState("");
   const { formatPrice } = useCurrency();
   const { config: shippingCfg } = useShippingConfig();
+  const [reorderToast, setReorderToast] = useState("");
 
   useEffect(() => {
     loadCart();
   }, []);
+
+  // Handle reorder URL param: ?reorder=productId:qty
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const reorder = params.get("reorder");
+    if (!reorder) return;
+    const [productId, qtyStr] = reorder.split(":");
+    const qty = parseInt(qtyStr) || 1;
+    if (!productId) return;
+
+    (async () => {
+      try {
+        const cartId = localStorage.getItem("cartId");
+        const res = await fetch(`${API_URL}/api/cart/add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ productId, quantity: qty, cartId }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.cartId) localStorage.setItem("cartId", data.cartId);
+          setReorderToast("Product added from your reorder link!");
+          loadCart();
+        }
+      } catch { /* ignore */ }
+    })();
+    // Clean URL
+    window.history.replaceState({}, "", "/cart");
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadCart() {
     setError(null);
@@ -228,6 +260,15 @@ export default function CartPage() {
             Clear Cart
           </button>
         </div>
+
+        {/* Reorder toast */}
+        {reorderToast && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 flex items-center gap-2">
+            <Check className="w-4 h-4 flex-shrink-0" />
+            {reorderToast}
+            <button onClick={() => setReorderToast("")} className="ml-auto text-green-500 hover:text-green-700">&times;</button>
+          </div>
+        )}
 
         {/* Free Shipping Progress Bar */}
         <div className="mb-8">

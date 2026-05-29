@@ -14,7 +14,11 @@ import {
   ChevronRight,
   AlertTriangle,
   X,
+  Search,
+  Download,
 } from "lucide-react";
+import { useToast } from "@/lib/hooks/useToast";
+import { arrayToCSV, downloadCSV } from "@/lib/utils/csv";
 
 interface OrderItem {
   id: string;
@@ -57,6 +61,9 @@ export default function SellerOrders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -64,21 +71,25 @@ export default function SellerOrders() {
   const [showTrackingModal, setShowTrackingModal] = useState(false);
   const [trackingOrderId, setTrackingOrderId] = useState<string | null>(null);
   const [trackingNumber, setTrackingNumber] = useState("");
+  const { showToast } = useToast();
 
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams({ page: page.toString() });
       if (statusFilter !== "ALL") params.set("status", statusFilter);
+      if (searchQuery.trim()) params.set("search", searchQuery.trim());
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
       const data = await apiFetch(`/api/seller/orders?${params}`);
       setOrders(data.orders || []);
-      setTotalPages(data.pagination?.totalPages || 1);
+      setTotalPages(data.pagination?.totalPages || data.pagination?.pages || 1);
     } catch (err: any) {
       setError(err.message || "Failed to load orders");
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter]);
+  }, [page, statusFilter, searchQuery, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchOrders();
@@ -93,9 +104,10 @@ export default function SellerOrders() {
         method: "PUT",
         body: JSON.stringify(body),
       });
+      showToast("Order status updated", "success");
       fetchOrders();
     } catch (err: any) {
-      alert(err.message || "Failed to update status");
+      showToast(err.message || "Failed to update status", "error");
     } finally {
       setUpdatingId(null);
     }
@@ -116,10 +128,58 @@ export default function SellerOrders() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold text-gray-900">Orders</h2>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <h2 className="text-xl font-bold text-gray-900">Orders</h2>
+        {orders.length > 0 && (
+          <button
+            onClick={() => {
+              const headers = ["Order #", "Customer", "Items", "Total (UGX)", "Status", "Date"];
+              const rows = orders.map((o) => [
+                o.orderNumber, o.customerName, o.items.length,
+                o.total, o.status, new Date(o.createdAt).toLocaleDateString(),
+              ]);
+              downloadCSV(`orders-${new Date().toISOString().slice(0, 10)}`, arrayToCSV(headers, rows));
+            }}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+          >
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
+        )}
+      </div>
 
-      {/* Status Tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-1 inline-flex gap-1 flex-wrap">
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by order # or customer..."
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            />
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="From"
+            />
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="To"
+            />
+          </div>
+        </div>
+
+        {/* Status Tabs */}
+        <div className="inline-flex gap-1 flex-wrap">
         {statusTabs.map((tab) => (
           <button
             key={tab}
@@ -136,6 +196,7 @@ export default function SellerOrders() {
             {tab}
           </button>
         ))}
+        </div>
       </div>
 
       {error && (

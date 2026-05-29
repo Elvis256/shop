@@ -90,10 +90,8 @@ export async function rotateRefreshToken(oldToken: string): Promise<{ accessToke
   await prisma.refreshToken.delete({ where: { id: tokenRecord.id } });
   
   const newRefreshToken = await createRefreshToken(tokenRecord.userId);
-  // Preserve portal context based on role
-  const portal = (tokenRecord.user.role === "ADMIN" || tokenRecord.user.role === "MANAGER") ? "admin"
-               : tokenRecord.user.role === "SELLER" ? "seller"
-               : "customer";
+  // Preserve portal context — sellers use "customer" portal (seller access via DB record)
+  const portal = (tokenRecord.user.role === "ADMIN" || tokenRecord.user.role === "MANAGER") ? "admin" : "customer";
   const accessToken = generateToken({
     id: tokenRecord.user.id,
     email: tokenRecord.user.email,
@@ -197,11 +195,17 @@ export async function requireSeller(req: AuthRequest, res: Response, next: NextF
   if (!req.user) {
     return res.status(401).json({ error: "Authentication required" });
   }
-  if (req.user.role !== "SELLER") {
-    return res.status(403).json({ error: "Seller access required" });
-  }
-  if (req.user.portal && req.user.portal !== "seller") {
-    return res.status(403).json({ error: "Seller portal access required. Please login at the vendor centre." });
+  // Check for Seller record in DB (any user can also be a seller)
+  const seller = await prisma.seller.findUnique({
+    where: { userId: req.user.id },
+    select: { status: true },
+  });
+  if (!seller || seller.status !== "APPROVED") {
+    return res.status(403).json({
+      error: seller?.status === "PENDING"
+        ? "Your seller application is still under review"
+        : "Seller access required",
+    });
   }
   next();
 }

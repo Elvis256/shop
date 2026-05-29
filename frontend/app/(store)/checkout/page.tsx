@@ -66,6 +66,8 @@ export default function CheckoutPage() {
     discreet: true,
   });
 
+  const [deliveryTimeSlot, setDeliveryTimeSlot] = useState("");
+
   // Stable idempotency key — generated once per checkout session, reused on retries
   const idempotencyKeyRef = useRef(`ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`);
 
@@ -198,11 +200,15 @@ export default function CheckoutPage() {
   };
 
   const validateShipping = () => {
-    if (!shipping.firstName || !shipping.lastName || !shipping.email || !shipping.phone || !shipping.address || !shipping.city) {
+    if (!shipping.firstName || !shipping.lastName || !shipping.phone || !shipping.address || !shipping.city) {
       setError("Please fill in all required fields");
       return false;
     }
-    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(shipping.email)) {
+    if (!shipping.email && !shipping.phone) {
+      setError("Please provide an email address or phone number");
+      return false;
+    }
+    if (shipping.email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(shipping.email)) {
       setError("Please enter a valid email address");
       return false;
     }
@@ -248,9 +254,10 @@ export default function CheckoutPage() {
         }),
         customer: {
           name: `${shipping.firstName} ${shipping.lastName}`,
-          email: shipping.email,
+          ...(shipping.email ? { email: shipping.email } : {}),
           phone: shipping.phone,
         },
+        ...(deliveryTimeSlot ? { deliveryTimeSlot } : {}),
         shippingAddress: {
           name: `${shipping.firstName} ${shipping.lastName}`,
           address: shipping.address,
@@ -454,7 +461,7 @@ export default function CheckoutPage() {
               </div>
 
               <div>
-                <label className="block text-small font-medium mb-2">Email *</label>
+                <label className="block text-small font-medium mb-2">Email <span className="text-text-muted font-normal">(optional)</span></label>
                 <input
                   className="input"
                   type="email"
@@ -463,6 +470,11 @@ export default function CheckoutPage() {
                   value={shipping.email}
                   onChange={(e) => updateShipping("email", e.target.value)}
                 />
+                {!shipping.email && shipping.phone && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                    <Smartphone className="w-3 h-3" /> Phone number is enough — we&apos;ll text your order updates
+                  </p>
+                )}
               </div>
 
               <div>
@@ -538,6 +550,45 @@ export default function CheckoutPage() {
                   </p>
                 </div>
               </label>
+
+              {/* Delivery Time Slot */}
+              <div>
+                <label className="block text-small font-medium mb-2 flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-accent" />Preferred Delivery Time
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { value: "", label: "No preference" },
+                    { value: "Morning (8am-12pm)", label: "Morning" },
+                    { value: "Afternoon (12pm-5pm)", label: "Afternoon" },
+                    { value: "Evening (5pm-9pm)", label: "Evening" },
+                  ].map(slot => (
+                    <button
+                      key={slot.value}
+                      type="button"
+                      onClick={() => setDeliveryTimeSlot(slot.value)}
+                      className={`py-2 px-3 rounded-8 text-sm font-medium border transition-colors ${
+                        deliveryTimeSlot === slot.value
+                          ? "border-accent bg-accent/10 text-accent"
+                          : "border-border text-text-muted hover:border-accent/50"
+                      }`}
+                    >
+                      {slot.label}
+                    </button>
+                  ))}
+                </div>
+                {deliveryTimeSlot && <p className="text-xs text-text-muted mt-1">{deliveryTimeSlot}</p>}
+              </div>
+
+              {/* Privacy badge for guest checkout */}
+              {!user && (
+                <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-8">
+                  <Shield className="w-4 h-4 text-green-600 flex-shrink-0" />
+                  <p className="text-xs text-green-700 dark:text-green-400">
+                    Your data is auto-deleted 30 days after delivery. We value your privacy.
+                  </p>
+                </div>
+              )}
 
               {/* Delivery Estimates */}
               {items.length > 0 && (

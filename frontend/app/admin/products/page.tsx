@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 import {
   Plus,
   Search,
@@ -45,6 +45,8 @@ interface Product {
   status?: string;
   featured?: boolean;
   category?: string | null;
+  sellerId?: string | null;
+  sellerName?: string | null;
   imageUrl?: string | null;
   sales?: number;
   createdAt?: string;
@@ -68,6 +70,8 @@ export default function AdminProductsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
   const [stats, setStats] = useState({ total: 0, active: 0, lowStock: 0, outOfStock: 0 });
+  const [sellerFilter, setSellerFilter] = useState("");
+  const [sellers, setSellers] = useState<Array<{ id: string; storeName: string }>>([]);
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvResult, setCsvResult] = useState<{ imported: number; failed: number; errors: string[] } | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -75,13 +79,14 @@ export default function AdminProductsPage() {
   const loadProducts = async (params: Record<string, string> = {}) => {
     setLoading(true);
     try {
-      const data = await api.admin.getProducts({ 
-        search, 
-        status: statusFilter, 
+      const data = await api.admin.getProducts({
+        search,
+        status: statusFilter,
         category: categoryFilter,
+        sellerId: sellerFilter,
         sort: sortField,
         order: sortDirection,
-        ...params 
+        ...params
       });
       setProducts(data.products || []);
       setPagination(data.pagination || { total: 0, page: 1, totalPages: 1, limit: 20 });
@@ -99,7 +104,13 @@ export default function AdminProductsPage() {
 
   useEffect(() => {
     loadProducts();
-  }, [search, statusFilter, categoryFilter, sortField, sortDirection]);
+  }, [search, statusFilter, categoryFilter, sellerFilter, sortField, sortDirection]);
+
+  useEffect(() => {
+    apiFetch("/api/admin/sellers?limit=100")
+      .then((data: any) => setSellers((data.sellers || []).map((s: any) => ({ id: s.id, storeName: s.storeName }))))
+      .catch(() => {});
+  }, []);
 
   // Close action menu when clicking outside
   useEffect(() => {
@@ -373,6 +384,17 @@ export default function AdminProductsPage() {
               ))}
             </select>
 
+            <select
+              className="px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+              value={sellerFilter}
+              onChange={(e) => setSellerFilter(e.target.value)}
+            >
+              <option value="">All Sellers</option>
+              {sellers.map(s => (
+                <option key={s.id} value={s.id}>{s.storeName}</option>
+              ))}
+            </select>
+
             {/* View Mode Toggle */}
             <div className="flex items-center bg-gray-100 rounded-lg p-1">
               <button
@@ -465,7 +487,8 @@ export default function AdminProductsPage() {
                     </div>
                   </th>
                   <th className="p-4 text-left text-sm font-semibold text-gray-600">SKU</th>
-                  <th 
+                  <th className="p-4 text-left text-sm font-semibold text-gray-600">Seller</th>
+                  <th
                     className="p-4 text-left text-sm font-semibold text-gray-600 cursor-pointer hover:text-gray-900"
                     onClick={() => handleSort("price")}
                   >
@@ -506,7 +529,7 @@ export default function AdminProductsPage() {
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i}>
-                      <td colSpan={8} className="p-4">
+                      <td colSpan={9} className="p-4">
                         <div className="flex items-center gap-3">
                           <div className="w-12 h-12 bg-gray-200 rounded animate-pulse" />
                           <div className="flex-1">
@@ -519,7 +542,7 @@ export default function AdminProductsPage() {
                   ))
                 ) : products.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-12 text-center">
+                    <td colSpan={9} className="p-12 text-center">
                       <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
                       <p className="text-gray-500 font-medium">No products found</p>
                       <p className="text-gray-400 text-sm mt-1">Try adjusting your filters or add a new product</p>
@@ -571,6 +594,18 @@ export default function AdminProductsPage() {
                       </td>
                       <td className="p-4">
                         <span className="text-sm text-gray-500 font-mono">{product.sku || "—"}</span>
+                      </td>
+                      <td className="p-4">
+                        {product.sellerName ? (
+                          <Link
+                            href={`/admin/sellers`}
+                            className="text-sm text-primary hover:underline"
+                          >
+                            {product.sellerName}
+                          </Link>
+                        ) : (
+                          <span className="text-sm text-gray-400">Own Product</span>
+                        )}
                       </td>
                       <td className="p-4">
                         <div>

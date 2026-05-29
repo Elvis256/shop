@@ -26,6 +26,7 @@ type ProductCardProps = {
   shippingBadge?: "From Abroad" | "Express";
   flashSalePrice?: number | null;
   flashSaleEndsAt?: string | null;
+  isSponsored?: boolean;
   onQuickView?: (slug: string) => void;
 };
 
@@ -47,6 +48,7 @@ export default function ProductCard({
   shippingBadge,
   flashSalePrice,
   flashSaleEndsAt,
+  isSponsored,
   onQuickView,
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false);
@@ -141,6 +143,11 @@ export default function ProductCard({
             {shippingBadge === "Express" && (
               <span className="text-xs font-medium bg-emerald-500 text-white px-3 py-1.5 rounded-full flex items-center gap-1">
                 ⚡ Express
+              </span>
+            )}
+            {isSponsored && (
+              <span className="text-xs font-medium bg-blue-500 text-white px-3 py-1.5 rounded-full">
+                Sponsored
               </span>
             )}
           </div>

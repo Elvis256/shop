@@ -233,6 +233,55 @@ router.get("/best-sellers", async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/recommendations/gift-finder — Curated gift suggestions
+router.get("/gift-finder", async (req: Request, res: Response) => {
+  try {
+    const { category, budget, minRating } = req.query;
+
+    const where: any = { status: "ACTIVE" };
+
+    // Category filter (comma-separated slugs or names)
+    if (category && typeof category === "string") {
+      const cats = category.split(",").map(c => c.trim());
+      const categories = await prisma.category.findMany({
+        where: { OR: [{ slug: { in: cats } }, { name: { in: cats, mode: "insensitive" } }] },
+        select: { id: true },
+      });
+      if (categories.length > 0) {
+        where.categoryId = { in: categories.map(c => c.id) };
+      }
+    }
+
+    // Budget range filter (format: "50000-100000")
+    if (budget && typeof budget === "string") {
+      const [min, max] = budget.split("-").map(Number);
+      if (min) where.price = { ...where.price, gte: min };
+      if (max) where.price = { ...where.price, lte: max };
+    }
+
+    // Minimum rating filter
+    const minR = parseFloat(minRating as string) || 3.5;
+    where.rating = { gte: minR };
+
+    const products = await prisma.product.findMany({
+      where,
+      include: {
+        images: { take: 1, orderBy: { position: "asc" } },
+        category: { select: { name: true } },
+      },
+      orderBy: [{ rating: "desc" }, { isBestseller: "desc" }],
+      take: 12,
+    });
+
+    return res.json({
+      products: products.map(formatProduct),
+    });
+  } catch (error) {
+    console.error("Gift finder error:", error);
+    return res.status(500).json({ error: "Failed to load gift suggestions" });
+  }
+});
+
 function formatProduct(p: any) {
   return {
     id: p.id,

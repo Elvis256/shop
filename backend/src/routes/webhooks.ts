@@ -3,6 +3,7 @@ import { verifyFlutterwaveHash } from "../utils/verifyFlutterwave";
 import prisma from "../lib/prisma";
 import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
 import { placeCJOrdersForOrder } from "../services/cjOrder";
+import { getCommissionRate } from "./seller";
 const router = Router();
 
 // POST /api/webhooks/flutterwave
@@ -110,6 +111,44 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
             });
           }
 
+          // Credit seller earnings for marketplace items
+          const sellerItems = await tx.orderItem.findMany({
+            where: { orderId: tx_ref, sellerId: { not: null } },
+            include: { product: { select: { categoryId: true } } },
+          });
+
+          // Group earnings by seller
+          const sellerEarnings: Record<string, { net: number; sales: number }> = {};
+          for (const item of sellerItems) {
+            const rate = await getCommissionRate(item.sellerId!, item.product?.categoryId || null);
+            const itemTotal = Number(item.price) * item.quantity;
+            const commission = Math.round((itemTotal * rate) / 100);
+            const net = itemTotal - commission;
+
+            await tx.orderItem.update({
+              where: { id: item.id },
+              data: { commission },
+            });
+
+            if (!sellerEarnings[item.sellerId!]) {
+              sellerEarnings[item.sellerId!] = { net: 0, sales: 0 };
+            }
+            sellerEarnings[item.sellerId!].net += net;
+            sellerEarnings[item.sellerId!].sales += item.quantity;
+          }
+
+          // Update each seller's balance, totalEarnings, totalSales
+          for (const [sellerId, earnings] of Object.entries(sellerEarnings)) {
+            await tx.seller.update({
+              where: { id: sellerId },
+              data: {
+                balance: { increment: earnings.net },
+                totalEarnings: { increment: earnings.net },
+                totalSales: { increment: earnings.sales },
+              },
+            });
+          }
+
           console.log(`✅ Order ${tx_ref} marked as CONFIRMED`);
         } else {
           await tx.payment.updateMany({
@@ -151,6 +190,57 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
         placeCJOrdersForOrder(tx_ref).catch((err) => {
           console.error(`CJ auto-order failed for ${tx_ref}:`, err.message);
         });
+      }
+    }
+
+    // Handle transfer webhooks (payouts)
+    if (event === "transfer.completed" || event === "transfer.failed") {
+      const transferData = data;
+      const reference = transferData.reference || "";
+
+      // Extract payout ID from reference "payout-{id}"
+      if (reference.startsWith("payout-")) {
+        const payoutId = reference.replace("payout-", "");
+
+        try {
+          const payout = await prisma.sellerPayout.findUnique({
+            where: { id: payoutId },
+          });
+          if (!payout) {
+            console.warn(`Payout not found for reference: ${reference}`);
+            return res.status(200).json({ received: true });
+          }
+
+          if (transferData.status === "SUCCESSFUL") {
+            await prisma.sellerPayout.update({
+              where: { id: payoutId },
+              data: {
+                status: "COMPLETED",
+                processedAt: new Date(),
+                notes: `Flutterwave transfer completed. ID: ${transferData.id}`,
+              },
+            });
+            console.log(`✅ Payout ${payoutId} completed via Flutterwave`);
+          } else {
+            // Failed: mark payout as FAILED and refund seller balance
+            await prisma.$transaction([
+              prisma.sellerPayout.update({
+                where: { id: payoutId },
+                data: {
+                  status: "FAILED",
+                  notes: `Flutterwave transfer failed: ${transferData.complete_message || "Unknown error"}`,
+                },
+              }),
+              prisma.seller.update({
+                where: { id: payout.sellerId },
+                data: { balance: { increment: Number(payout.amount) } },
+              }),
+            ]);
+            console.log(`❌ Payout ${payoutId} failed, balance refunded`);
+          }
+        } catch (err) {
+          console.error("Transfer webhook processing error:", err);
+        }
       }
     }
 

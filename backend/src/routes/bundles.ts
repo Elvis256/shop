@@ -182,6 +182,83 @@ router.get("/:slug", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/bundles/calculate-custom — Calculate custom bundle pricing with tier discounts
+router.post("/calculate-custom", async (req: Request, res: Response) => {
+  try {
+    const schema = z.object({
+      items: z.array(z.object({
+        productId: z.string(),
+        quantity: z.number().int().positive(),
+      })).min(1),
+    });
+
+    const body = schema.parse(req.body);
+
+    const productIds = body.items.map(i => i.productId);
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds }, status: "ACTIVE" },
+      select: {
+        id: true, name: true, slug: true, price: true, currency: true, stock: true,
+        images: { take: 1, orderBy: { position: "asc" } },
+      },
+    });
+
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    const resolvedItems = body.items
+      .filter(i => productMap.has(i.productId))
+      .map(i => {
+        const p = productMap.get(i.productId)!;
+        return {
+          productId: p.id,
+          name: p.name,
+          slug: p.slug,
+          price: Number(p.price),
+          quantity: i.quantity,
+          lineTotal: Number(p.price) * i.quantity,
+          imageUrl: p.images[0]?.url || null,
+          inStock: p.stock >= i.quantity,
+        };
+      });
+
+    const totalItems = resolvedItems.reduce((sum, i) => sum + i.quantity, 0);
+    const subtotal = resolvedItems.reduce((sum, i) => sum + i.lineTotal, 0);
+
+    // Discount tiers
+    let discountPercent = 0;
+    let tier = "";
+    if (totalItems >= 7) {
+      discountPercent = 20;
+      tier = "7+ items: 20% off";
+    } else if (totalItems >= 5) {
+      discountPercent = 15;
+      tier = "5+ items: 15% off";
+    } else if (totalItems >= 3) {
+      discountPercent = 10;
+      tier = "3+ items: 10% off";
+    }
+
+    const discountAmount = Math.round(subtotal * discountPercent / 100);
+    const total = subtotal - discountAmount;
+
+    return res.json({
+      items: resolvedItems,
+      subtotal,
+      discountPercent,
+      discountAmount,
+      total,
+      tier,
+      totalItems,
+    });
+  } catch (error) {
+    console.error("Calculate custom bundle error:", error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: error.errors });
+    }
+    return res.status(500).json({ error: "Failed to calculate bundle" });
+  }
+});
+
 // ─── Admin Routes ────────────────────────────────────────────────────────────
 
 // POST /api/bundles — Create bundle

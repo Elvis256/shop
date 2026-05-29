@@ -123,8 +123,11 @@ const navGroups: NavGroup[] = [
     title: "MARKETPLACE",
     items: [
       { href: "/admin/sellers", icon: Store, label: "Sellers" },
+      { href: "/admin/product-moderation", icon: Package, label: "Product Review" },
+      { href: "/admin/messages", icon: MessageSquare, label: "Messages" },
       { href: "/admin/commissions", icon: Percent, label: "Commissions" },
       { href: "/admin/payouts", icon: Banknote, label: "Payouts" },
+      { href: "/admin/ads", icon: Zap, label: "Ad Revenue" },
     ],
   },
   {

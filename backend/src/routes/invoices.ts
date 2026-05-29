@@ -178,13 +178,22 @@ router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, r
 router.get("/:orderId", authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
+    const userRole = req.user?.role;
+    const userEmail = req.user?.email;
     const { orderId } = req.params;
     const { format } = req.query;
 
+    // Admins can view any invoice; users can view their own (by userId or email)
+    const isAdmin = userRole === "ADMIN" || userRole === "MANAGER";
     const order = await prisma.order.findFirst({
       where: {
         id: orderId,
-        userId: userId,
+        ...(!isAdmin && {
+          OR: [
+            { userId: userId },
+            { customerEmail: userEmail },
+          ],
+        }),
       },
       include: {
         items: {
@@ -224,12 +233,20 @@ router.get("/:orderId", authenticate, async (req: AuthRequest, res: Response) =>
 router.get("/:orderId/download", authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
+    const userRole = req.user?.role;
+    const userEmail = req.user?.email;
     const { orderId } = req.params;
 
+    const isAdmin = userRole === "ADMIN" || userRole === "MANAGER";
     const order = await prisma.order.findFirst({
       where: {
         id: orderId,
-        userId: userId,
+        ...(!isAdmin && {
+          OR: [
+            { userId: userId },
+            { customerEmail: userEmail },
+          ],
+        }),
       },
       include: {
         items: {

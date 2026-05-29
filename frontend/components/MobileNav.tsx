@@ -37,10 +37,9 @@ export default function MobileNav() {
           );
         })}
         
-        {/* Cart Button — <a> fallback to /checkout */}
-        <a
-          href="/checkout"
-          onClick={(e) => { e.preventDefault(); openCart(); }}
+        {/* Cart Button */}
+        <button
+          onClick={openCart}
           className="flex flex-col items-center justify-center flex-1 h-full min-w-[44px] text-text-muted relative transition-colors duration-200"
         >
           <ShoppingCart className="w-5 h-5" />
@@ -50,7 +49,7 @@ export default function MobileNav() {
             </span>
           )}
           <span className="text-[10px] mt-1 font-medium">Cart</span>
-        </a>
+        </button>
       </div>
     </nav>
   );

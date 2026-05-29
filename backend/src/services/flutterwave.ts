@@ -126,6 +126,73 @@ export async function verifyFlutterwaveTransaction(transactionId: string) {
   }
 }
 
+// ─── Transfers (Payouts) ────────────────────────────────────────────────────
+
+type CreateTransferInput = {
+  reference: string;      // e.g. "payout-{id}"
+  amount: number;
+  currency?: string;
+  narration: string;
+  beneficiary: {
+    account_bank: string; // "MPS" for MTN Uganda, "AIR" for Airtel
+    account_number: string; // Phone number or bank account
+    beneficiary_name: string;
+  };
+};
+
+export async function createFlutterwaveTransfer(
+  input: CreateTransferInput
+): Promise<{ status: string; message: string; data?: { id?: number; reference?: string } }> {
+  const payload = {
+    account_bank: input.beneficiary.account_bank,
+    account_number: input.beneficiary.account_number,
+    amount: input.amount,
+    narration: input.narration,
+    currency: input.currency || "UGX",
+    reference: input.reference,
+    beneficiary_name: input.beneficiary.beneficiary_name,
+  };
+
+  try {
+    return await withRetryAndCircuitBreaker(
+      "flutterwave-transfer",
+      async () => {
+        const response = await axios.post(
+          `${FLW_BASE_URL}/transfers`,
+          payload,
+          { headers: getAuthHeaders(), timeout: 30000 }
+        );
+        return response.data;
+      },
+      FLUTTERWAVE_RETRY_OPTIONS
+    );
+  } catch (error: any) {
+    console.error("Flutterwave transfer error:", error.response?.data || error.message);
+    throw new Error("Transfer initiation failed. Please try again.");
+  }
+}
+
+export async function getFlutterwaveTransferStatus(
+  transferId: number
+): Promise<{ status: string; data?: { status?: string } }> {
+  try {
+    return await withRetryAndCircuitBreaker(
+      "flutterwave-transfer-status",
+      async () => {
+        const response = await axios.get(
+          `${FLW_BASE_URL}/transfers/${transferId}`,
+          { headers: getAuthHeaders(), timeout: 15000 }
+        );
+        return response.data;
+      },
+      FLUTTERWAVE_RETRY_OPTIONS
+    );
+  } catch (error: any) {
+    console.error("Flutterwave transfer status error:", error.response?.data || error.message);
+    throw new Error("Transfer status check failed.");
+  }
+}
+
 export async function refundFlutterwaveTransaction(
   transactionId: string,
   amount?: number,

@@ -21,7 +21,7 @@ const StaggerItem = dynamic(() => import("@/components/AnimateOnScroll").then(m 
 import ProductCarousel, { CarouselItem } from "@/components/ProductCarousel";
 import PersonalizedProducts from "@/components/PersonalizedProducts";
 import PointsMultiplier from "@/components/PointsMultiplier";
-import { Zap, TrendingUp, Star, Sparkles, ArrowRight, Shield, Truck, Clock, Gift } from "lucide-react";
+import { Zap, TrendingUp, Star, Sparkles, ArrowRight, Shield, Truck, Clock, Gift, Store, DollarSign, BarChart3, Users } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -45,6 +45,7 @@ interface Product {
   soldRecently?: number;
   createdAt?: string;
   shippingBadge?: "From Abroad" | "Express";
+  isSponsored?: boolean;
 }
 
 interface Category {
@@ -110,6 +111,7 @@ export default function Home() {
   const [bestsellers, setBestsellers] = useState<Product[]>([]);
   const [trending, setTrending] = useState<Product[]>([]);
   const [topRated, setTopRated] = useState<Product[]>([]);
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [flashSaleProducts, setFlashSaleProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,13 +123,14 @@ export default function Home() {
 
   const loadData = async () => {
     try {
-      const [newRes, bestRes, flashRes, catRes, trendRes, topRes] = await Promise.all([
+      const [newRes, bestRes, flashRes, catRes, trendRes, topRes, featRes] = await Promise.all([
         fetch(`${API_URL}/api/products?limit=12&status=ACTIVE&sortBy=createdAt&sortOrder=desc`),
         fetch(`${API_URL}/api/products?limit=12&status=ACTIVE&sort=bestseller`),
         fetch(`${API_URL}/api/products?limit=8&status=ACTIVE&flashSale=true`),
         fetch(`${API_URL}/api/categories`),
         fetch(`${API_URL}/api/recommendations/trending`).catch(() => null),
         fetch(`${API_URL}/api/recommendations/top-rated`).catch(() => null),
+        fetch(`${API_URL}/api/products?featured=true&limit=12&status=ACTIVE`).catch(() => null),
       ]);
 
       if (newRes.ok) {
@@ -154,6 +157,10 @@ export default function Home() {
       if (topRes?.ok) {
         const d = await topRes.json();
         setTopRated(d.products || []);
+      }
+      if (featRes?.ok) {
+        const d = await featRes.json();
+        setFeaturedProducts(d.products || []);
       }
     } catch (error) {
       console.error("Failed to load data:", error);
@@ -255,6 +262,44 @@ export default function Home() {
                     category={product.category || undefined}
                     inStock={product.stock !== 0}
                     badgeText={product.soldRecently ? `${product.soldRecently} sold` : undefined}
+                    isSponsored={product.isSponsored}
+                    shippingBadge={product.shippingBadge}
+                    onQuickView={setQuickViewSlug}
+                  />
+                </CarouselItem>
+              ))}
+            </ProductCarousel>
+          )}
+        </Section>
+      )}
+
+      {/* Featured Products Section */}
+      {(loading || featuredProducts.length > 0) && (
+        <Section title="" bgColor="gray">
+          <SectionHeader
+            icon={<Sparkles className="w-5 h-5" />}
+            title="Featured Products"
+            subtitle="Hand-picked by our team"
+          />
+          {loading ? (
+            <div className="grid-products">
+              {Array.from({ length: 4 }).map((_, i) => <ProductSkeleton key={i} />)}
+            </div>
+          ) : (
+            <ProductCarousel>
+              {featuredProducts.slice(0, 12).map((product) => (
+                <CarouselItem key={product.slug}>
+                  <ProductCard
+                    id={product.id}
+                    name={product.name}
+                    slug={product.slug}
+                    price={Number(product.price)}
+                    comparePrice={product.comparePrice ? Number(product.comparePrice) : undefined}
+                    rating={Number(product.rating)}
+                    imageUrl={product.imageUrl}
+                    category={product.category || undefined}
+                    inStock={product.stock !== 0}
+                    isSponsored={product.isSponsored}
                     shippingBadge={product.shippingBadge}
                     onQuickView={setQuickViewSlug}
                   />
@@ -425,6 +470,56 @@ export default function Home() {
               Subscribe for exclusive offers, new arrivals, and wellness tips.
             </p>
             <NewsletterSignup variant="hero" source="homepage" />
+          </div>
+        </AnimateOnScroll>
+      </Section>
+
+      {/* Sell on PleasureZone CTA */}
+      <Section>
+        <AnimateOnScroll variant="fadeUp">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary to-purple-600 p-8 sm:p-12 text-white">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2" />
+            <div className="relative z-10 grid md:grid-cols-2 gap-8 items-center">
+              <div>
+                <div className="inline-flex items-center gap-2 bg-white/15 rounded-full px-4 py-1.5 text-sm font-medium mb-4">
+                  <Store className="w-4 h-4" />
+                  Marketplace
+                </div>
+                <h2 className="text-3xl sm:text-4xl font-bold mb-4">Sell on PleasureZone</h2>
+                <p className="text-white/80 text-lg mb-6 leading-relaxed">
+                  Reach thousands of customers across Uganda and beyond. Low commission, fast payouts, and full seller dashboard.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <Link
+                    href="/seller/register"
+                    className="inline-flex items-center gap-2 bg-white text-primary font-semibold px-6 py-3 rounded-xl hover:bg-white/90 transition-colors"
+                  >
+                    Start Selling <ArrowRight className="w-4 h-4" />
+                  </Link>
+                  <Link
+                    href="/seller/login"
+                    className="inline-flex items-center gap-2 border border-white/30 text-white font-medium px-6 py-3 rounded-xl hover:bg-white/10 transition-colors"
+                  >
+                    Seller Login
+                  </Link>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { icon: DollarSign, title: "Low Fees", desc: "From 10% commission" },
+                  { icon: BarChart3, title: "Analytics", desc: "Track your sales" },
+                  { icon: Truck, title: "We Handle Shipping", desc: "Hassle-free delivery" },
+                  { icon: Users, title: "Growing Market", desc: "Thousands of buyers" },
+                ].map((item) => (
+                  <div key={item.title} className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                    <item.icon className="w-6 h-6 mb-2 text-white/90" />
+                    <p className="font-semibold text-sm">{item.title}</p>
+                    <p className="text-xs text-white/70">{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </AnimateOnScroll>
       </Section>

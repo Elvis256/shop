@@ -2,8 +2,14 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { authenticate, optionalAuth, AuthRequest, requireAdmin } from "../middleware/auth";
+import { uploadMultiple, validateUploadedFiles } from "../middleware/upload";
+import sharp from "sharp";
+import fs from "fs";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
 
 const router = Router();
+const REVIEW_UPLOAD_DIR = process.env.UPLOAD_DIR || "uploads";
 
 // GET /api/reviews/product/:productId
 router.get("/product/:productId", async (req: Request, res: Response) => {
@@ -178,6 +184,43 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to submit review" });
+  }
+});
+
+// POST /api/reviews/upload-image — Upload review images (authenticated)
+router.post("/upload-image", authenticate, uploadMultiple, validateUploadedFiles, async (req: AuthRequest, res: Response) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No images uploaded" });
+    }
+    if (files.length > 3) {
+      return res.status(400).json({ error: "Maximum 3 images allowed" });
+    }
+
+    const blur = req.query.blur === "true";
+    const urls: string[] = [];
+
+    for (const file of files) {
+      if (blur) {
+        // Apply privacy blur and re-save
+        const blurred = await sharp(path.join(REVIEW_UPLOAD_DIR, file.filename))
+          .blur(10)
+          .jpeg({ quality: 80 })
+          .toBuffer();
+
+        const blurredFilename = `blur-${uuidv4()}.jpg`;
+        await fs.promises.writeFile(path.join(REVIEW_UPLOAD_DIR, blurredFilename), blurred);
+        urls.push(`/uploads/${blurredFilename}`);
+      } else {
+        urls.push(`/uploads/${file.filename}`);
+      }
+    }
+
+    return res.status(201).json({ urls });
+  } catch (error) {
+    console.error("Review image upload error:", error);
+    return res.status(500).json({ error: "Failed to upload images" });
   }
 });
 

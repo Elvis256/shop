@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { Store, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Store, CheckCircle2, AlertTriangle, LogIn, UserPlus } from "lucide-react";
 
 export default function SellerRegister() {
   const router = useRouter();
@@ -22,12 +22,6 @@ export default function SellerRegister() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push("/auth/login");
-    }
-  }, [user, isLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +56,47 @@ export default function SellerRegister() {
     );
   }
 
-  if (!user) return null;
+  // Not logged in — show sign-up / login prompt instead of redirecting away
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 w-full max-w-md">
+          <div className="p-8 text-center">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Store className="w-8 h-8 text-primary" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Start Selling With Us</h1>
+            <p className="text-gray-600 mb-8">
+              To register as a vendor, you first need an account. Create one in under a minute, or sign in if you already have one.
+            </p>
+
+            <div className="space-y-3">
+              <Link
+                href="/auth/register?redirect=/seller/register"
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors"
+              >
+                <UserPlus className="w-5 h-5" />
+                Create Account & Become a Seller
+              </Link>
+              <Link
+                href="/auth/login?redirect=/seller/register"
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              >
+                <LogIn className="w-5 h-5" />
+                I Already Have an Account
+              </Link>
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-gray-100">
+              <Link href="/" className="text-sm text-gray-500 hover:text-primary transition-colors">
+                ← Back to Store
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (submitted) {
     return (
@@ -72,15 +106,29 @@ export default function SellerRegister() {
             <CheckCircle2 className="w-8 h-8 text-green-600" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Application Submitted!</h1>
-          <p className="text-gray-600 mb-6">
+          <p className="text-gray-600 mb-4">
             {"We'll review your application within 24-48 hours. You'll receive an email notification once approved."}
           </p>
-          <Link
-            href="/"
-            className="inline-flex px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
-            Back to Store
-          </Link>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+            <p className="text-blue-700 text-sm">
+              You can check your application status anytime by visiting the{" "}
+              <Link href="/seller" className="font-semibold underline">Seller Dashboard</Link>.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3">
+            <Link
+              href="/seller"
+              className="inline-flex justify-center px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+            >
+              Check Application Status
+            </Link>
+            <Link
+              href="/"
+              className="text-sm text-gray-500 hover:text-primary transition-colors"
+            >
+              ← Continue Shopping
+            </Link>
+          </div>
         </div>
       </div>
     );

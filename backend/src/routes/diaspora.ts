@@ -26,13 +26,20 @@ const DIASPORA_CURRENCIES = [
   { code: "CAD", symbol: "CA$", name: "Canadian Dollar", flag: "🇨🇦" },
 ];
 
-// Get UGX rate for a foreign currency from DB (fallback to hardcoded defaults)
+// Get UGX rate for a foreign currency (how many UGX per 1 foreign unit)
+// DB stores rates as "1 UGX = X foreign" so we need the inverse
 async function getUgxRate(currency: string): Promise<number> {
   try {
     const rate = await prisma.currency.findFirst({
       where: { code: currency.toUpperCase(), isActive: true },
     });
-    if (rate) return Number(rate.exchangeRate);
+    if (rate) {
+      const dbRate = Number(rate.exchangeRate);
+      // DB stores "1 UGX = 0.000267 USD" → we need "1 USD = 3745 UGX"
+      if (dbRate > 0 && dbRate < 1) return Math.round(1 / dbRate);
+      // If already stored as UGX per foreign (e.g. 3700), use directly
+      if (dbRate > 100) return dbRate;
+    }
   } catch {}
   const fallback: Record<string, number> = {
     USD: 3700, GBP: 4700, EUR: 4100, CAD: 2700,

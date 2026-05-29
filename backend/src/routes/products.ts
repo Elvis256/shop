@@ -7,7 +7,7 @@ const router = Router();
 // GET /api/products
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const { category, minPrice, maxPrice, sort, sortBy, sortOrder, status, limit = "20", page = "1", flashSale, search } = req.query;
+    const { category, minPrice, maxPrice, sort, sortBy, sortOrder, status, limit = "20", page = "1", flashSale, search, subscribable, onSale, featured } = req.query;
 
     const take = Math.min(parseInt(limit as string, 10) || 20, 100);
     const pageNum = Math.max(parseInt(page as string, 10) || 1, 1);
@@ -48,6 +48,8 @@ router.get("/", async (req: Request, res: Response) => {
 
     if (status) {
       where.status = status;
+    } else {
+      where.status = "ACTIVE";
     }
 
     if (search) {
@@ -60,6 +62,22 @@ router.get("/", async (req: Request, res: Response) => {
     if (flashSale === "true") {
       where.flashSalePrice = { not: null };
       where.flashSaleEndsAt = { gt: new Date() };
+    }
+
+    if (subscribable === "true") {
+      where.isSubscribable = true;
+    }
+
+    if (onSale === "true") {
+      where.OR = [
+        ...(where.OR || []),
+        { comparePrice: { not: null } },
+        { flashSalePrice: { not: null }, flashSaleEndsAt: { gt: new Date() } },
+      ];
+    }
+
+    if (featured === "true") {
+      where.featured = true;
     }
 
     if (minPrice || maxPrice) {
@@ -123,8 +141,44 @@ router.get("/", async (req: Request, res: Response) => {
       prisma.product.count({ where }),
     ]);
 
+    // Fetch active promotions for returned product IDs
+    const productIds = products.map((p) => p.id);
+    const activePromotions = productIds.length > 0 ? await prisma.productPromotion.findMany({
+      where: { productId: { in: productIds }, status: "ACTIVE" },
+      select: { productId: true, tier: true },
+    }) : [];
+    const promoMap = new Map(activePromotions.map((p) => [p.productId, p.tier]));
+
+    // On page 1: fetch up to 3 VIP-promoted products not already in results
+    let vipInserts: typeof products = [];
+    if (pageNum === 1 && !flashSale) {
+      const existingIds = new Set(productIds);
+      const vipPromos = await prisma.productPromotion.findMany({
+        where: { status: "ACTIVE", tier: "VIP", productId: { notIn: Array.from(existingIds) } },
+        take: 3,
+        include: { product: { include: { category: { select: { name: true, slug: true } }, images: { take: 1, orderBy: { position: "asc" } } } } },
+      });
+      vipInserts = vipPromos
+        .filter((vp) => vp.product.status === "ACTIVE")
+        .map((vp) => vp.product);
+      for (const vp of vipInserts) {
+        promoMap.set(vp.id, "VIP");
+      }
+    }
+
+    // Merge and sort: VIP first → PREMIUM → BASIC → regular
+    const tierOrder = { VIP: 0, PREMIUM: 1, BASIC: 2 };
+    const allProducts = [...vipInserts, ...products];
+    allProducts.sort((a, b) => {
+      const aTier = promoMap.get(a.id);
+      const bTier = promoMap.get(b.id);
+      const aOrder = aTier ? tierOrder[aTier as keyof typeof tierOrder] ?? 3 : 3;
+      const bOrder = bTier ? tierOrder[bTier as keyof typeof tierOrder] ?? 3 : 3;
+      return aOrder - bOrder;
+    });
+
     const responseBody = {
-      products: products.map((p) => ({
+      products: allProducts.map((p) => ({
         id: p.id,
         name: p.name,
         slug: p.slug,
@@ -142,7 +196,11 @@ router.get("/", async (req: Request, res: Response) => {
         shippingBadge: (p.cjProductId || p.aliexpressProductId) ? "From Abroad" : "Express",
         flashSalePrice: p.flashSalePrice ? Number(p.flashSalePrice) : null,
         flashSaleEndsAt: p.flashSaleEndsAt?.toISOString() || null,
+        isSubscribable: p.isSubscribable || false,
+        subscriptionDiscount: p.subscriptionDiscount || 0,
         createdAt: p.createdAt.toISOString(),
+        isSponsored: promoMap.has(p.id),
+        promotionTier: promoMap.get(p.id) || null,
       })),
       pagination: {
         total,

@@ -63,6 +63,7 @@ import dailyDealRoutes from "./routes/dailyDeal";
 import socialRoutes from "./routes/social";
 import sellerRoutes from "./routes/seller";
 import sellerAuthRoutes from "./routes/sellerAuth";
+import chatRoutes from "./routes/chat";
 import developerApiRoutes from "./routes/developerApi";
 import registryRoutes from "./routes/registry";
 import giftOrderRoutes from "./routes/giftOrder";
@@ -74,6 +75,8 @@ import ussdRoutes from "./routes/ussd";
 import diasporaRoutes from "./routes/diaspora";
 import countryConfigRoutes from "./routes/countryConfig";
 import localCourierRoutes from "./routes/localCourier";
+import priceDropAlertsRoutes from "./routes/priceDropAlerts";
+import sellerAdsRoutes from "./routes/sellerAds";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -96,6 +99,9 @@ import adminSocialRoutes from "./routes/adminSocial";
 import adminApiKeys from "./routes/admin/apiKeys";
 import adminSellers from "./routes/admin/sellers";
 import adminPermissions from "./routes/admin/permissions";
+import adminProductModeration from "./routes/admin/productModeration";
+import adminMessages from "./routes/admin/messages";
+import adminAds from "./routes/admin/ads";
 import settingsRoutes from "./routes/settings";
 
 // Middleware
@@ -215,7 +221,9 @@ app.use("/api/webhooks/endpoints", webhookEndpointsRoutes);
 app.use("/api/daily-deal", dailyDealRoutes);
 app.use("/api/social", socialRoutes);
 app.use("/api/seller/auth", sellerAuthRoutes);
+app.use("/api/seller/ads", sellerAdsRoutes);
 app.use("/api/seller", sellerRoutes);
+app.use("/api/chat", chatRoutes);
 app.use("/api/registry", registryRoutes);
 app.use("/api/gift", giftOrderRoutes);
 app.use("/api/advisor", advisorRoutes);
@@ -228,6 +236,7 @@ app.use("/api/diaspora/webhook", express.raw({ type: "application/json" }));
 app.use("/api/diaspora", diasporaRoutes);
 app.use("/api/country-config", countryConfigRoutes);
 app.use("/api/courier", localCourierRoutes);
+app.use("/api/price-alerts", priceDropAlertsRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);
@@ -250,6 +259,9 @@ app.use("/api/admin/social", adminSocialRoutes);
 app.use("/api/admin/api-keys", adminApiKeys);
 app.use("/api/admin/sellers", adminSellers);
 app.use("/api/admin/permissions", adminPermissions);
+app.use("/api/admin/product-moderation", adminProductModeration);
+app.use("/api/admin/messages", adminMessages);
+app.use("/api/admin/ads", adminAds);
 app.use("/api/settings", settingsRoutes);
 
 // Health check endpoints — comprehensive monitoring
@@ -283,6 +295,9 @@ const server = app.listen(Number(PORT), "0.0.0.0", () => {
   startJob("review_requests", import("./services/reviewRequests"), "startReviewRequestJob");
   startJob("restock_reminders", import("./services/restockReminder"), "startRestockReminderJob");
   startJob("subscription_boxes", import("./services/subscriptionBoxes"), "startSubscriptionBoxJob");
+  startJob("smart_reorder", import("./services/smartReorder"), "startSmartReorderJob");
+  startJob("seller_tiers", import("./scripts/evaluateSellerTiers"), "startSellerTierJob");
+  startJob("ad_billing", import("./services/adBilling"), "startAdBillingJob");
 
   // Private order history cleanup — runs daily
   setInterval(async () => {
@@ -301,6 +316,31 @@ const server = app.listen(Number(PORT), "0.0.0.0", () => {
       }
     } catch (err: any) {
       logger.error("order_history_cleanup_failed", { error: err.message });
+    }
+  }, 24 * 60 * 60 * 1000);
+
+  // Guest data auto-delete cleanup — runs daily
+  setInterval(async () => {
+    try {
+      const result = await prisma.order.updateMany({
+        where: {
+          guestDataExpiresAt: { lt: new Date() },
+          userId: null,
+          status: { in: ["DELIVERED", "CANCELLED"] },
+          customerName: { not: "Guest" },
+        },
+        data: {
+          customerName: "Guest",
+          customerEmail: "deleted",
+          customerPhone: "deleted",
+          shippingAddress: "{}",
+        },
+      });
+      if (result.count > 0) {
+        logger.info("guest_data_cleanup", { anonymized: result.count });
+      }
+    } catch (err: any) {
+      logger.error("guest_data_cleanup_failed", { error: err.message });
     }
   }, 24 * 60 * 60 * 1000);
 

@@ -58,6 +58,7 @@ export default function AdminPayoutsPage() {
   const [processRef, setProcessRef] = useState("");
   const [processNotes, setProcessNotes] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [autoDisburse, setAutoDisburse] = useState(false);
 
   useEffect(() => {
     loadPayouts();
@@ -86,6 +87,7 @@ export default function AdminPayoutsPage() {
       const body: any = { status: processAction };
       if (processAction === "COMPLETED" && processRef) body.reference = processRef;
       if (processNotes) body.notes = processNotes;
+      if (autoDisburse && processAction === "COMPLETED") body.autoDisburse = true;
       await apiFetch(`/api/admin/sellers/payouts/${processPayout.id}`, {
         method: "PUT",
         body: JSON.stringify(body),
@@ -105,6 +107,7 @@ export default function AdminPayoutsPage() {
     setProcessAction("COMPLETED");
     setProcessRef("");
     setProcessNotes("");
+    setAutoDisburse(false);
   };
 
   const statCards = [
@@ -307,16 +310,34 @@ export default function AdminPayoutsPage() {
               </div>
 
               {processAction === "COMPLETED" && (
-                <div>
-                  <label className="text-sm text-gray-700 block mb-1">Reference Number</label>
-                  <input
-                    type="text"
-                    value={processRef}
-                    onChange={(e) => setProcessRef(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    placeholder="Transaction reference..."
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="text-sm text-gray-700 block mb-1">Reference Number</label>
+                    <input
+                      type="text"
+                      value={processRef}
+                      onChange={(e) => setProcessRef(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      placeholder="Transaction reference..."
+                      disabled={autoDisburse}
+                    />
+                  </div>
+
+                  {processPayout && (processPayout.method === "MOBILE_MONEY" || processPayout.method === "BANK_TRANSFER" || processPayout.method === "FLUTTERWAVE") && processPayout.status === "PENDING" && (
+                    <label className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoDisburse}
+                        onChange={(e) => setAutoDisburse(e.target.checked)}
+                        className="w-4 h-4 rounded text-primary"
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-blue-800">Disburse via Flutterwave</p>
+                        <p className="text-xs text-blue-600">Automatically send funds to seller&apos;s account</p>
+                      </div>
+                    </label>
+                  )}
+                </>
               )}
 
               <div>

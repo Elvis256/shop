@@ -1,6 +1,9 @@
 import { Router, Response } from "express";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { createFlutterwaveTransfer } from "../../services/flutterwave";
+import { sendEmail } from "../../lib/email";
+import { logActivity } from "../../lib/activityLogger";
 
 const router = Router();
 
@@ -35,7 +38,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         orderBy: { createdAt: "desc" },
         include: {
           user: { select: { id: true, email: true, name: true } },
-          _count: { select: { products: true, orderItems: true } },
+          _count: { select: { products: true, orderItems: true, warnings: true } },
         },
       }),
       prisma.seller.count({ where }),
@@ -51,6 +54,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       balance: Number(s.balance),
       productCount: s._count.products,
       orderCount: s._count.orderItems,
+      warningCount: s._count.warnings,
     }));
 
     return res.json({
@@ -254,7 +258,7 @@ router.get("/payouts", async (req: AuthRequest, res: Response) => {
 // PUT /payouts/:id — Process a payout
 router.put("/payouts/:id", async (req: AuthRequest, res: Response) => {
   try {
-    const { status, reference, notes } = req.body;
+    const { status, reference, notes, autoDisburse } = req.body;
 
     if (!status || !["PROCESSING", "COMPLETED", "FAILED", "REJECTED"].includes(status)) {
       return res.status(400).json({ error: "Valid status is required" });
@@ -262,6 +266,14 @@ router.put("/payouts/:id", async (req: AuthRequest, res: Response) => {
 
     const payout = await prisma.sellerPayout.findUnique({
       where: { id: req.params.id },
+      include: {
+        seller: {
+          select: {
+            id: true, storeName: true, payoutMethod: true,
+            payoutPhone: true, bankName: true, bankAccount: true,
+          },
+        },
+      },
     });
     if (!payout) {
       return res.status(404).json({ error: "Payout not found" });
@@ -282,6 +294,45 @@ router.put("/payouts/:id", async (req: AuthRequest, res: Response) => {
         where: { id: payout.sellerId },
         data: { balance: { increment: Number(payout.amount) } },
       });
+    }
+
+    // Auto-disburse via Flutterwave
+    if (autoDisburse && payout.status === "PENDING" && payout.seller) {
+      const seller = payout.seller;
+      let accountBank = "";
+      let accountNumber = "";
+
+      if (seller.payoutMethod === "MOBILE_MONEY" || seller.payoutMethod === "FLUTTERWAVE") {
+        // MTN Uganda = "MPS", Airtel Uganda = "AIR"
+        accountBank = "MPS"; // Default to MTN; could be enhanced with network field
+        accountNumber = seller.payoutPhone || "";
+      } else if (seller.payoutMethod === "BANK_TRANSFER") {
+        accountBank = seller.bankName || "";
+        accountNumber = seller.bankAccount || "";
+      }
+
+      if (accountNumber) {
+        try {
+          const transferResult = await createFlutterwaveTransfer({
+            reference: `payout-${payout.id}`,
+            amount: Number(payout.amount),
+            narration: `Seller payout to ${seller.storeName}`,
+            beneficiary: {
+              account_bank: accountBank,
+              account_number: accountNumber,
+              beneficiary_name: seller.storeName,
+            },
+          });
+
+          data.status = "PROCESSING";
+          data.reference = `payout-${payout.id}`;
+          data.notes = `Flutterwave transfer initiated. Transfer ID: ${transferResult.data?.id || "pending"}`;
+        } catch (err: any) {
+          return res.status(500).json({ error: `Flutterwave transfer failed: ${err.message}` });
+        }
+      } else {
+        return res.status(400).json({ error: "Seller has no payout account configured" });
+      }
     }
 
     const updated = await prisma.sellerPayout.update({
@@ -306,7 +357,8 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       where: { id: req.params.id },
       include: {
         user: { select: { id: true, email: true, name: true, createdAt: true } },
-        _count: { select: { products: true, orderItems: true, payouts: true, reviews: true } },
+        _count: { select: { products: true, orderItems: true, payouts: true, reviews: true, warnings: true } },
+        warnings: { orderBy: { createdAt: "desc" }, take: 20 },
       },
     });
 
@@ -314,24 +366,33 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "Seller not found" });
     }
 
-    const recentProducts = await prisma.product.findMany({
-      where: { sellerId: seller.id },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        price: true,
-        status: true,
-        stock: true,
-        createdAt: true,
-      },
-    });
+    const [recentProducts, activityLog] = await Promise.all([
+      prisma.product.findMany({
+        where: { sellerId: seller.id },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          price: true,
+          status: true,
+          stock: true,
+          createdAt: true,
+        },
+      }),
+      prisma.activityLog.findMany({
+        where: { entityType: "Seller", entityId: seller.id },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, action: true, description: true, createdAt: true },
+      }),
+    ]);
 
     return res.json({
       seller,
       recentProducts,
+      activityLog,
     });
   } catch (error) {
     console.error("Get seller error:", error);
@@ -378,6 +439,33 @@ router.put("/:id/status", async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Send email notification on approval or rejection
+    const sellerEmail = seller.email || (await prisma.user.findUnique({ where: { id: seller.userId }, select: { email: true } }))?.email;
+    if (sellerEmail) {
+      if (status === "APPROVED") {
+        sendEmail({
+          to: sellerEmail,
+          template: "seller-approved",
+          data: { storeName: seller.storeName },
+        }).catch(() => {});
+      } else if (status === "REJECTED") {
+        sendEmail({
+          to: sellerEmail,
+          template: "seller-rejected",
+          data: { storeName: seller.storeName, rejectionNote: rejectionNote?.trim() || null },
+        }).catch(() => {});
+      }
+    }
+
+    logActivity({
+      userId: req.user!.id,
+      action: "STATUS_CHANGE",
+      entityType: "Seller",
+      entityId: seller.id,
+      description: `Changed seller "${seller.storeName}" status from ${seller.status} to ${status}`,
+      metadata: { from: seller.status, to: status },
+    });
+
     return res.json({ seller: updated });
   } catch (error) {
     console.error("Update seller status error:", error);
@@ -413,10 +501,209 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       data,
     });
 
+    logActivity({
+      userId: req.user!.id,
+      action: "UPDATE_SETTINGS",
+      entityType: "Seller",
+      entityId: seller.id,
+      description: `Updated settings for seller "${seller.storeName}"`,
+      metadata: data,
+    });
+
     return res.json({ seller: updated });
   } catch (error) {
     console.error("Update seller settings error:", error);
     return res.status(500).json({ error: "Failed to update seller settings" });
+  }
+});
+
+// ============ WARNINGS ============
+
+// GET /:sellerId/warnings — List seller warnings
+router.get("/:sellerId/warnings", async (req: AuthRequest, res: Response) => {
+  try {
+    const warnings = await prisma.sellerWarning.findMany({
+      where: { sellerId: req.params.sellerId },
+      orderBy: { createdAt: "desc" },
+    });
+    return res.json({ warnings });
+  } catch (error) {
+    console.error("List warnings error:", error);
+    return res.status(500).json({ error: "Failed to load warnings" });
+  }
+});
+
+// POST /:sellerId/warnings — Issue warning
+router.post("/:sellerId/warnings", async (req: AuthRequest, res: Response) => {
+  try {
+    const { reason } = req.body;
+    if (!reason || typeof reason !== "string" || !reason.trim()) {
+      return res.status(400).json({ error: "Reason is required" });
+    }
+
+    const seller = await prisma.seller.findUnique({
+      where: { id: req.params.sellerId },
+    });
+    if (!seller) {
+      return res.status(404).json({ error: "Seller not found" });
+    }
+
+    // Count active warnings (not expired)
+    const activeWarnings = await prisma.sellerWarning.count({
+      where: {
+        sellerId: seller.id,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+    });
+
+    // Auto-determine type
+    let type: "WARNING" | "STRIKE" | "FINAL_WARNING" = "WARNING";
+    if (activeWarnings >= 2) type = "FINAL_WARNING";
+    else if (activeWarnings >= 1) type = "STRIKE";
+
+    // 3+ active: auto-suspend
+    if (activeWarnings >= 3) {
+      await prisma.seller.update({
+        where: { id: seller.id },
+        data: { status: "SUSPENDED" },
+      });
+      await prisma.product.updateMany({
+        where: { sellerId: seller.id, status: "ACTIVE" },
+        data: { status: "DRAFT" },
+      });
+
+      logActivity({
+        userId: req.user!.id,
+        action: "AUTO_SUSPENDED",
+        entityType: "Seller",
+        entityId: seller.id,
+        description: `Auto-suspended seller "${seller.storeName}" after ${activeWarnings + 1} warnings`,
+      });
+    }
+
+    const warning = await prisma.sellerWarning.create({
+      data: {
+        sellerId: seller.id,
+        type,
+        reason: reason.trim(),
+        issuedBy: req.user!.id,
+      },
+    });
+
+    logActivity({
+      userId: req.user!.id,
+      action: "WARNING_ISSUED",
+      entityType: "Seller",
+      entityId: seller.id,
+      description: `Issued ${type} to seller "${seller.storeName}": ${reason.trim()}`,
+    });
+
+    // Send email
+    const sellerEmail = seller.email || (await prisma.user.findUnique({ where: { id: seller.userId }, select: { email: true } }))?.email;
+    if (sellerEmail) {
+      sendEmail({
+        to: sellerEmail,
+        template: "seller-warning",
+        data: { storeName: seller.storeName, type, reason: reason.trim(), activeCount: activeWarnings + 1 },
+      }).catch(() => {});
+    }
+
+    return res.status(201).json({ warning, autoSuspended: activeWarnings >= 3 });
+  } catch (error) {
+    console.error("Issue warning error:", error);
+    return res.status(500).json({ error: "Failed to issue warning" });
+  }
+});
+
+// DELETE /:sellerId/warnings/:id — Expire a warning
+router.delete("/:sellerId/warnings/:id", async (req: AuthRequest, res: Response) => {
+  try {
+    const warning = await prisma.sellerWarning.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!warning || warning.sellerId !== req.params.sellerId) {
+      return res.status(404).json({ error: "Warning not found" });
+    }
+
+    const updated = await prisma.sellerWarning.update({
+      where: { id: req.params.id },
+      data: { expiresAt: new Date() },
+    });
+
+    return res.json({ warning: updated });
+  } catch (error) {
+    console.error("Expire warning error:", error);
+    return res.status(500).json({ error: "Failed to expire warning" });
+  }
+});
+
+// ============ SCORECARD ============
+
+// GET /:id/scorecard — Performance scorecard
+router.get("/:id/scorecard", async (req: AuthRequest, res: Response) => {
+  try {
+    const seller = await prisma.seller.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, rating: true },
+    });
+    if (!seller) {
+      return res.status(404).json({ error: "Seller not found" });
+    }
+
+    const [totalItems, shippedDelivered, returnCount, avgResponseTime] = await Promise.all([
+      prisma.orderItem.count({ where: { sellerId: seller.id } }),
+      prisma.orderItem.count({
+        where: {
+          sellerId: seller.id,
+          order: { status: { in: ["SHIPPED", "DELIVERED"] } },
+        },
+      }),
+      prisma.returnRequest.count({
+        where: { order: { items: { some: { sellerId: seller.id } } } },
+      }),
+      // Average response time: get seller conversations with messages
+      prisma.$queryRawUnsafe<{ avg_minutes: number }[]>(`
+        SELECT COALESCE(AVG(response_minutes), 0) as avg_minutes FROM (
+          SELECT EXTRACT(EPOCH FROM (
+            (SELECT MIN(cm2."createdAt") FROM "ChatMessage" cm2
+             WHERE cm2."conversationId" = cm."conversationId"
+             AND cm2."senderType" = 'SELLER'
+             AND cm2."createdAt" > cm."createdAt")
+            - cm."createdAt"
+          )) / 60 as response_minutes
+          FROM "ChatMessage" cm
+          JOIN "Conversation" c ON c.id = cm."conversationId"
+          WHERE c."sellerId" = $1
+          AND cm."senderType" = 'BUYER'
+          LIMIT 100
+        ) sub
+        WHERE response_minutes IS NOT NULL AND response_minutes > 0
+      `, seller.id),
+    ]);
+
+    const fulfillmentRate = totalItems > 0 ? Math.round((shippedDelivered / totalItems) * 100) : 100;
+    const returnRate = totalItems > 0 ? Math.round((returnCount / totalItems) * 100) : 0;
+    const customerRating = Number(seller.rating);
+    const responseTimeMinutes = Math.round(avgResponseTime[0]?.avg_minutes || 0);
+
+    const flags: string[] = [];
+    if (fulfillmentRate < 80) flags.push("Low fulfillment rate");
+    if (customerRating < 3.0) flags.push("Low customer rating");
+    if (returnRate > 10) flags.push("High return rate");
+
+    return res.json({
+      scorecard: {
+        fulfillmentRate,
+        returnRate,
+        customerRating,
+        responseTimeMinutes,
+        totalOrders: totalItems,
+        flags,
+      },
+    });
+  } catch (error) {
+    console.error("Scorecard error:", error);
+    return res.status(500).json({ error: "Failed to load scorecard" });
   }
 });
 

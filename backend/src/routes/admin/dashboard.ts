@@ -121,6 +121,80 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       };
     });
 
+    // ── Revenue breakdown: Direct sales vs Marketplace commissions ──
+    const [
+      directSalesRevenue,
+      directSalesThisMonth,
+      totalCommissions,
+      commissionsThisMonth,
+      pendingPayouts,
+      activeVendors,
+      pendingVendors,
+      vendorProductCount,
+    ] = await Promise.all([
+      // Direct sales: OrderItems with no sellerId, from paid orders
+      prisma.orderItem.aggregate({
+        where: { sellerId: null, order: { paymentStatus: "SUCCESSFUL" } },
+        _sum: { price: true },
+      }),
+      // Direct sales this month
+      prisma.orderItem.aggregate({
+        where: {
+          sellerId: null,
+          order: { paymentStatus: "SUCCESSFUL", createdAt: { gte: startOfMonth } },
+        },
+        _sum: { price: true },
+      }),
+      // Total commissions earned from vendors (all time)
+      prisma.orderItem.aggregate({
+        where: { sellerId: { not: null }, commission: { not: null } },
+        _sum: { commission: true, price: true },
+      }),
+      // Commissions this month
+      prisma.orderItem.aggregate({
+        where: {
+          sellerId: { not: null },
+          commission: { not: null },
+          order: { createdAt: { gte: startOfMonth } },
+        },
+        _sum: { commission: true, price: true },
+      }),
+      // Pending vendor payouts
+      prisma.sellerPayout.aggregate({
+        where: { status: { in: ["PENDING", "PROCESSING"] } },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      // Active vendors
+      prisma.seller.count({ where: { status: "APPROVED" } }),
+      // Pending vendor applications
+      prisma.seller.count({ where: { status: "PENDING" } }),
+      // Vendor product count
+      prisma.product.count({ where: { sellerId: { not: null }, status: "ACTIVE" } }),
+    ]);
+
+    // Calculate direct revenue (price * quantity for items without seller)
+    // Note: aggregate _sum.price gives sum of unit prices, we need quantity-weighted
+    const directItemsAll = await prisma.orderItem.findMany({
+      where: { sellerId: null, order: { paymentStatus: "SUCCESSFUL" } },
+      select: { price: true, quantity: true },
+    });
+    const directRevenueTotal = directItemsAll.reduce((s, i) => s + Number(i.price) * i.quantity, 0);
+
+    const directItemsMonth = await prisma.orderItem.findMany({
+      where: {
+        sellerId: null,
+        order: { paymentStatus: "SUCCESSFUL", createdAt: { gte: startOfMonth } },
+      },
+      select: { price: true, quantity: true },
+    });
+    const directRevenueMonth = directItemsMonth.reduce((s, i) => s + Number(i.price) * i.quantity, 0);
+
+    const totalCommissionAmount = Number(totalCommissions._sum.commission || 0);
+    const monthCommissionAmount = Number(commissionsThisMonth._sum.commission || 0);
+    const vendorGrossSalesTotal = Number(totalCommissions._sum.price || 0);
+    const vendorGrossSalesMonth = Number(commissionsThisMonth._sum.price || 0);
+
     // Dropshipping stats
     const [cjProducts, aeProducts, localProducts, productsByCategory] = await Promise.all([
       prisma.product.count({ where: { cjProductId: { not: null }, status: "ACTIVE" } }),
@@ -189,6 +263,18 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       }, {} as Record<string, number>),
       recentOrders,
       topProducts: topProductsWithDetails,
+      marketplace: {
+        directRevenue: { total: directRevenueTotal, thisMonth: directRevenueMonth },
+        commissionRevenue: { total: totalCommissionAmount, thisMonth: monthCommissionAmount },
+        vendorGrossSales: { total: vendorGrossSalesTotal, thisMonth: vendorGrossSalesMonth },
+        platformRevenue: {
+          total: directRevenueTotal + totalCommissionAmount,
+          thisMonth: directRevenueMonth + monthCommissionAmount,
+        },
+        pendingPayouts: { amount: Number(pendingPayouts._sum.amount || 0), count: pendingPayouts._count || 0 },
+        vendors: { active: activeVendors, pending: pendingVendors },
+        vendorProducts: vendorProductCount,
+      },
     });
   } catch (error) {
     console.error("Dashboard error:", error);

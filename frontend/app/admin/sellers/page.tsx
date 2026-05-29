@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { useRouter } from "next/navigation";
 import {
   Search,
   ChevronLeft,
@@ -17,6 +18,10 @@ import {
   XCircle,
   AlertTriangle,
   Loader2,
+  MessageSquare,
+  ShieldAlert,
+  Activity,
+  TrendingUp,
 } from "lucide-react";
 
 interface Seller {
@@ -35,6 +40,7 @@ interface Seller {
   productCount: number;
   orderCount: number;
   totalEarnings: number;
+  warningCount: number;
   verificationDocs?: string[];
   bankName?: string;
   bankAccount?: string;
@@ -60,6 +66,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function AdminSellersPage() {
+  const router = useRouter();
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [stats, setStats] = useState<Stats>({ totalSellers: 0, pendingApproval: 0, activeSellers: 0, totalCommissions: 0 });
   const [loading, setLoading] = useState(true);
@@ -73,6 +80,17 @@ export default function AdminSellersPage() {
   const [editCommission, setEditCommission] = useState("");
   const [editAutoApprove, setEditAutoApprove] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Warnings
+  const [warnings, setWarnings] = useState<any[]>([]);
+  const [warningReason, setWarningReason] = useState("");
+  const [issuingWarning, setIssuingWarning] = useState(false);
+
+  // Scorecard
+  const [scorecard, setScorecard] = useState<any>(null);
+
+  // Activity
+  const [activityLog, setActivityLog] = useState<any[]>([]);
 
   // Action modal
   const [actionModal, setActionModal] = useState<{ seller: Seller; action: "APPROVED" | "SUSPENDED" | "REJECTED" } | null>(null);
@@ -145,10 +163,58 @@ export default function AdminSellersPage() {
     }
   };
 
-  const openDetail = (seller: Seller) => {
+  const openDetail = async (seller: Seller) => {
     setSelectedSeller(seller);
     setEditCommission(String(seller.commissionRate || ""));
     setEditAutoApprove(seller.autoApproveProducts || false);
+    setWarnings([]);
+    setScorecard(null);
+    setActivityLog([]);
+    setWarningReason("");
+
+    // Fetch detail data in parallel
+    try {
+      const detail = await apiFetch(`/api/admin/sellers/${seller.id}`);
+      if (detail.seller?.warnings) setWarnings(detail.seller.warnings);
+      if (detail.activityLog) setActivityLog(detail.activityLog);
+    } catch {}
+
+    apiFetch(`/api/admin/sellers/${seller.id}/scorecard`)
+      .then((data) => setScorecard(data.scorecard))
+      .catch(() => {});
+  };
+
+  const issueWarning = async () => {
+    if (!selectedSeller || !warningReason.trim()) return;
+    setIssuingWarning(true);
+    try {
+      const data = await apiFetch(`/api/admin/sellers/${selectedSeller.id}/warnings`, {
+        method: "POST",
+        body: JSON.stringify({ reason: warningReason.trim() }),
+      });
+      setWarningReason("");
+      // Refresh warnings
+      const detail = await apiFetch(`/api/admin/sellers/${selectedSeller.id}`);
+      if (detail.seller?.warnings) setWarnings(detail.seller.warnings);
+      if (detail.activityLog) setActivityLog(detail.activityLog);
+      if (data.autoSuspended) {
+        loadSellers();
+        loadStats();
+      }
+    } catch {
+      alert("Failed to issue warning");
+    } finally {
+      setIssuingWarning(false);
+    }
+  };
+
+  const expireWarning = async (warningId: string) => {
+    if (!selectedSeller) return;
+    try {
+      await apiFetch(`/api/admin/sellers/${selectedSeller.id}/warnings/${warningId}`, { method: "DELETE" });
+      const detail = await apiFetch(`/api/admin/sellers/${selectedSeller.id}`);
+      if (detail.seller?.warnings) setWarnings(detail.seller.warnings);
+    } catch {}
   };
 
   const statCards = [
@@ -255,6 +321,11 @@ export default function AdminSellersPage() {
                           </div>
                         )}
                         <span className="font-medium text-gray-900">{seller.storeName}</span>
+                        {seller.warningCount > 0 && (
+                          <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] font-medium text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">
+                            <ShieldAlert className="w-3 h-3" /> {seller.warningCount}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600">{seller.email}</td>
@@ -520,6 +591,139 @@ export default function AdminSellersPage() {
                   <p className="text-sm text-red-700">{selectedSeller.rejectionNote}</p>
                 </div>
               )}
+
+              {/* Message Seller Button */}
+              <button
+                onClick={() => router.push(`/admin/messages?seller=${selectedSeller.id}`)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm"
+              >
+                <MessageSquare className="w-4 h-4" /> Message Seller
+              </button>
+
+              {/* Performance Scorecard */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4" /> Performance Scorecard
+                </h3>
+                {scorecard ? (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className={`rounded-lg p-3 text-center ${scorecard.fulfillmentRate < 80 ? "bg-red-50 border border-red-200" : "bg-green-50"}`}>
+                        <p className="text-xs text-gray-500">Fulfillment</p>
+                        <p className={`text-lg font-bold ${scorecard.fulfillmentRate < 80 ? "text-red-600" : "text-green-600"}`}>{scorecard.fulfillmentRate}%</p>
+                      </div>
+                      <div className={`rounded-lg p-3 text-center ${scorecard.returnRate > 10 ? "bg-red-50 border border-red-200" : "bg-green-50"}`}>
+                        <p className="text-xs text-gray-500">Return Rate</p>
+                        <p className={`text-lg font-bold ${scorecard.returnRate > 10 ? "text-red-600" : "text-green-600"}`}>{scorecard.returnRate}%</p>
+                      </div>
+                      <div className={`rounded-lg p-3 text-center ${scorecard.customerRating < 3.0 ? "bg-red-50 border border-red-200" : "bg-green-50"}`}>
+                        <p className="text-xs text-gray-500">Rating</p>
+                        <p className={`text-lg font-bold ${scorecard.customerRating < 3.0 ? "text-red-600" : "text-green-600"}`}>{scorecard.customerRating.toFixed(1)}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-gray-500">Avg Response</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {scorecard.responseTimeMinutes < 60 ? `${scorecard.responseTimeMinutes}m` : `${Math.round(scorecard.responseTimeMinutes / 60)}h`}
+                        </p>
+                      </div>
+                    </div>
+                    {scorecard.flags?.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {scorecard.flags.map((flag: string, i: number) => (
+                          <p key={i} className="text-xs text-red-600 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" /> {flag}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-4 text-gray-400 text-sm">Loading scorecard...</div>
+                )}
+              </div>
+
+              {/* Warnings & Strikes */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4" /> Warnings & Strikes
+                  {warnings.length > 0 && (
+                    <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{warnings.filter((w: any) => !w.expiresAt || new Date(w.expiresAt) > new Date()).length} active</span>
+                  )}
+                </h3>
+
+                {/* Issue Warning */}
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={warningReason}
+                    onChange={(e) => setWarningReason(e.target.value)}
+                    placeholder="Reason for warning..."
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                  />
+                  <button
+                    onClick={issueWarning}
+                    disabled={issuingWarning || !warningReason.trim()}
+                    className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {issuingWarning ? "..." : "Issue Warning"}
+                  </button>
+                </div>
+
+                {/* Warning List */}
+                {warnings.length > 0 ? (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {warnings.map((w: any) => {
+                      const isExpired = w.expiresAt && new Date(w.expiresAt) <= new Date();
+                      return (
+                        <div key={w.id} className={`flex items-start gap-3 p-3 rounded-lg border text-sm ${isExpired ? "bg-gray-50 border-gray-200 opacity-60" : "bg-red-50 border-red-200"}`}>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+                                w.type === "FINAL_WARNING" ? "bg-red-600 text-white" :
+                                w.type === "STRIKE" ? "bg-orange-500 text-white" :
+                                "bg-yellow-500 text-white"
+                              }`}>{w.type.replace("_", " ")}</span>
+                              {isExpired && <span className="text-xs text-gray-500">Expired</span>}
+                              {w.acknowledgedAt && <span className="text-xs text-green-600">Acknowledged</span>}
+                            </div>
+                            <p className="text-gray-700 mt-1">{w.reason}</p>
+                            <p className="text-xs text-gray-400 mt-1">{new Date(w.createdAt).toLocaleDateString()}</p>
+                          </div>
+                          {!isExpired && (
+                            <button onClick={() => expireWarning(w.id)} className="text-xs text-gray-500 hover:text-red-600 whitespace-nowrap">
+                              Expire
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">No warnings issued</p>
+                )}
+              </div>
+
+              {/* Activity Timeline */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <Activity className="w-4 h-4" /> Activity Timeline
+                </h3>
+                {activityLog.length > 0 ? (
+                  <div className="space-y-3 max-h-60 overflow-y-auto pl-4 border-l-2 border-gray-200">
+                    {activityLog.map((entry: any) => (
+                      <div key={entry.id} className="relative">
+                        <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-gray-400 border-2 border-white" />
+                        <p className="text-sm text-gray-700">{entry.description}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {new Date(entry.createdAt).toLocaleDateString()} {new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">No activity recorded</p>
+                )}
+              </div>
             </div>
           </div>
         </div>

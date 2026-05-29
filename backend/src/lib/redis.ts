@@ -26,4 +26,9 @@ redis.on("error", (err) => {
   }
 });
 
+// Eagerly connect since lazyConnect is true
+redis.connect().catch((err) => {
+  console.warn("[Redis] Initial connection failed:", err.message, "— app continues without cache");
+});
+
 export default redis;

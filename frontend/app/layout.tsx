@@ -9,6 +9,7 @@ import { ToastProvider } from "@/lib/hooks/useToast";
 import { WishlistProvider } from "@/lib/hooks/useWishlist";
 import { ThemeProvider } from "@/lib/hooks/useTheme";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
+import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorker";
 import OrganizationSchema from "@/components/schemas/OrganizationSchema";
@@ -100,6 +101,7 @@ export default function RootLayout({
         <ServiceWorkerRegistration />
         <OrganizationSchema />
         <ThemeProvider>
+        <LanguageProvider>
         <ToastProvider>
           <AuthProvider>
             <CurrencyProvider>
@@ -114,6 +116,7 @@ export default function RootLayout({
             </CurrencyProvider>
           </AuthProvider>
         </ToastProvider>
+        </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>

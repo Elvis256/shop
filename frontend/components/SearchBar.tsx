@@ -31,7 +31,12 @@ interface Suggestions {
   popular: string[];
 }
 
-export default function SearchBar() {
+interface SearchBarProps {
+  autoFocus?: boolean;
+  onNavigate?: () => void;
+}
+
+export default function SearchBar({ autoFocus = false, onNavigate }: SearchBarProps) {
   const router = useRouter();
   const { formatPrice } = useCurrency();
   const [query, setQuery] = useState("");
@@ -103,6 +108,7 @@ export default function SearchBar() {
     if (query.trim()) {
       router.push(`/search?q=${encodeURIComponent(query)}`);
       setShowDropdown(false);
+      onNavigate?.();
     }
   };
 
@@ -110,6 +116,7 @@ export default function SearchBar() {
     setQuery(term);
     setShowDropdown(false);
     router.push(`/search?q=${encodeURIComponent(term)}`);
+    onNavigate?.();
   };
 
   const hasResults = suggestions && (
@@ -133,6 +140,7 @@ export default function SearchBar() {
             }}
             placeholder="Search products..."
             className="w-full h-10 pl-10 pr-10 text-sm bg-surface-secondary border-0 rounded-full placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+            autoFocus={autoFocus}
             suppressHydrationWarning
           />
           {query && (
@@ -192,7 +200,7 @@ export default function SearchBar() {
                     <Link
                       key={cat.slug}
                       href={`/category?cat=${cat.slug}`}
-                      onClick={() => { setShowDropdown(false); setQuery(""); }}
+                      onClick={() => { setShowDropdown(false); setQuery(""); onNavigate?.(); }}
                       className="flex items-center gap-2 py-1.5 px-1 text-sm hover:bg-surface-secondary rounded-lg transition-colors"
                     >
                       <span className="text-text">{cat.name}</span>
@@ -209,7 +217,7 @@ export default function SearchBar() {
                     <Link
                       key={product.slug}
                       href={`/product/${product.slug}`}
-                      onClick={() => { setShowDropdown(false); setQuery(""); }}
+                      onClick={() => { setShowDropdown(false); setQuery(""); onNavigate?.(); }}
                       className="flex items-center gap-3 p-3 hover:bg-surface-secondary transition-colors"
                     >
                       <div className="w-10 h-10 bg-surface-secondary rounded-12 overflow-hidden flex-shrink-0">
@@ -230,7 +238,7 @@ export default function SearchBar() {
                   {query.length >= 2 && (
                     <Link
                       href={`/search?q=${encodeURIComponent(query)}`}
-                      onClick={() => setShowDropdown(false)}
+                      onClick={() => { setShowDropdown(false); onNavigate?.(); }}
                       className="block p-3 text-center text-sm text-primary hover:bg-surface-secondary border-t border-border rounded-b-18"
                     >
                       View all results →

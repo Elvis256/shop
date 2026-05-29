@@ -114,7 +114,7 @@ export default function AdminReviewsPage() {
       if (search) params.set("search", search);
       params.set("page", String(p));
       params.set("limit", String(perPage));
-      const data = await apiFetch(`/api/reviews?${params}`);
+      const data = await apiFetch(`/api/reviews/admin/all?${params}`);
       const list: Review[] = data.reviews || data.data || (Array.isArray(data) ? data : []);
       setReviews(list);
       setTotal(data.pagination?.total || data.total || list.length);

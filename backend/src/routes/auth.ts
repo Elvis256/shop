@@ -299,10 +299,9 @@ router.post("/login", async (req, res: Response) => {
       }
     }
 
-    // Generate tokens — set portal based on role so token works in the correct portal
-    const portal = (user.role === "ADMIN" || user.role === "MANAGER") ? "admin"
-                 : user.role === "SELLER" ? "seller"
-                 : "customer";
+    // Generate tokens — portal based on admin role; sellers use "customer" portal
+    // (seller access is determined by Seller record, not role)
+    const portal = (user.role === "ADMIN" || user.role === "MANAGER") ? "admin" : "customer";
     const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal });
     const refreshToken = await createRefreshToken(user.id);
 
@@ -310,9 +309,15 @@ router.post("/login", async (req, res: Response) => {
     res.cookie("auth_token", accessToken, COOKIE_OPTIONS);
     res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
 
+    // Check if user has a seller account
+    const seller = await prisma.seller.findUnique({
+      where: { userId: user.id },
+      select: { id: true, status: true, storeName: true },
+    });
+
     return res.json({
       message: "Login successful",
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, seller: seller || null },
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -426,10 +431,116 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    return res.json(user);
+    // Always check for seller record — any user can also be a seller
+    const seller = await prisma.seller.findUnique({
+      where: { userId: user.id },
+      select: {
+        id: true,
+        storeName: true,
+        storeSlug: true,
+        status: true,
+        tier: true,
+        logo: true,
+        rating: true,
+        reviewCount: true,
+      },
+    });
+
+    return res.json({ ...user, seller: seller || null });
   } catch (error) {
     console.error("Get profile error:", error);
     return res.status(500).json({ error: "Failed to fetch profile" });
+  }
+});
+
+// GET /api/auth/dashboard — rich customer dashboard data
+router.get("/dashboard", authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+
+    // Parallel queries for performance
+    const [
+      recentOrders,
+      orderStats,
+      loyaltyAccount,
+      wishlistCount,
+      unreadMessages,
+      referralCode,
+      storeCredit,
+    ] = await Promise.all([
+      // Last 5 orders
+      prisma.order.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          totalAmount: true,
+          currency: true,
+          createdAt: true,
+          items: { take: 3, select: { name: true, quantity: true, price: true, productId: true, product: { select: { images: { take: 1, select: { url: true } } } } } },
+        },
+      }),
+      // Order aggregates
+      prisma.order.aggregate({
+        where: { userId, status: { notIn: ["CANCELLED"] } },
+        _count: true,
+        _sum: { totalAmount: true },
+      }),
+      // Loyalty
+      prisma.loyaltyAccount.findUnique({
+        where: { userId },
+        select: { points: true, tier: true, lifetimePoints: true },
+      }),
+      // Wishlist count
+      prisma.wishlistItem.count({ where: { userId } }),
+      // Unread messages
+      prisma.chatMessage.count({
+        where: {
+          conversation: { buyerId: userId },
+          senderType: "SELLER",
+          isRead: false,
+        },
+      }),
+      // Referral code
+      prisma.referralCode.findFirst({
+        where: { userId },
+        select: { code: true },
+      }),
+      // Store credit
+      prisma.storeCredit.findUnique({
+        where: { userId },
+        select: { balance: true },
+      }),
+    ]);
+
+    // Count orders by status
+    const statusCounts = await prisma.order.groupBy({
+      by: ["status"],
+      where: { userId },
+      _count: true,
+    });
+    const ordersByStatus: Record<string, number> = {};
+    statusCounts.forEach((s) => { ordersByStatus[s.status] = s._count; });
+
+    return res.json({
+      recentOrders,
+      stats: {
+        totalOrders: orderStats._count,
+        totalSpent: Number(orderStats._sum?.totalAmount || 0),
+        wishlistCount,
+        unreadMessages,
+        ordersByStatus,
+      },
+      loyalty: loyaltyAccount || { points: 0, tier: "BRONZE", lifetimePoints: 0 },
+      referralCode: referralCode?.code || null,
+      storeCredit: Number(storeCredit?.balance || 0),
+    });
+  } catch (error) {
+    console.error("Dashboard error:", error);
+    return res.status(500).json({ error: "Failed to load dashboard" });
   }
 });
 

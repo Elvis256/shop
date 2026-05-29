@@ -8,6 +8,7 @@ import {
   Search,
   Edit2,
   Trash2,
+  Zap,
   X,
   ChevronLeft,
   ChevronRight,
@@ -15,7 +16,13 @@ import {
   Image as ImageIcon,
   Upload,
   Loader2,
+  CheckSquare,
+  Square,
+  Power,
+  PowerOff,
 } from "lucide-react";
+import { useToast } from "@/lib/hooks/useToast";
+import { useRouter } from "next/navigation";
 
 interface Product {
   id: string;
@@ -24,6 +31,7 @@ interface Product {
   comparePrice?: number;
   stock: number;
   status: string;
+  moderationNote?: string;
   images: string[];
   category?: { id: string; name: string };
   createdAt: string;
@@ -56,7 +64,7 @@ const emptyForm: ProductForm = {
   tags: "",
 };
 
-const statusTabs = ["ALL", "ACTIVE", "DRAFT"];
+const statusTabs = ["ALL", "ACTIVE", "DRAFT", "PENDING_REVIEW"];
 
 export default function SellerProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -73,6 +81,10 @@ export default function SellerProducts() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const { showToast } = useToast();
+  const router = useRouter();
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -114,20 +126,37 @@ export default function SellerProducts() {
     setShowModal(true);
   };
 
-  const openEdit = (product: Product) => {
+  const openEdit = async (product: Product) => {
     setEditingId(product.id);
-    setForm({
-      name: product.name,
-      description: "",
-      price: product.price.toString(),
-      comparePrice: product.comparePrice?.toString() || "",
-      categoryId: product.category?.id || "",
-      stock: product.stock.toString(),
-      imageUrls: product.images || [],
-      tags: "",
-    });
     setFormError("");
     setShowModal(true);
+    // Fetch full product details (including description and tags)
+    try {
+      const data = await apiFetch(`/api/seller/products/${product.id}`);
+      const p = data.product || data;
+      setForm({
+        name: p.name || product.name,
+        description: p.description || "",
+        price: (p.price ?? product.price).toString(),
+        comparePrice: p.comparePrice?.toString() || product.comparePrice?.toString() || "",
+        categoryId: p.category?.id || product.category?.id || "",
+        stock: (p.stock ?? product.stock).toString(),
+        imageUrls: p.images?.map((img: any) => typeof img === "string" ? img : img.url) || product.images || [],
+        tags: Array.isArray(p.tags) ? p.tags.join(", ") : "",
+      });
+    } catch {
+      // Fallback to list data if fetch fails
+      setForm({
+        name: product.name,
+        description: "",
+        price: product.price.toString(),
+        comparePrice: product.comparePrice?.toString() || "",
+        categoryId: product.category?.id || "",
+        stock: product.stock.toString(),
+        imageUrls: product.images || [],
+        tags: "",
+      });
+    }
   };
 
   const handleImageUpload = async (files: FileList | null) => {
@@ -203,9 +232,45 @@ export default function SellerProducts() {
     if (!confirm("Are you sure you want to delete this product?")) return;
     try {
       await apiFetch(`/api/seller/products/${id}`, { method: "DELETE" });
+      showToast("Product deleted", "success");
       fetchProducts();
     } catch (err: any) {
-      alert(err.message || "Failed to delete product");
+      showToast(err.message || "Failed to delete product", "error");
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === products.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(products.map((p) => p.id)));
+    }
+  };
+
+  const handleBulk = async (action: "activate" | "deactivate" | "delete") => {
+    if (selectedIds.size === 0) return;
+    if (action === "delete" && !confirm(`Delete ${selectedIds.size} products?`)) return;
+    try {
+      setBulkLoading(true);
+      await apiFetch("/api/seller/products/bulk", {
+        method: "PUT",
+        body: JSON.stringify({ action, productIds: Array.from(selectedIds) }),
+      });
+      showToast(`${selectedIds.size} products ${action}d successfully`, "success");
+      setSelectedIds(new Set());
+      fetchProducts();
+    } catch (err: any) {
+      showToast(err.message || "Bulk operation failed", "error");
+    } finally {
+      setBulkLoading(false);
     }
   };
 
@@ -253,7 +318,7 @@ export default function SellerProducts() {
                     : "text-gray-600 hover:text-gray-900"
                 }`}
               >
-                {tab}
+                {tab === "PENDING_REVIEW" ? "Pending Review" : tab}
               </button>
             ))}
           </div>
@@ -284,6 +349,15 @@ export default function SellerProducts() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100">
+                  <th className="text-left text-xs font-medium text-gray-500 uppercase px-3 py-3 w-10">
+                    <button onClick={toggleSelectAll} className="p-1 hover:bg-gray-100 rounded">
+                      {selectedIds.size === products.length && products.length > 0 ? (
+                        <CheckSquare className="w-4 h-4 text-primary" />
+                      ) : (
+                        <Square className="w-4 h-4 text-gray-400" />
+                      )}
+                    </button>
+                  </th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase px-6 py-3">
                     Product
                   </th>
@@ -304,6 +378,15 @@ export default function SellerProducts() {
               <tbody>
                 {products.map((product) => (
                   <tr key={product.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-3 py-4">
+                      <button onClick={() => toggleSelect(product.id)} className="p-1 hover:bg-gray-100 rounded">
+                        {selectedIds.has(product.id) ? (
+                          <CheckSquare className="w-4 h-4 text-primary" />
+                        ) : (
+                          <Square className="w-4 h-4 text-gray-400" />
+                        )}
+                      </button>
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
@@ -323,6 +406,11 @@ export default function SellerProducts() {
                           </p>
                           {product.category && (
                             <p className="text-xs text-gray-500">{product.category.name}</p>
+                          )}
+                          {product.moderationNote && product.status === "PENDING_REVIEW" && (
+                            <p className="text-xs text-yellow-600 mt-0.5" title={product.moderationNote}>
+                              Note: {product.moderationNote.slice(0, 60)}{product.moderationNote.length > 60 ? "..." : ""}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -348,14 +436,25 @@ export default function SellerProducts() {
                         className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
                           product.status === "ACTIVE"
                             ? "bg-green-100 text-green-700"
+                            : product.status === "PENDING_REVIEW"
+                            ? "bg-yellow-100 text-yellow-700"
                             : "bg-gray-100 text-gray-600"
                         }`}
                       >
-                        {product.status}
+                        {product.status === "PENDING_REVIEW" ? "Pending Review" : product.status}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {product.status === "ACTIVE" && (
+                          <button
+                            onClick={() => router.push("/seller/ads")}
+                            className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                            title="Promote"
+                          >
+                            <Zap className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => openEdit(product)}
                           className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
@@ -376,6 +475,42 @@ export default function SellerProducts() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Bulk Actions Bar */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 px-6 py-3 bg-primary/5 border-t border-primary/10">
+            <span className="text-sm font-medium text-gray-700">{selectedIds.size} selected</span>
+            <div className="flex gap-2 ml-auto">
+              <button
+                onClick={() => handleBulk("activate")}
+                disabled={bulkLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 disabled:opacity-50"
+              >
+                <Power className="w-3.5 h-3.5" /> Activate
+              </button>
+              <button
+                onClick={() => handleBulk("deactivate")}
+                disabled={bulkLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-yellow-50 text-yellow-700 rounded-lg hover:bg-yellow-100 disabled:opacity-50"
+              >
+                <PowerOff className="w-3.5 h-3.5" /> Deactivate
+              </button>
+              <button
+                onClick={() => handleBulk("delete")}
+                disabled={bulkLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 rounded-lg hover:bg-red-100 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700"
+              >
+                Clear
+              </button>
+            </div>
           </div>
         )}
 

@@ -36,9 +36,10 @@ const CheckoutSchema = z.object({
     .optional(),
   customer: z.object({
     name: z.string(),
-    email: z.string().email(),
+    email: z.string().email().optional(),
     phone: z.string().optional(),
-  }),
+  }).refine(data => data.email || data.phone, { message: "Email or phone required" }),
+  deliveryTimeSlot: z.string().optional(),
   couponCode: z.string().optional(),
   discreet: z.boolean().default(true),
   shippingAddress: z.any().optional(),
@@ -311,8 +312,11 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
           status: "PENDING",
           discreet: body.discreet,
           customerName: body.customer.name,
-          customerEmail: body.customer.email,
+          customerEmail: body.customer.email || body.customer.phone || "",
           customerPhone: body.customer.phone || "",
+          deliveryTimeSlot: body.deliveryTimeSlot,
+          // Guest checkout: auto-delete data 45 days from now
+          ...(!req.user?.id ? { guestDataExpiresAt: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), discreet: true } : {}),
           couponId: appliedCouponId,
           userId: req.user?.id,
           shippingAddress: typeof body.shippingAddress === 'object' ? JSON.stringify(body.shippingAddress) : (body.shippingAddress || ""),
@@ -322,6 +326,7 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
               quantity: item.quantity,
               price: effectivePrices.get(item.productId) ?? item.product.price,
               name: item.product.name,
+              sellerId: item.product.sellerId || null,
             })),
           },
         },
@@ -479,7 +484,7 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
       const ppResult = await createPayPalCheckout({
         orderId: result.id,
         amountUgx: chargeAmount,
-        customerEmail: body.customer.email,
+        customerEmail: body.customer.email || body.customer.phone || "",
         description: `Order ${result.orderNumber}`,
       });
       paymentLink = ppResult.redirectUrl;

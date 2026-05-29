@@ -91,8 +91,9 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const response = await login(email, password);
-      const userRole = ((response as any)?.user?.role || (response as any)?.role || "") as string;
+      const response: any = await login(email, password);
+      const userRole = (response?.user?.role || response?.role || "") as string;
+      const hasSeller = !!(response?.user?.seller);
 
       if (rememberMe) {
         try { localStorage.setItem("rememberMe", "true"); } catch {}
@@ -104,7 +105,7 @@ function LoginForm() {
         redirectTo = explicitRedirect;
       } else if (userRole === "ADMIN" || userRole === "STAFF" || userRole === "MANAGER") {
         redirectTo = "/admin";
-      } else if (userRole === "SELLER") {
+      } else if (hasSeller) {
         redirectTo = "/seller";
       }
       router.push(redirectTo);
@@ -134,13 +135,14 @@ function LoginForm() {
       if (!res.ok) throw new Error(data.error || "Google login failed");
 
       const userRole = (data.user?.role || "") as string;
+      const hasSeller = !!(data.user?.seller);
       const explicitRedirect = searchParams.get("redirect");
       let redirectTo = "/account";
       if (explicitRedirect) {
         redirectTo = explicitRedirect;
       } else if (userRole === "ADMIN" || userRole === "STAFF" || userRole === "MANAGER") {
         redirectTo = "/admin";
-      } else if (userRole === "SELLER") {
+      } else if (hasSeller) {
         redirectTo = "/seller";
       }
       // Hard redirect so auth cookies are picked up fresh

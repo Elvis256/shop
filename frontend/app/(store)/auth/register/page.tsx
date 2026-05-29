@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { Eye, EyeOff, Check } from "lucide-react";
+import { Eye, EyeOff, Check, Loader2 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -82,8 +82,9 @@ function GoogleSignUpButton({ onSuccess, disabled }: { onSuccess: (credential: s
   );
 }
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { register } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -119,7 +120,8 @@ export default function RegisterPage() {
 
     try {
       await register(email, password, name);
-      router.push("/account");
+      const redirectTo = searchParams.get("redirect") || "/account";
+      router.push(redirectTo);
     } catch (err: any) {
       setError(err.message || "Registration failed");
     } finally {
@@ -144,7 +146,8 @@ export default function RegisterPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Google sign-up failed");
 
-      window.location.href = "/account";
+      const redirectTo = searchParams.get("redirect") || "/account";
+      window.location.href = redirectTo;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Google sign-up failed");
     } finally {
@@ -282,5 +285,19 @@ export default function RegisterPage() {
         </p>
       </div>
     </Section>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={
+      <Section>
+        <div className="max-w-md mx-auto text-center py-16">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
+        </div>
+      </Section>
+    }>
+      <RegisterForm />
+    </Suspense>
   );
 }

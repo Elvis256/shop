@@ -51,11 +51,10 @@ export default function Logo({ variant = "default", className = "", href = "/" }
 
       {!isCompact && (
         <span
-          className="font-semibold text-[1.1rem] tracking-tight leading-none"
-          style={{ color: isWhite ? "white" : "#1d1d1f" }}
+          className={`font-semibold text-[1.1rem] tracking-tight leading-none ${isWhite ? "text-white" : "text-text"}`}
         >
           Pleasure
-          <span style={{ color: "#0071e3" }}>Zone</span>
+          <span className="text-primary">Zone</span>
         </span>
       )}
     </div>

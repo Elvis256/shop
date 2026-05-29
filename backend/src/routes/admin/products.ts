@@ -20,6 +20,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       category,
       status,
       stock,
+      sellerId,
       sort = "createdAt",
       order = "desc",
       page = "1",
@@ -46,6 +47,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       where.status = status;
     }
 
+    if (sellerId) {
+      where.sellerId = sellerId;
+    }
+
     if (stock === "low") {
       where.stock = { lte: 10 };
     } else if (stock === "out") {
@@ -63,6 +68,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         skip,
         include: {
           category: { select: { name: true } },
+          seller: { select: { id: true, storeName: true } },
           images: { take: 1, orderBy: { position: "asc" } },
           _count: { select: { orderItems: true, reviews: true, variants: true } },
         },
@@ -86,6 +92,8 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         status: p.status,
         featured: p.featured,
         category: p.category?.name,
+        sellerId: p.seller?.id || null,
+        sellerName: p.seller?.storeName || null,
         imageUrl: p.images[0]?.url || null,
         sales: p._count.orderItems,
         reviews: p._count.reviews,

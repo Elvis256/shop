@@ -25,7 +25,7 @@ const transporter = smtpReady
     })
   : null;
 
-type EmailTemplate = "welcome" | "order-received" | "order-confirmation" | "order-shipped" | "order-processing" | "order-delivered" | "order-cancelled" | "password-reset";
+type EmailTemplate = "welcome" | "order-received" | "order-confirmation" | "order-shipped" | "order-processing" | "order-delivered" | "order-cancelled" | "password-reset" | "seller-approved" | "seller-rejected" | "seller-warning";
 
 interface SendEmailOptions {
   to: string;
@@ -154,6 +154,59 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
         ${data.reason ? `<p><strong>Reason:</strong> ${data.reason}</p>` : ""}
         <p>If you believe this is an error or have questions, please contact our support team.</p>
         <a href="${process.env.BASE_URL}/account/orders" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">View Orders</a>
+      </div>
+    `,
+  },
+  "seller-approved": {
+    subject: "Your Seller Application Has Been Approved!",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #16a34a;">Congratulations, ${data.storeName}!</h1>
+        <p>Great news! Your seller application has been approved. You can now start listing products and selling on our marketplace.</p>
+        <div style="background: #f0fdf4; padding: 16px; border-radius: 8px; margin: 16px 0; border: 1px solid #bbf7d0;">
+          <p><strong>Store Name:</strong> ${data.storeName}</p>
+          <p><strong>Status:</strong> ✅ Approved</p>
+        </div>
+        <h3>Next Steps:</h3>
+        <ol>
+          <li>Log in to your <a href="${process.env.FRONTEND_URL || process.env.BASE_URL}/seller">Seller Dashboard</a></li>
+          <li>Add your first products</li>
+          <li>Configure your payout settings</li>
+        </ol>
+        <a href="${process.env.FRONTEND_URL || process.env.BASE_URL}/seller" style="display: inline-block; padding: 12px 24px; background: #16a34a; color: white; text-decoration: none; border-radius: 4px;">Go to Seller Dashboard</a>
+      </div>
+    `,
+  },
+  "seller-rejected": {
+    subject: "Update on Your Seller Application",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2a2a2a;">Seller Application Update</h1>
+        <p>Hi ${data.storeName},</p>
+        <p>Thank you for your interest in selling on our marketplace. Unfortunately, we are unable to approve your application at this time.</p>
+        ${data.rejectionNote ? `
+        <div style="background: #fef2f2; padding: 16px; border-radius: 8px; margin: 16px 0; border: 1px solid #fecaca;">
+          <p><strong>Reason:</strong> ${data.rejectionNote}</p>
+        </div>
+        ` : ""}
+        <p>If you have questions or would like to re-apply in the future, please contact our support team.</p>
+        <a href="${process.env.FRONTEND_URL || process.env.BASE_URL}/seller/register" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Contact Support</a>
+      </div>
+    `,
+  },
+  "seller-warning": {
+    subject: "Important: A Warning Has Been Issued for Your Store",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #dc2626;">Warning Notice — ${data.storeName}</h1>
+        <p>A <strong>${data.type}</strong> has been issued for your store.</p>
+        <div style="background: #fef2f2; padding: 16px; border-radius: 8px; margin: 16px 0; border: 1px solid #fecaca;">
+          <p><strong>Type:</strong> ${data.type}</p>
+          <p><strong>Reason:</strong> ${data.reason}</p>
+          <p><strong>Active warnings:</strong> ${data.activeCount}</p>
+        </div>
+        <p>Please review and address this matter promptly. Continued violations may result in account suspension.</p>
+        <a href="${process.env.FRONTEND_URL || process.env.BASE_URL}/seller" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">View Dashboard</a>
       </div>
     `,
   },

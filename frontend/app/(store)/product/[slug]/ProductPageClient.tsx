@@ -95,6 +95,89 @@ function getEstimatedDelivery(processingDays = 2, shippingDays = 5): string {
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
+/** Price Drop Alert inline component */
+function PriceAlertInline({ productId, currentPrice }: { productId: string; currentPrice: number }) {
+  const [open, setOpen] = useState(false);
+  const [targetPrice, setTargetPrice] = useState("");
+  const [phone, setPhone] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [alertLoading, setAlertLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!targetPrice || !phone) return;
+    setAlertLoading(true);
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+      await fetch(`${API_URL}/api/price-alerts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          productId,
+          targetPrice: Number(targetPrice),
+          phone,
+        }),
+      });
+      setSubmitted(true);
+    } catch { /* ignore */ }
+    setAlertLoading(false);
+  };
+
+  if (submitted) {
+    return (
+      <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+        <Check className="w-4 h-4" />
+        <span>Alert set! We&apos;ll notify you when the price drops below UGX {Number(targetPrice).toLocaleString()}</span>
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-2 mb-4 text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+      >
+        <Tag className="w-4 h-4" /> Set Price Alert
+      </button>
+    );
+  }
+
+  return (
+    <div className="mb-4 p-3 border border-border rounded-lg space-y-2">
+      <p className="text-sm font-medium text-text">Notify me when price drops below:</p>
+      <div className="flex gap-2">
+        <input
+          type="number"
+          placeholder={`e.g. ${Math.round(currentPrice * 0.8).toLocaleString()}`}
+          value={targetPrice}
+          onChange={e => setTargetPrice(e.target.value)}
+          className="flex-1 px-3 py-2 border border-border rounded-lg text-sm bg-bg"
+        />
+        <input
+          type="tel"
+          placeholder="+256..."
+          value={phone}
+          onChange={e => setPhone(e.target.value)}
+          className="flex-1 px-3 py-2 border border-border rounded-lg text-sm bg-bg"
+        />
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={handleSubmit}
+          disabled={alertLoading || !targetPrice || !phone}
+          className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+        >
+          {alertLoading ? "..." : "Set Alert"}
+        </button>
+        <button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-text-muted hover:text-text">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ProductPageClient() {
   const params = useParams();
   const router = useRouter();
@@ -541,6 +624,9 @@ export default function ProductPageClient() {
               originalPrice={Number(effectivePrice)}
             />
 
+            {/* Price Drop Alert */}
+            <PriceAlertInline productId={product.id} currentPrice={Number(effectivePrice)} />
+
             {/* Add to Cart + Buy Now */}
             <div ref={addToCartRef} className="mb-4 space-y-2.5">
               {isLowStock && (
@@ -648,9 +734,19 @@ export default function ProductPageClient() {
                     <span className="text-xs text-gray-600">{product.seller.rating} ({product.seller.reviewCount} reviews)</span>
                   </div>
                 )}
-                <Link href={`/seller/${product.seller.storeSlug}`} className="text-xs text-pink-600 hover:underline mt-2 block">
-                  Visit Store →
-                </Link>
+                <div className="flex items-center gap-2 mt-2">
+                  <Link href={`/seller/${product.seller.storeSlug}`} className="text-xs text-pink-600 hover:underline">
+                    Visit Store →
+                  </Link>
+                  <button
+                    onClick={() => {
+                      window.location.href = `/account/messages?sellerId=${product.seller!.id}&productId=${product.id}`;
+                    }}
+                    className="text-xs text-primary hover:underline ml-auto"
+                  >
+                    Message Seller
+                  </button>
+                </div>
               </div>
             )}
 

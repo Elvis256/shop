@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { Settings, Save, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Settings, Save, AlertTriangle, CheckCircle2, Upload, Loader2, X as XIcon, ImageIcon } from "lucide-react";
+import { useToast } from "@/lib/hooks/useToast";
 
 interface SellerProfile {
   storeName: string;
@@ -13,6 +14,7 @@ interface SellerProfile {
   address: string;
   city: string;
   logo: string;
+  banner: string;
   payoutMethod: string;
   payoutPhone: string;
   bankName: string;
@@ -28,6 +30,7 @@ const emptyProfile: SellerProfile = {
   address: "",
   city: "",
   logo: "",
+  banner: "",
   payoutMethod: "MOBILE_MONEY",
   payoutPhone: "",
   bankName: "",
@@ -40,11 +43,14 @@ export default function SellerSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const { showToast } = useToast();
 
   const fetchProfile = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiFetch("/api/auth/me");
+      const data = await apiFetch("/api/seller/profile");
       const seller = data.seller || data;
       setForm({
         storeName: seller.storeName || "",
@@ -55,6 +61,7 @@ export default function SellerSettings() {
         address: seller.address || "",
         city: seller.city || "",
         logo: seller.logo || "",
+        banner: seller.banner || "",
         payoutMethod: seller.payoutMethod || "MOBILE_MONEY",
         payoutPhone: seller.payoutPhone || "",
         bankName: seller.bankName || "",
@@ -80,10 +87,9 @@ export default function SellerSettings() {
         method: "PUT",
         body: JSON.stringify(form),
       });
-      setSuccess("Settings saved successfully!");
-      setTimeout(() => setSuccess(""), 3000);
+      showToast("Settings saved successfully!", "success");
     } catch (err: any) {
-      setError(err.message || "Failed to save settings");
+      showToast(err.message || "Failed to save settings", "error");
     } finally {
       setSaving(false);
     }
@@ -91,6 +97,31 @@ export default function SellerSettings() {
 
   const updateField = (field: keyof SellerProfile, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleImageUpload = async (
+    files: FileList | null,
+    field: "logo" | "banner",
+    setUploading: (v: boolean) => void
+  ) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("images", files[0]);
+      const data = await apiFetch("/api/seller/upload-images", {
+        method: "POST",
+        body: formData,
+      });
+      if (data.urls?.[0]) {
+        updateField(field, data.urls[0]);
+        showToast(`${field === "logo" ? "Logo" : "Banner"} uploaded!`, "success");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to upload image", "error");
+    } finally {
+      setUploading(false);
+    }
   };
 
   if (loading) {
@@ -104,20 +135,6 @@ export default function SellerSettings() {
   return (
     <div className="space-y-6 max-w-3xl">
       <h2 className="text-xl font-bold text-gray-900">Store Settings</h2>
-
-      {error && (
-        <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="flex items-center gap-2 p-4 bg-green-50 border border-green-100 rounded-xl text-green-700 text-sm">
-          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-          {success}
-        </div>
-      )}
 
       {/* Store Information */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -148,15 +165,98 @@ export default function SellerSettings() {
               placeholder="Describe your store"
             />
           </div>
+          {/* Logo Upload */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
-            <input
-              type="text"
-              value={form.logo}
-              onChange={(e) => updateField("logo", e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              placeholder="https://example.com/logo.png"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Store Logo</label>
+            {form.logo ? (
+              <div className="flex items-center gap-3 mb-2">
+                <img
+                  src={form.logo.startsWith("/") ? `${process.env.NEXT_PUBLIC_API_URL || ""}${form.logo}` : form.logo}
+                  alt="Logo"
+                  className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => updateField("logo", "")}
+                  className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                >
+                  <XIcon className="w-3 h-3" /> Remove
+                </button>
+              </div>
+            ) : null}
+            <label
+              className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                uploadingLogo ? "border-primary/40 bg-primary/5" : "border-gray-300 hover:border-primary/60 hover:bg-gray-50"
+              }`}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); handleImageUpload(e.dataTransfer.files, "logo", setUploadingLogo); }}
+            >
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                className="hidden"
+                onChange={(e) => handleImageUpload(e.target.files, "logo", setUploadingLogo)}
+                disabled={uploadingLogo}
+              />
+              {uploadingLogo ? (
+                <div className="flex items-center gap-2 text-primary">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Uploading...</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-gray-500">
+                  <Upload className="w-5 h-5" />
+                  <span className="text-xs">Click or drag logo image</span>
+                </div>
+              )}
+            </label>
+          </div>
+
+          {/* Banner Upload */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Store Banner</label>
+            {form.banner ? (
+              <div className="relative mb-2">
+                <img
+                  src={form.banner.startsWith("/") ? `${process.env.NEXT_PUBLIC_API_URL || ""}${form.banner}` : form.banner}
+                  alt="Banner"
+                  className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => updateField("banner", "")}
+                  className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                >
+                  <XIcon className="w-3 h-3" />
+                </button>
+              </div>
+            ) : null}
+            <label
+              className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                uploadingBanner ? "border-primary/40 bg-primary/5" : "border-gray-300 hover:border-primary/60 hover:bg-gray-50"
+              }`}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); handleImageUpload(e.dataTransfer.files, "banner", setUploadingBanner); }}
+            >
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                className="hidden"
+                onChange={(e) => handleImageUpload(e.target.files, "banner", setUploadingBanner)}
+                disabled={uploadingBanner}
+              />
+              {uploadingBanner ? (
+                <div className="flex items-center gap-2 text-primary">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Uploading...</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-gray-500">
+                  <ImageIcon className="w-5 h-5" />
+                  <span className="text-xs">Click or drag banner image</span>
+                </div>
+              )}
+            </label>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

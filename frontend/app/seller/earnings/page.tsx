@@ -12,14 +12,17 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  Download,
 } from "lucide-react";
+import { ResponsiveContainer, Area, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import { arrayToCSV, downloadCSV } from "@/lib/utils/csv";
 
 interface EarningsData {
-  totalEarned: number;
-  availableBalance: number;
+  totalEarnings: number;
+  balance: number;
   totalWithdrawn: number;
   pendingPayouts: number;
-  recentItems: Array<{
+  recentTransactions: Array<{
     id: string;
     orderNumber: string;
     productName: string;
@@ -41,6 +44,7 @@ interface Payout {
 export default function SellerEarnings() {
   const [earnings, setEarnings] = useState<EarningsData | null>(null);
   const [payouts, setPayouts] = useState<Payout[]>([]);
+  const [earningsTrend, setEarningsTrend] = useState<Array<{ date: string; revenue: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showPayoutModal, setShowPayoutModal] = useState(false);
@@ -53,12 +57,14 @@ export default function SellerEarnings() {
   const fetchEarnings = useCallback(async () => {
     try {
       setLoading(true);
-      const [earningsData, payoutsData] = await Promise.all([
+      const [earningsData, payoutsData, analyticsData] = await Promise.all([
         apiFetch("/api/seller/earnings"),
         apiFetch("/api/seller/payouts").catch(() => ({ payouts: [] })),
+        apiFetch("/api/seller/analytics?period=30").catch(() => null),
       ]);
       setEarnings(earningsData);
       setPayouts(payoutsData.payouts || []);
+      if (analyticsData?.salesTrend) setEarningsTrend(analyticsData.salesTrend);
     } catch (err: any) {
       setError(err.message || "Failed to load earnings");
     } finally {
@@ -76,7 +82,7 @@ export default function SellerEarnings() {
       setPayoutError("Please enter a valid amount");
       return;
     }
-    if (earnings && amount > earnings.availableBalance) {
+    if (earnings && amount > earnings.balance) {
       setPayoutError("Amount exceeds available balance");
       return;
     }
@@ -131,14 +137,14 @@ export default function SellerEarnings() {
   const statCards = [
     {
       label: "Total Earned",
-      value: `UGX ${earnings.totalEarned.toLocaleString()}`,
+      value: `UGX ${earnings.totalEarnings.toLocaleString()}`,
       icon: TrendingUp,
       color: "text-green-600",
       bg: "bg-green-50",
     },
     {
       label: "Available Balance",
-      value: `UGX ${earnings.availableBalance.toLocaleString()}`,
+      value: `UGX ${earnings.balance.toLocaleString()}`,
       icon: Wallet,
       color: "text-blue-600",
       bg: "bg-blue-50",
@@ -203,10 +209,57 @@ export default function SellerEarnings() {
         ))}
       </div>
 
+      {/* Earnings Trend Chart */}
+      {earningsTrend.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">30-Day Earnings Trend</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={earningsTrend}>
+              <defs>
+                <linearGradient id="earnGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={(d: any) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                tick={{ fontSize: 12 }}
+                stroke="#9ca3af"
+              />
+              <YAxis
+                tickFormatter={(n: any) => Number(n) >= 1000 ? (Number(n) / 1000).toFixed(0) + "K" : String(n)}
+                tick={{ fontSize: 12 }}
+                stroke="#9ca3af"
+              />
+              <Tooltip formatter={(val: any) => [`UGX ${Number(val).toLocaleString()}`, "Revenue"]} labelFormatter={(d: any) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+              <Area type="monotone" dataKey="revenue" stroke="#10b981" fill="url(#earnGrad)" strokeWidth={2} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
       {/* Earnings Breakdown */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="p-6 border-b border-gray-100">
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">Earnings Breakdown</h3>
+          {earnings.recentTransactions.length > 0 && (
+            <button
+              onClick={() => {
+                const headers = ["Order", "Product", "Amount (UGX)", "Commission (UGX)", "Net (UGX)", "Date"];
+                const rows = earnings.recentTransactions.map((t) => [
+                  t.orderNumber, t.productName, t.amount, t.commission, t.net,
+                  new Date(t.date).toLocaleDateString(),
+                ]);
+                downloadCSV(`earnings-${new Date().toISOString().slice(0, 10)}`, arrayToCSV(headers, rows));
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export
+            </button>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -233,14 +286,14 @@ export default function SellerEarnings() {
               </tr>
             </thead>
             <tbody>
-              {earnings.recentItems.length === 0 ? (
+              {earnings.recentTransactions.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
                     No earnings yet
                   </td>
                 </tr>
               ) : (
-                earnings.recentItems.map((item) => (
+                earnings.recentTransactions.map((item) => (
                   <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">
                       {item.orderNumber}
@@ -364,7 +417,7 @@ export default function SellerEarnings() {
                       min="0"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Available: UGX {earnings.availableBalance.toLocaleString()}
+                      Available: UGX {earnings.balance.toLocaleString()}
                     </p>
                   </div>
                   <div>

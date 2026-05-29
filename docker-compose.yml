@@ -126,10 +126,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: "1.5"
+          memory: 1.5G
+          cpus: "2.0"
         reservations:
-          memory: 256M
+          memory: 512M
 
   # nginx removed — host nginx handles SSL termination and proxying for ugsex.com
   # nginx:

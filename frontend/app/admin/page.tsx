@@ -35,6 +35,8 @@ import {
   Scissors,
   CalendarCheck,
   UserPlus,
+  Store,
+  PieChart,
 } from "lucide-react";
 
 /* ─── Types ──────────────────────────────────────────────── */
@@ -69,6 +71,15 @@ interface DashboardData {
     soldCount: number;
   }>;
   ordersByStatus: Record<string, number>;
+  marketplace?: {
+    directRevenue: { total: number; thisMonth: number };
+    commissionRevenue: { total: number; thisMonth: number };
+    vendorGrossSales: { total: number; thisMonth: number };
+    platformRevenue: { total: number; thisMonth: number };
+    pendingPayouts: { amount: number; count: number };
+    vendors: { active: number; pending: number };
+    vendorProducts: number;
+  };
 }
 
 interface LowStockProduct {
@@ -473,6 +484,118 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ─── Revenue Streams ──────────────────────────────── */}
+      {data.marketplace && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <PieChart className="w-4 h-4 text-blue-500" />
+              <h2 className="text-[13px] font-medium text-gray-900">Revenue Streams</h2>
+            </div>
+            <Link href="/admin/sellers" className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
+              Manage Sellers <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          {/* Revenue breakdown cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-gray-100">
+            {/* Direct Sales */}
+            <div className="bg-white p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-blue-500" />
+                <span className="text-[11px] text-gray-500 uppercase tracking-wider font-medium">Your Products</span>
+              </div>
+              <p className="text-lg font-bold text-gray-900">{fmt(data.marketplace.directRevenue.total)}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{fmt(data.marketplace.directRevenue.thisMonth)} this month</p>
+            </div>
+
+            {/* Commission Revenue */}
+            <div className="bg-white p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="text-[11px] text-gray-500 uppercase tracking-wider font-medium">Commissions</span>
+              </div>
+              <p className="text-lg font-bold text-gray-900">{fmt(data.marketplace.commissionRevenue.total)}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{fmt(data.marketplace.commissionRevenue.thisMonth)} this month</p>
+            </div>
+
+            {/* Total Platform Revenue */}
+            <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-4 text-white">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-white/60" />
+                <span className="text-[11px] text-white/60 uppercase tracking-wider font-medium">Platform Total</span>
+              </div>
+              <p className="text-lg font-bold">{fmt(data.marketplace.platformRevenue.total)}</p>
+              <p className="text-xs text-white/50 mt-0.5">{fmt(data.marketplace.platformRevenue.thisMonth)} this month</p>
+            </div>
+
+            {/* Pending Payouts */}
+            <div className="bg-white p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-orange-500" />
+                <span className="text-[11px] text-gray-500 uppercase tracking-wider font-medium">Vendor Payouts Due</span>
+              </div>
+              <p className="text-lg font-bold text-gray-900">{fmt(data.marketplace.pendingPayouts.amount)}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{data.marketplace.pendingPayouts.count} pending request{data.marketplace.pendingPayouts.count !== 1 ? "s" : ""}</p>
+            </div>
+          </div>
+
+          {/* Vendor summary bar */}
+          <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50/50">
+            <div className="flex items-center gap-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1.5">
+                <Store className="w-3.5 h-3.5 text-gray-400" />
+                <span className="font-medium text-gray-700">{data.marketplace.vendors.active}</span> active vendor{data.marketplace.vendors.active !== 1 ? "s" : ""}
+              </span>
+              {data.marketplace.vendors.pending > 0 && (
+                <Link href="/admin/sellers?status=PENDING" className="flex items-center gap-1 text-yellow-600 hover:text-yellow-700 transition-colors">
+                  <Clock className="w-3 h-3" />
+                  {data.marketplace.vendors.pending} pending approval
+                </Link>
+              )}
+              <span>{data.marketplace.vendorProducts} vendor product{data.marketplace.vendorProducts !== 1 ? "s" : ""}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {data.marketplace.pendingPayouts.count > 0 && (
+                <Link href="/admin/payouts" className="text-xs text-orange-600 hover:text-orange-700 font-medium transition-colors flex items-center gap-1">
+                  Process Payouts <ArrowRight className="w-3 h-3" />
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {/* Revenue split visual bar */}
+          {data.marketplace.platformRevenue.total > 0 && (
+            <div className="px-4 py-3 border-t border-gray-100">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[11px] text-gray-400">Revenue Split</span>
+              </div>
+              <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden flex">
+                <div
+                  className="h-full bg-blue-500 transition-all duration-700"
+                  style={{ width: `${(data.marketplace.directRevenue.total / (data.marketplace.directRevenue.total + (data.marketplace.vendorGrossSales?.total || 0))) * 100}%` }}
+                  title={`Direct Sales: ${fmt(data.marketplace.directRevenue.total)}`}
+                />
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-700"
+                  style={{ width: `${(data.marketplace.commissionRevenue.total / (data.marketplace.directRevenue.total + (data.marketplace.vendorGrossSales?.total || 0))) * 100}%` }}
+                  title={`Commissions: ${fmt(data.marketplace.commissionRevenue.total)}`}
+                />
+                <div
+                  className="h-full bg-gray-300 transition-all duration-700"
+                  title={`Vendor Earnings: ${fmt((data.marketplace.vendorGrossSales?.total || 0) - data.marketplace.commissionRevenue.total)}`}
+                />
+              </div>
+              <div className="flex items-center gap-4 mt-1.5 text-[11px] text-gray-400">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Direct Sales</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Your Commission</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-300" /> Vendor Earnings</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─── Social Shopping Stats ────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

@@ -2,6 +2,17 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
+interface SellerInfo {
+  id: string;
+  storeName?: string;
+  storeSlug?: string;
+  status: string;
+  tier?: string;
+  logo?: string;
+  rating?: number;
+  reviewCount?: number;
+}
+
 interface User {
   id: string;
   email: string;
@@ -9,12 +20,13 @@ interface User {
   phone?: string;
   role: string;
   createdAt?: string;
+  seller?: SellerInfo | null;
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ user: User }>;
   register: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
   isAdmin: boolean;
@@ -60,11 +72,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<{ user: User }> => {
     const csrfToken = getCsrfToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (csrfToken) headers["x-csrf-token"] = csrfToken;
-    
+
     const res = await fetch(`${API_URL}/api/auth/login`, {
       method: "POST",
       headers,
@@ -78,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     setUser(data.user);
+    return data;
   };
 
   const register = async (email: string, password: string, name?: string) => {
@@ -118,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isAdmin = user?.role === "ADMIN" || user?.role === "MANAGER";
-  const isSeller = user?.role === "SELLER";
+  const isSeller = !!(user?.seller && user.seller.status === "APPROVED");
   const isAuthenticated = !!user;
 
   return (

@@ -1,9 +1,10 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { apiFetch } from "@/lib/api";
 import {
   LayoutDashboard,
   Package,
@@ -18,6 +19,11 @@ import {
   X,
   Store,
   UserPlus,
+  RotateCcw,
+  BarChart2,
+  MessageCircle,
+  Bell,
+  Zap,
 } from "lucide-react";
 
 interface NavItem {
@@ -31,7 +37,12 @@ const navItems: NavItem[] = [
   { href: "/seller", icon: LayoutDashboard, label: "Dashboard", exact: true },
   { href: "/seller/products", icon: Package, label: "Products" },
   { href: "/seller/orders", icon: ShoppingCart, label: "Orders" },
+  { href: "/seller/reviews", icon: Star, label: "Reviews" },
+  { href: "/seller/returns", icon: RotateCcw, label: "Returns" },
+  { href: "/seller/analytics", icon: BarChart2, label: "Analytics" },
+  { href: "/seller/ads", icon: Zap, label: "Promote & Ads" },
   { href: "/seller/earnings", icon: Wallet, label: "Earnings" },
+  { href: "/seller/messages", icon: MessageCircle, label: "Messages" },
   { href: "/seller/settings", icon: Settings, label: "Store Settings" },
 ];
 
@@ -41,9 +52,11 @@ export default function SellerLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeName, setStoreName] = useState<string>("");
+  const [notifications, setNotifications] = useState<Array<{ type: string; message: string; detail?: string; time: string; link?: string }>>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const isPublicPage = pathname === "/seller/register" || pathname === "/seller/login";
-  const isSeller = user?.role === "SELLER";
+  const isSeller = !!(user?.seller && user.seller.status === "APPROVED");
 
   useEffect(() => {
     if (isPublicPage || isLoading) return;
@@ -54,8 +67,14 @@ export default function SellerLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user || !isSeller) return;
-    const stored = (user as any).storeName;
-    if (stored) setStoreName(stored);
+    if (user.seller?.storeName) setStoreName(user.seller.storeName);
+  }, [user, isSeller]);
+
+  useEffect(() => {
+    if (!user || !isSeller) return;
+    apiFetch("/api/seller/notifications")
+      .then((data) => setNotifications(data.notifications || []))
+      .catch(() => {});
   }, [user, isSeller]);
 
   if (isPublicPage) {
@@ -78,28 +97,79 @@ export default function SellerLayout({ children }: { children: ReactNode }) {
   }
 
   if (!isSeller) {
+    const sellerStatus = user?.seller?.status;
+    const isPending = sellerStatus === "PENDING";
+    const isRejected = sellerStatus === "REJECTED";
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md mx-auto p-8">
-          <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Store className="w-8 h-8 text-primary" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Become a Seller</h1>
-          <p className="text-gray-600 mb-6">
-            You need a seller account to access this area. Apply to start selling on our marketplace.
-          </p>
-          <Link
-            href="/seller/register"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
-          >
-            <UserPlus className="w-5 h-5" />
-            Apply to Sell
-          </Link>
-          <div className="mt-4">
-            <Link href="/" className="text-sm text-gray-500 hover:text-primary transition-colors">
-              ← Back to Store
-            </Link>
-          </div>
+          {isPending ? (
+            <>
+              <div className="w-16 h-16 bg-yellow-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Store className="w-8 h-8 text-yellow-600" />
+              </div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Application Under Review</h1>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+                <p className="text-yellow-800 text-sm font-medium mb-1">Status: Pending Review</p>
+                <p className="text-yellow-700 text-sm">
+                  Your seller application for <span className="font-semibold">{user.seller?.storeName}</span> is being reviewed by our team.
+                  This typically takes 24-48 hours. You&apos;ll receive an email once a decision is made.
+                </p>
+              </div>
+              <div className="flex flex-col items-center gap-3">
+                <p className="text-xs text-gray-400">Applied as: {user.email}</p>
+                <Link href="/" className="text-sm text-gray-500 hover:text-primary transition-colors">
+                  ← Continue Shopping
+                </Link>
+              </div>
+            </>
+          ) : isRejected ? (
+            <>
+              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Store className="w-8 h-8 text-red-500" />
+              </div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Application Not Approved</h1>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                <p className="text-red-700 text-sm">
+                  Unfortunately, your seller application was not approved at this time. Please contact our support team for more details or to re-apply.
+                </p>
+              </div>
+              <div className="flex flex-col items-center gap-3">
+                <Link
+                  href="/support"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
+                >
+                  Contact Support
+                </Link>
+                <Link href="/" className="text-sm text-gray-500 hover:text-primary transition-colors">
+                  ← Back to Store
+                </Link>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Store className="w-8 h-8 text-primary" />
+              </div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Become a Seller</h1>
+              <p className="text-gray-600 mb-6">
+                You need a seller account to access this area. Apply to start selling on our marketplace.
+              </p>
+              <Link
+                href="/seller/register"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
+              >
+                <UserPlus className="w-5 h-5" />
+                Apply to Sell
+              </Link>
+              <div className="mt-4">
+                <Link href="/" className="text-sm text-gray-500 hover:text-primary transition-colors">
+                  ← Back to Store
+                </Link>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -230,12 +300,62 @@ export default function SellerLayout({ children }: { children: ReactNode }) {
             item.exact ? pathname === item.href : pathname.startsWith(item.href)
           )?.label || "Seller Dashboard"}
         </h1>
-        <Link
-          href="/"
-          className="text-sm text-gray-500 hover:text-primary transition-colors"
-        >
-          View Store →
-        </Link>
+        <div className="flex items-center gap-4">
+          {/* Notifications Bell */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <Bell className="w-5 h-5" />
+              {notifications.length > 0 && (
+                <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {notifications.length > 9 ? "9+" : notifications.length}
+                </span>
+              )}
+            </button>
+            {showNotifications && (
+              <>
+                <div className="fixed inset-0 z-[60]" onClick={() => setShowNotifications(false)} />
+                <div className="absolute right-0 top-full mt-2 w-80 max-h-96 overflow-y-auto bg-white rounded-xl shadow-xl border border-gray-200 z-[70]">
+                  <div className="p-3 border-b border-gray-100">
+                    <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+                  </div>
+                  {notifications.length === 0 ? (
+                    <div className="p-6 text-center text-sm text-gray-400">No new notifications</div>
+                  ) : (
+                    notifications.map((n, i) => {
+                      const typeIcons: Record<string, string> = { order: "🛒", review: "⭐", return: "↩️", low_stock: "📦", payout: "💰" };
+                      const ago = Math.round((Date.now() - new Date(n.time).getTime()) / 60000);
+                      const timeStr = ago < 60 ? `${ago}m ago` : ago < 1440 ? `${Math.round(ago / 60)}h ago` : `${Math.round(ago / 1440)}d ago`;
+                      return (
+                        <Link
+                          key={i}
+                          href={n.link || "/seller"}
+                          onClick={() => setShowNotifications(false)}
+                          className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50 transition-colors"
+                        >
+                          <span className="text-lg flex-shrink-0">{typeIcons[n.type] || "📌"}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-900">{n.message}</p>
+                            {n.detail && <p className="text-xs text-gray-500">{n.detail}</p>}
+                            <p className="text-xs text-gray-400 mt-0.5">{timeStr}</p>
+                          </div>
+                        </Link>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          <Link
+            href="/"
+            className="text-sm text-gray-500 hover:text-primary transition-colors"
+          >
+            View Store →
+          </Link>
+        </div>
       </div>
 
       {/* Main Content */}
