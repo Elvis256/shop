@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
-import { uploadMultiple, validateUploadedFiles } from "../middleware/upload";
+import { uploadMultiple, validateUploadedFiles, uploadDocuments, validateUploadedDocuments } from "../middleware/upload";
 import { logActivity } from "../lib/activityLogger";
 
 const router = Router();
@@ -896,6 +896,8 @@ router.put("/profile", authenticate, requireSeller, async (req: SellerRequest, r
       bankName,
       bankAccount,
       bankBranch,
+      idDocument,
+      businessLicense,
     } = req.body;
 
     const data: any = {};
@@ -916,6 +918,8 @@ router.put("/profile", authenticate, requireSeller, async (req: SellerRequest, r
     if (bankName !== undefined) data.bankName = bankName?.trim() || null;
     if (bankAccount !== undefined) data.bankAccount = bankAccount?.trim() || null;
     if (bankBranch !== undefined) data.bankBranch = bankBranch?.trim() || null;
+    if (idDocument !== undefined) data.idDocument = idDocument?.trim() || null;
+    if (businessLicense !== undefined) data.businessLicense = businessLicense?.trim() || null;
 
     const updated = await prisma.seller.update({
       where: { id: seller.id },
@@ -973,6 +977,22 @@ router.post("/upload-images", authenticate, requireSeller, uploadMultiple, valid
   } catch (error) {
     console.error("Upload images error:", error);
     return res.status(500).json({ error: "Failed to upload images" });
+  }
+});
+
+// POST /upload-documents — Upload KYC documents (max 5 files, images + PDF)
+router.post("/upload-documents", authenticate, requireSeller, uploadDocuments, validateUploadedDocuments, async (req: SellerRequest, res: Response) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    const urls = files.map((f) => `/uploads/${f.filename}`);
+    return res.json({ urls });
+  } catch (error) {
+    console.error("Upload documents error:", error);
+    return res.status(500).json({ error: "Failed to upload documents" });
   }
 });
 
@@ -1668,6 +1688,12 @@ router.get("/onboarding-status", authenticate, requireSeller, async (req: Seller
         key: "payout",
         label: "Set up your payout method",
         completed: !!seller.payoutMethod && (!!seller.payoutPhone || !!seller.bankAccount),
+        link: "/seller/settings",
+      },
+      {
+        key: "kyc",
+        label: "Upload National ID for verification",
+        completed: !!seller.idDocument,
         link: "/seller/settings",
       },
     ];

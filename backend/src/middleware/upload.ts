@@ -10,6 +10,8 @@ const MAX_WIDTH = 1200;
 const JPEG_QUALITY = 80;
 const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
 const ALLOWED_MIMETYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+const DOCUMENT_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"];
+const DOCUMENT_MIMETYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
 
 // Ensure upload directory exists
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -22,6 +24,7 @@ const MAGIC_BYTES: Record<string, Buffer[]> = {
   "image/png": [Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
   "image/gif": [Buffer.from([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]), Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])],
   "image/webp": [Buffer.from([0x52, 0x49, 0x46, 0x46])],
+  "application/pdf": [Buffer.from([0x25, 0x50, 0x44, 0x46])], // %PDF
 };
 
 function validateFileContent(buffer: Buffer, mimetype: string): boolean {
@@ -116,6 +119,52 @@ export async function validateUploadedFiles(req: any, res: any, next: any) {
   next();
 }
 
+// Validate + optimize documents (images get Sharp optimization, PDFs pass through)
+export async function validateUploadedDocuments(req: any, res: any, next: any) {
+  const files = req.files as Express.Multer.File[] | undefined;
+  const file = req.file as Express.Multer.File | undefined;
+  const filesToValidate = files || (file ? [file] : []);
+
+  for (const uploadedFile of filesToValidate) {
+    if (!uploadedFile.buffer) {
+      return res.status(400).json({ error: "File upload processing error" });
+    }
+
+    if (!validateFileContent(uploadedFile.buffer, uploadedFile.mimetype)) {
+      return res.status(400).json({ error: "Invalid file content. File does not match declared type." });
+    }
+
+    let data: Buffer;
+    let ext: string;
+
+    if (uploadedFile.mimetype === "application/pdf") {
+      // PDFs: write raw buffer, no Sharp optimization
+      data = uploadedFile.buffer;
+      ext = ".pdf";
+    } else {
+      // Images: optimize as usual
+      const optimized = await optimizeImage(uploadedFile.buffer, uploadedFile.mimetype);
+      data = optimized.data;
+      ext = optimized.ext;
+    }
+
+    const filename = `${uuidv4()}${ext}`;
+    const filepath = path.join(UPLOAD_DIR, filename);
+    try {
+      await fs.promises.writeFile(filepath, data, { mode: 0o644 });
+    } catch {
+      return res.status(500).json({ error: "Failed to save file" });
+    }
+
+    uploadedFile.path = filepath;
+    uploadedFile.filename = filename;
+    uploadedFile.destination = UPLOAD_DIR;
+    uploadedFile.size = data.length;
+  }
+
+  next();
+}
+
 const upload = multer({
   storage: memoryStorage,
   fileFilter,
@@ -125,5 +174,28 @@ const upload = multer({
   },
 });
 
+const documentFileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  if (!DOCUMENT_MIMETYPES.includes(file.mimetype)) {
+    cb(new Error("Invalid file type. Only JPEG, PNG, GIF, WebP, and PDF are allowed."));
+    return;
+  }
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!DOCUMENT_EXTENSIONS.includes(ext)) {
+    cb(new Error("Invalid file extension."));
+    return;
+  }
+  cb(null, true);
+};
+
+const documentUpload = multer({
+  storage: memoryStorage,
+  fileFilter: documentFileFilter,
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+    files: 5,
+  },
+});
+
 export const uploadSingle = upload.single("image");
 export const uploadMultiple = upload.array("images", 20);
+export const uploadDocuments = documentUpload.array("documents", 5);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { Settings, Save, AlertTriangle, CheckCircle2, Upload, Loader2, X as XIcon, ImageIcon } from "lucide-react";
+import { Settings, Save, AlertTriangle, CheckCircle2, Upload, Loader2, X as XIcon, ImageIcon, FileText, Shield, ShieldCheck } from "lucide-react";
 import { useToast } from "@/lib/hooks/useToast";
 
 interface SellerProfile {
@@ -19,6 +19,8 @@ interface SellerProfile {
   payoutPhone: string;
   bankName: string;
   bankAccount: string;
+  idDocument: string;
+  businessLicense: string;
 }
 
 const emptyProfile: SellerProfile = {
@@ -35,6 +37,8 @@ const emptyProfile: SellerProfile = {
   payoutPhone: "",
   bankName: "",
   bankAccount: "",
+  idDocument: "",
+  businessLicense: "",
 };
 
 export default function SellerSettings() {
@@ -45,6 +49,9 @@ export default function SellerSettings() {
   const [success, setSuccess] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [uploadingIdDoc, setUploadingIdDoc] = useState(false);
+  const [uploadingBizLicense, setUploadingBizLicense] = useState(false);
+  const [sellerStatus, setSellerStatus] = useState<string>("");
   const { showToast } = useToast();
 
   const fetchProfile = useCallback(async () => {
@@ -66,7 +73,10 @@ export default function SellerSettings() {
         payoutPhone: seller.payoutPhone || "",
         bankName: seller.bankName || "",
         bankAccount: seller.bankAccount || "",
+        idDocument: seller.idDocument || "",
+        businessLicense: seller.businessLicense || "",
       });
+      setSellerStatus(seller.status || "");
     } catch (err: any) {
       setError(err.message || "Failed to load profile");
     } finally {
@@ -122,6 +132,49 @@ export default function SellerSettings() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleDocumentUpload = async (
+    files: FileList | null,
+    field: "idDocument" | "businessLicense",
+    setUploading: (v: boolean) => void
+  ) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("documents", files[0]);
+      const data = await apiFetch("/api/seller/upload-documents", {
+        method: "POST",
+        body: formData,
+      });
+      if (data.urls?.[0]) {
+        updateField(field, data.urls[0]);
+        showToast(`${field === "idDocument" ? "National ID" : "Business License"} uploaded!`, "success");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to upload document", "error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const isPdf = (url: string) => url.toLowerCase().endsWith(".pdf");
+
+  const getDocStatusBadge = () => {
+    if (!form.idDocument) return null;
+    if (sellerStatus === "APPROVED") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+          <ShieldCheck className="w-3 h-3" /> Verified
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+        <Shield className="w-3 h-3" /> Pending Review
+      </span>
+    );
   };
 
   if (loading) {
@@ -311,6 +364,156 @@ export default function SellerSettings() {
                 placeholder="City"
               />
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Verification Documents */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Verification Documents</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Upload your KYC documents for seller verification
+              </p>
+            </div>
+            {getDocStatusBadge()}
+          </div>
+        </div>
+        <div className="p-6 space-y-5">
+          {/* National ID (Required) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              National ID <span className="text-red-500">*</span>
+            </label>
+            <p className="text-xs text-gray-400 mb-2">Upload a clear photo or scan of your National ID</p>
+            {form.idDocument ? (
+              <div className="flex items-center gap-3 mb-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                {isPdf(form.idDocument) ? (
+                  <FileText className="w-10 h-10 text-red-500 flex-shrink-0" />
+                ) : (
+                  <img
+                    src={form.idDocument.startsWith("/") ? `${process.env.NEXT_PUBLIC_API_URL || ""}${form.idDocument}` : form.idDocument}
+                    alt="National ID"
+                    className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-700 truncate">
+                    {isPdf(form.idDocument) ? "National ID (PDF)" : "National ID (Image)"}
+                  </p>
+                  <a
+                    href={form.idDocument.startsWith("/") ? `${process.env.NEXT_PUBLIC_API_URL || ""}${form.idDocument}` : form.idDocument}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline"
+                  >
+                    View document
+                  </a>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateField("idDocument", "")}
+                  className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 flex-shrink-0"
+                >
+                  <XIcon className="w-3 h-3" /> Remove
+                </button>
+              </div>
+            ) : null}
+            <label
+              className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                uploadingIdDoc ? "border-primary/40 bg-primary/5" : "border-gray-300 hover:border-primary/60 hover:bg-gray-50"
+              }`}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); handleDocumentUpload(e.dataTransfer.files, "idDocument", setUploadingIdDoc); }}
+            >
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                className="hidden"
+                onChange={(e) => handleDocumentUpload(e.target.files, "idDocument", setUploadingIdDoc)}
+                disabled={uploadingIdDoc}
+              />
+              {uploadingIdDoc ? (
+                <div className="flex items-center gap-2 text-primary">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Uploading...</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-gray-500">
+                  <Upload className="w-5 h-5" />
+                  <span className="text-xs">Click or drag to upload (JPEG, PNG, WebP, or PDF)</span>
+                </div>
+              )}
+            </label>
+          </div>
+
+          {/* Business License (Optional) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Business License <span className="text-gray-400 text-xs font-normal">(Optional)</span>
+            </label>
+            <p className="text-xs text-gray-400 mb-2">Upload your business registration or trade license if available</p>
+            {form.businessLicense ? (
+              <div className="flex items-center gap-3 mb-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                {isPdf(form.businessLicense) ? (
+                  <FileText className="w-10 h-10 text-red-500 flex-shrink-0" />
+                ) : (
+                  <img
+                    src={form.businessLicense.startsWith("/") ? `${process.env.NEXT_PUBLIC_API_URL || ""}${form.businessLicense}` : form.businessLicense}
+                    alt="Business License"
+                    className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-700 truncate">
+                    {isPdf(form.businessLicense) ? "Business License (PDF)" : "Business License (Image)"}
+                  </p>
+                  <a
+                    href={form.businessLicense.startsWith("/") ? `${process.env.NEXT_PUBLIC_API_URL || ""}${form.businessLicense}` : form.businessLicense}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline"
+                  >
+                    View document
+                  </a>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateField("businessLicense", "")}
+                  className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 flex-shrink-0"
+                >
+                  <XIcon className="w-3 h-3" /> Remove
+                </button>
+              </div>
+            ) : null}
+            <label
+              className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                uploadingBizLicense ? "border-primary/40 bg-primary/5" : "border-gray-300 hover:border-primary/60 hover:bg-gray-50"
+              }`}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); handleDocumentUpload(e.dataTransfer.files, "businessLicense", setUploadingBizLicense); }}
+            >
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                className="hidden"
+                onChange={(e) => handleDocumentUpload(e.target.files, "businessLicense", setUploadingBizLicense)}
+                disabled={uploadingBizLicense}
+              />
+              {uploadingBizLicense ? (
+                <div className="flex items-center gap-2 text-primary">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Uploading...</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-gray-500">
+                  <Upload className="w-5 h-5" />
+                  <span className="text-xs">Click or drag to upload (JPEG, PNG, WebP, or PDF)</span>
+                </div>
+              )}
+            </label>
           </div>
         </div>
       </div>

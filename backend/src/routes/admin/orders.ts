@@ -21,6 +21,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       dateFrom,
       dateTo,
       isGift,
+      sellerId,
       sort = "createdAt",
       order = "desc",
       page = "1",
@@ -56,6 +57,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 
     if (isGift === "true") {
       where.isGift = true;
+    }
+
+    if (sellerId) {
+      where.items = { some: { sellerId: sellerId as string } };
     }
 
     const orderBy: any = {};
