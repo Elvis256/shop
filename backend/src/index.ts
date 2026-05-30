@@ -102,6 +102,9 @@ import adminPermissions from "./routes/admin/permissions";
 import adminProductModeration from "./routes/admin/productModeration";
 import adminMessages from "./routes/admin/messages";
 import adminAds from "./routes/admin/ads";
+import adminDisputes from "./routes/admin/disputes";
+import adminSellerBadges from "./routes/admin/sellerBadges";
+import disputesRoutes from "./routes/disputes";
 import settingsRoutes from "./routes/settings";
 
 // Middleware
@@ -262,6 +265,9 @@ app.use("/api/admin/permissions", adminPermissions);
 app.use("/api/admin/product-moderation", adminProductModeration);
 app.use("/api/admin/messages", adminMessages);
 app.use("/api/admin/ads", adminAds);
+app.use("/api/admin/disputes", adminDisputes);
+app.use("/api/admin/seller-badges", adminSellerBadges);
+app.use("/api/disputes", disputesRoutes);
 app.use("/api/settings", settingsRoutes);
 
 // Health check endpoints — comprehensive monitoring

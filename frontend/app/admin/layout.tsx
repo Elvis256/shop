@@ -84,6 +84,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/admin/orders", icon: ShoppingCart, label: "Orders" },
       { href: "/admin/returns", icon: RotateCcw, label: "Returns" },
+      { href: "/admin/disputes", icon: Shield, label: "Disputes" },
       { href: "/admin/customers", icon: Users, label: "Customers" },
       { href: "/admin/invoices", icon: Receipt, label: "Invoices" },
       { href: "/admin/coupons", icon: Tag, label: "Coupons" },

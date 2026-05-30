@@ -11,7 +11,7 @@ import { apiFetch } from "@/lib/api";
 import {
   Package, Truck, CheckCircle, Clock, AlertCircle, CreditCard,
   Smartphone, Banknote, MapPin, ShieldCheck, Eye, Copy, Check,
-  FileText, RefreshCw, Loader2,
+  FileText, RefreshCw, Loader2, Shield, AlertTriangle, ThumbsUp,
 } from "lucide-react";
 
 interface OrderItem {
@@ -99,6 +99,9 @@ export default function OrderDetailPage() {
   const [modifying, setModifying] = useState(false);
   const [modifySuccess, setModifySuccess] = useState(false);
   const [modifyError, setModifyError] = useState<string | null>(null);
+  const [confirmingDelivery, setConfirmingDelivery] = useState(false);
+  const [deliveryConfirmed, setDeliveryConfirmed] = useState(false);
+  const [escrow, setEscrow] = useState<{ status: string; releaseDate: string; amount: number } | null>(null);
 
   useEffect(() => {
     loadOrder();
@@ -108,10 +111,29 @@ export default function OrderDetailPage() {
     try {
       const data = await apiFetch(`/api/orders/${orderId}`);
       setOrder(data);
+      // Load escrow status
+      try {
+        const escrowData = await apiFetch(`/api/orders/${orderId}/escrow`);
+        if (escrowData.escrow) setEscrow(escrowData.escrow);
+      } catch { /* no escrow */ }
     } catch {
       setError("Failed to load order");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirmDelivery = async () => {
+    if (!order) return;
+    setConfirmingDelivery(true);
+    try {
+      await apiFetch(`/api/orders/${order.id}/confirm-delivery`, { method: "POST" });
+      setDeliveryConfirmed(true);
+      loadOrder();
+    } catch {
+      // handled silently
+    } finally {
+      setConfirmingDelivery(false);
     }
   };
 
@@ -266,6 +288,86 @@ export default function OrderDetailPage() {
                   ? "Please have cash ready when your order is delivered."
                   : "We'll send you a confirmation email shortly."}
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Buyer Protection Banner */}
+        {escrow && (
+          <div className={`mb-6 p-4 rounded-xl border flex items-start gap-3 ${
+            escrow.status === "HELD" ? "bg-blue-50 border-blue-200" :
+            escrow.status === "RELEASED" ? "bg-green-50 border-green-200" :
+            escrow.status === "DISPUTED" ? "bg-orange-50 border-orange-200" :
+            escrow.status === "REFUNDED" ? "bg-gray-50 border-gray-200" :
+            "bg-blue-50 border-blue-200"
+          }`}>
+            <Shield className={`w-6 h-6 flex-shrink-0 mt-0.5 ${
+              escrow.status === "HELD" ? "text-blue-600" :
+              escrow.status === "RELEASED" ? "text-green-600" :
+              escrow.status === "DISPUTED" ? "text-orange-600" :
+              "text-gray-600"
+            }`} />
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <p className="font-semibold text-gray-900">Buyer Protection Active</p>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  escrow.status === "HELD" ? "bg-blue-100 text-blue-700" :
+                  escrow.status === "RELEASED" ? "bg-green-100 text-green-700" :
+                  escrow.status === "DISPUTED" ? "bg-orange-100 text-orange-700" :
+                  "bg-gray-100 text-gray-700"
+                }`}>
+                  {escrow.status === "HELD" ? "Payment Held" :
+                   escrow.status === "RELEASED" ? "Payment Released" :
+                   escrow.status === "DISPUTED" ? "Under Dispute" :
+                   escrow.status === "REFUNDED" ? "Refunded" : escrow.status}
+                </span>
+              </div>
+              <p className="text-sm text-gray-600 mt-1">
+                {escrow.status === "HELD"
+                  ? "Your payment is held securely until you confirm delivery. You have 7 days after delivery to report any issues."
+                  : escrow.status === "RELEASED"
+                  ? "Payment has been released to the seller. Thank you for confirming!"
+                  : escrow.status === "DISPUTED"
+                  ? "This order is under dispute review. Your funds are safe."
+                  : "Your refund has been processed."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Confirm Delivery / Dispute Actions */}
+        {order && ["SHIPPED", "DELIVERED"].includes(order.status) && escrow?.status === "HELD" && !deliveryConfirmed && (
+          <div className="mb-6 p-4 bg-white border border-gray-200 rounded-xl">
+            <h3 className="font-semibold mb-2">Have you received your order?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Confirm delivery to release payment to the seller. If there&apos;s an issue, you can open a dispute.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleConfirmDelivery}
+                disabled={confirmingDelivery}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                {confirmingDelivery ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
+                Yes, I received my order
+              </button>
+              <Link
+                href={`/account/disputes/new?orderId=${order.id}`}
+                className="flex items-center gap-2 px-4 py-2 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                Report an Issue
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {deliveryConfirmed && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
+            <CheckCircle className="w-6 h-6 text-green-600" />
+            <div>
+              <p className="font-semibold text-green-800">Delivery confirmed!</p>
+              <p className="text-sm text-green-700">Payment has been released to the seller. Thank you!</p>
             </div>
           </div>
         )}

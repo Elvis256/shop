@@ -55,6 +55,7 @@ model User {
   priceSlashes      PriceSlash[]
   seller            Seller?
   buyerConversations Conversation[] @relation("BuyerConversations")
+  disputes          Dispute[]      @relation("BuyerDisputes")
   registries        Registry[]
   restockReminders  RestockReminder[]
   checkoutAttempts  CheckoutAttempt[]
@@ -383,7 +384,9 @@ model Order {
   cjOrders         CJOrder[]
   installmentPlan InstallmentPlan?
   checkoutAttempts CheckoutAttempt[]
-   
+  escrow          EscrowTransaction?
+  disputes        Dispute[]
+
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -1740,10 +1743,21 @@ model Seller {
   warnings      SellerWarning[]
   promotions    ProductPromotion[]
   adTransactions AdTransaction[]
+  badges        SellerBadge[]
+  disputes      Dispute[]
 
   // Ad balance (separate from earnings balance)
   adBalance     Decimal      @default(0) @db.Decimal(12, 2)
   onboardingCompleted Boolean @default(false)
+
+  // Trust metrics
+  trustScore      Int          @default(0)     // 0-100
+  avgShipDays     Decimal?     @db.Decimal(4, 1) // Average days to ship
+  onTimeRate      Decimal?     @db.Decimal(5, 2) // % of orders shipped on time
+  responseRate    Decimal?     @db.Decimal(5, 2) // % of messages responded
+  avgResponseHrs  Decimal?     @db.Decimal(6, 1) // Average hours to respond
+  disputeRate     Decimal?     @db.Decimal(5, 2) // % of orders with disputes
+  returnRate      Decimal?     @db.Decimal(5, 2) // % of orders with returns
 
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
@@ -2032,4 +2046,178 @@ model AdTransaction {
 
   @@index([sellerId])
   @@index([createdAt])
+}
+
+// ─── Buyer Protection / Escrow ──────────────────────────────────────────────────
+model EscrowTransaction {
+  id            String        @id @default(cuid())
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount        Decimal       @db.Decimal(12, 2) // Total amount held in escrow
+  currency      String        @default("UGX")
+  status        EscrowStatus  @default(HELD)
+
+  // Timing
+  heldAt        DateTime      @default(now())
+  releaseDate   DateTime      // Auto-release date (e.g., 7 days after DELIVERED)
+  releasedAt    DateTime?
+
+  // Resolution
+  releasedTo    String?       // Seller ID who received funds
+  refundedTo    String?       // Buyer user ID if refunded
+  disputeId     String?       // If released via dispute resolution
+  notes         String?       @db.Text
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([status])
+  @@index([releaseDate])
+}
+
+enum EscrowStatus {
+  HELD          // Payment captured, funds held
+  RELEASING     // Auto-release triggered, processing
+  RELEASED      // Funds released to seller
+  DISPUTED      // Dispute opened, funds frozen
+  REFUNDED      // Funds returned to buyer
+  PARTIAL_REFUND // Partial refund issued
+}
+
+// ─── Dispute Resolution ─────────────────────────────────────────────────────────
+model Dispute {
+  id            String          @id @default(cuid())
+  disputeNumber String          @unique // e.g., DSP-20260530-001
+  orderId       String
+  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  buyerId       String
+  buyer         User            @relation("BuyerDisputes", fields: [buyerId], references: [id], onDelete: Cascade)
+  sellerId      String
+  seller        Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  // Dispute details
+  category      DisputeCategory
+  reason        String          @db.Text
+  status        DisputeStatus   @default(OPEN)
+  priority      DisputePriority @default(MEDIUM)
+
+  // Evidence
+  evidence      DisputeEvidence[]
+  messages      DisputeMessage[]
+
+  // Seller response
+  sellerResponse   String?      @db.Text
+  sellerRespondedAt DateTime?
+
+  // Admin resolution
+  assignedTo    String?         // Admin user ID
+  resolution    DisputeResolution?
+  resolutionNote String?        @db.Text
+  refundAmount  Decimal?        @db.Decimal(12, 2) // Amount refunded if applicable
+  resolvedBy    String?         // Admin user ID
+  resolvedAt    DateTime?
+
+  // Deadlines
+  sellerDeadline DateTime?      // Seller must respond by this date
+  escalatedAt    DateTime?      // When escalated to admin
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([orderId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model DisputeEvidence {
+  id          String   @id @default(cuid())
+  disputeId   String
+  dispute     Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  uploadedBy  String   // User ID
+  type        String   // photo, video, screenshot, document
+  fileUrl     String
+  fileName    String
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@index([disputeId])
+}
+
+model DisputeMessage {
+  id          String   @id @default(cuid())
+  disputeId   String
+  dispute     Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  senderId    String
+  senderType  String   // BUYER, SELLER, ADMIN
+  senderName  String
+  message     String   @db.Text
+  isInternal  Boolean  @default(false) // Admin-only notes
+  createdAt   DateTime @default(now())
+
+  @@index([disputeId, createdAt])
+}
+
+enum DisputeCategory {
+  NOT_RECEIVED
+  DAMAGED
+  NOT_AS_DESCRIBED
+  WRONG_ITEM
+  MISSING_ITEMS
+  DEFECTIVE
+  COUNTERFEIT
+  QUALITY_ISSUE
+  OTHER
+}
+
+enum DisputeStatus {
+  OPEN              // Buyer filed dispute
+  SELLER_RESPONSE   // Waiting for seller response
+  UNDER_REVIEW      // Admin reviewing
+  EVIDENCE_REQUESTED // More evidence needed
+  RESOLVED          // Resolution applied
+  CLOSED            // Closed (no further action)
+  ESCALATED         // Escalated to senior admin
+}
+
+enum DisputePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum DisputeResolution {
+  BUYER_FULL_REFUND      // Full refund to buyer
+  BUYER_PARTIAL_REFUND   // Partial refund to buyer
+  BUYER_REPLACEMENT      // Seller sends replacement
+  SELLER_WINS            // No refund, seller keeps payment
+  MUTUAL_AGREEMENT       // Custom resolution
+  CANCELLED              // Dispute withdrawn by buyer
+}
+
+// ─── Seller Trust Badges ────────────────────────────────────────────────────────
+model SellerBadge {
+  id          String   @id @default(cuid())
+  sellerId    String
+  seller      Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  badge       BadgeType
+  earnedAt    DateTime @default(now())
+  expiresAt   DateTime? // Some badges need re-qualification
+  isActive    Boolean  @default(true)
+
+  @@unique([sellerId, badge])
+  @@index([sellerId, isActive])
+}
+
+enum BadgeType {
+  VERIFIED           // ID & business docs verified
+  TOP_RATED          // Rating >= 4.5 with 50+ reviews
+  FAST_SHIPPER       // Ships within 24hrs consistently
+  RESPONSIVE         // Responds to messages within 2hrs
+  TRUSTED            // 100+ completed orders, low dispute rate
+  PREMIUM            // All badges earned + GOLD tier
+  NEW_SELLER         // First 30 days
+  RISING_STAR        // Fast-growing seller metrics
 }

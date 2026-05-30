@@ -229,19 +229,46 @@ router.put("/:id/status", async (req: AuthRequest, res: Response) => {
       updateData.trackingNumber = trackingNumber;
     }
 
-    await prisma.$transaction([
-      prisma.order.update({
+    await prisma.$transaction(async (tx) => {
+      await tx.order.update({
         where: { id },
         data: updateData,
-      }),
-      prisma.orderEvent.create({
+      });
+      await tx.orderEvent.create({
         data: {
           orderId: id,
           status,
           note: note || `Order status changed to ${status}`,
         },
-      }),
-    ]);
+      });
+
+      // Create escrow when order is CONFIRMED (payment verified)
+      if (status === "CONFIRMED" && order.paymentStatus === "SUCCESSFUL") {
+        const existingEscrow = await tx.escrowTransaction.findUnique({ where: { orderId: id } });
+        if (!existingEscrow) {
+          await tx.escrowTransaction.create({
+            data: {
+              orderId: id,
+              amount: order.totalAmount,
+              currency: order.currency,
+              status: "HELD",
+              releaseDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days after delivery
+            },
+          });
+        }
+      }
+
+      // Auto-set escrow release date when delivered
+      if (status === "DELIVERED") {
+        const escrow = await tx.escrowTransaction.findUnique({ where: { orderId: id } });
+        if (escrow && escrow.status === "HELD") {
+          await tx.escrowTransaction.update({
+            where: { id: escrow.id },
+            data: { releaseDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+          });
+        }
+      }
+    });
 
     // Send shipping notification if shipped
     if (status === "SHIPPED") {

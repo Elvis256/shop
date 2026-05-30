@@ -562,4 +562,122 @@ router.put("/:id/modify", authenticate, async (req: AuthRequest, res: Response) 
   }
 });
 
+// POST /api/orders/:id/confirm-delivery — Buyer confirms delivery (releases escrow)
+router.post("/:id/confirm-delivery", authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: {
+        escrow: true,
+        items: { select: { sellerId: true, price: true, quantity: true, commission: true } },
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    if (order.userId !== userId && order.customerEmail !== req.user!.email) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+
+    if (!["SHIPPED", "DELIVERED"].includes(order.status)) {
+      return res.status(400).json({ error: "Order must be shipped or delivered to confirm" });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Update order status to DELIVERED
+      if (order.status !== "DELIVERED") {
+        await tx.order.update({
+          where: { id },
+          data: { status: "DELIVERED" },
+        });
+      }
+
+      // Release escrow if exists
+      if (order.escrow && order.escrow.status === "HELD") {
+        await tx.escrowTransaction.update({
+          where: { id: order.escrow.id },
+          data: {
+            status: "RELEASED",
+            releasedAt: new Date(),
+            releasedTo: order.items[0]?.sellerId || null,
+            notes: "Released by buyer confirmation",
+          },
+        });
+
+        // Credit seller balances
+        const sellerAmounts: Record<string, number> = {};
+        for (const item of order.items) {
+          if (item.sellerId) {
+            const itemTotal = parseFloat(item.price.toString()) * item.quantity;
+            const commission = item.commission ? parseFloat(item.commission.toString()) : itemTotal * 0.15;
+            const sellerAmount = itemTotal - commission;
+            sellerAmounts[item.sellerId] = (sellerAmounts[item.sellerId] || 0) + sellerAmount;
+          }
+        }
+
+        for (const [sellerId, amount] of Object.entries(sellerAmounts)) {
+          await tx.seller.update({
+            where: { id: sellerId },
+            data: {
+              balance: { increment: amount },
+              totalEarnings: { increment: amount },
+              totalSales: { increment: 1 },
+            },
+          });
+        }
+      }
+
+      // Add timeline event
+      await tx.orderEvent.create({
+        data: {
+          orderId: id,
+          status: "DELIVERY_CONFIRMED",
+          note: "Delivery confirmed by buyer — payment released to seller",
+        },
+      });
+    });
+
+    return res.json({ message: "Delivery confirmed. Payment has been released to the seller." });
+  } catch (error) {
+    console.error("Confirm delivery error:", error);
+    return res.status(500).json({ error: "Failed to confirm delivery" });
+  }
+});
+
+// GET /api/orders/:id/escrow — Get escrow status for an order
+router.get("/:id/escrow", authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      select: {
+        userId: true,
+        customerEmail: true,
+        escrow: true,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    const isOwner = order.userId === req.user!.id || order.customerEmail === req.user!.email;
+    const isAdmin = req.user!.role === "ADMIN" || req.user!.role === "MANAGER";
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+
+    return res.json({
+      escrow: order.escrow || null,
+      protected: !!order.escrow,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to fetch escrow status" });
+  }
+});
+
 export default router;

@@ -149,8 +149,15 @@ router.get("/store/:slug", async (req: AuthRequest, res: Response) => {
         country: true,
         rating: true,
         reviewCount: true,
+        tier: true,
+        trustScore: true,
+        totalSales: true,
         createdAt: true,
         status: true,
+        badges: {
+          where: { isActive: true },
+          select: { badge: true, earnedAt: true },
+        },
       },
     });
 
