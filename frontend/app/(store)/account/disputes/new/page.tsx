@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Section from "@/components/Section";
 import Breadcrumbs from "@/components/Breadcrumbs";
@@ -32,7 +32,15 @@ interface OrderSummary {
   items: Array<{ productName: string; quantity: number; price: number; imageUrl?: string }>;
 }
 
-export default function NewDisputePage() {
+export default function NewDisputePageWrapper() {
+  return (
+    <Suspense fallback={<Section><div className="max-w-2xl mx-auto flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div></Section>}>
+      <NewDisputePage />
+    </Suspense>
+  );
+}
+
+function NewDisputePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
