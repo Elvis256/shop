@@ -342,18 +342,125 @@ router.get("/products", authenticate, requireSeller, async (req: SellerRequest, 
         include: {
           images: { take: 1 },
           category: { select: { id: true, name: true } },
+          variants: { select: { id: true } },
         },
       }),
       prisma.product.count({ where }),
     ]);
 
     return res.json({
-      products,
+      products: products.map((p) => ({ ...p, hasVariants: p.hasVariants, variants: p.variants })),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
     console.error("List seller products error:", error);
     return res.status(500).json({ error: "Failed to load products" });
+  }
+});
+
+// GET /products/export — Export all products as CSV
+router.get("/products/export", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const products = await prisma.product.findMany({
+      where: { sellerId: seller.id },
+      include: { category: { select: { name: true } }, images: { take: 1 } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const headers = ["name", "description", "price", "comparePrice", "stock", "sku", "category", "tags", "status", "weight", "metaTitle", "metaDescription"];
+    const rows = products.map((p) => [
+      p.name,
+      (p.description || "").replace(/"/g, '""'),
+      Number(p.price),
+      p.comparePrice ? Number(p.comparePrice) : "",
+      p.stock,
+      p.sku || "",
+      p.category?.name || "",
+      (p.tags || []).join("|"),
+      p.status,
+      p.weight ? Number(p.weight) : "",
+      p.metaTitle || "",
+      p.metaDescription || "",
+    ]);
+
+    const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${v}"`).join(","))].join("\n");
+    return res.json({ csv });
+  } catch (error) {
+    console.error("Export products error:", error);
+    return res.status(500).json({ error: "Failed to export products" });
+  }
+});
+
+// POST /products/import — Import products from CSV
+router.post("/products/import", authenticate, requireSeller, uploadMultiple, async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const file = (req as any).files?.[0] || (req as any).file;
+    if (!file) {
+      return res.status(400).json({ error: "CSV file is required" });
+    }
+
+    const content = file.buffer?.toString("utf-8") || "";
+    const lines = content.split("\n").filter((l: string) => l.trim());
+    if (lines.length < 2) {
+      return res.status(400).json({ error: "CSV must have at least a header and one data row" });
+    }
+
+    const headers = lines[0].split(",").map((h: string) => h.trim().replace(/^"|"$/g, "").toLowerCase());
+    const nameIdx = headers.indexOf("name");
+    const priceIdx = headers.indexOf("price");
+    if (nameIdx === -1 || priceIdx === -1) {
+      return res.status(400).json({ error: "CSV must have 'name' and 'price' columns" });
+    }
+
+    const imported: string[] = [];
+    const errors: string[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      try {
+        const vals = lines[i].split(",").map((v: string) => v.trim().replace(/^"|"$/g, ""));
+        const name = vals[nameIdx];
+        const price = parseFloat(vals[priceIdx]);
+        if (!name || isNaN(price)) {
+          errors.push(`Row ${i + 1}: Invalid name or price`);
+          continue;
+        }
+
+        let slug = slugify(name);
+        const slugExists = await prisma.product.findUnique({ where: { slug } });
+        if (slugExists) slug = `${slug}-${Date.now().toString(36)}`;
+
+        const descIdx = headers.indexOf("description");
+        const stockIdx = headers.indexOf("stock");
+        const skuIdx = headers.indexOf("sku");
+        const tagsIdx = headers.indexOf("tags");
+        const comparePriceIdx = headers.indexOf("compareprice");
+
+        await prisma.product.create({
+          data: {
+            name,
+            slug,
+            description: descIdx >= 0 ? vals[descIdx] || null : null,
+            price,
+            comparePrice: comparePriceIdx >= 0 && vals[comparePriceIdx] ? parseFloat(vals[comparePriceIdx]) : null,
+            stock: stockIdx >= 0 ? parseInt(vals[stockIdx]) || 0 : 0,
+            sku: skuIdx >= 0 ? vals[skuIdx] || null : null,
+            tags: tagsIdx >= 0 && vals[tagsIdx] ? vals[tagsIdx].split("|").map((t: string) => t.trim()) : [],
+            sellerId: seller.id,
+            status: seller.autoApproveProducts ? "ACTIVE" : "PENDING_REVIEW",
+          },
+        });
+        imported.push(name);
+      } catch (err: any) {
+        errors.push(`Row ${i + 1}: ${err.message?.slice(0, 80) || "Unknown error"}`);
+      }
+    }
+
+    return res.json({ imported: imported.length, errors });
+  } catch (error) {
+    console.error("Import products error:", error);
+    return res.status(500).json({ error: "Failed to import products" });
   }
 });
 
@@ -367,6 +474,7 @@ router.get("/products/:id", authenticate, requireSeller, async (req: SellerReque
       include: {
         images: true,
         category: { select: { id: true, name: true } },
+        variants: true,
       },
     });
     if (!product) {
@@ -405,6 +513,8 @@ router.post("/products", authenticate, requireSeller, async (req: SellerRequest,
       trackInventory,
       allowBackorder,
       lowStockAlert,
+      hasVariants,
+      variants,
     } = req.body;
 
     if (!name || typeof name !== "string" || name.trim().length < 2) {
@@ -447,6 +557,7 @@ router.post("/products", authenticate, requireSeller, async (req: SellerRequest,
         trackInventory: trackInventory !== false,
         allowBackorder: allowBackorder === true,
         lowStockAlert: parseInt(lowStockAlert) || 5,
+        hasVariants: hasVariants === true,
         images: images?.length
           ? {
               create: images.map((img: { url: string; alt?: string }, idx: number) => ({
@@ -460,8 +571,25 @@ router.post("/products", authenticate, requireSeller, async (req: SellerRequest,
       include: {
         images: true,
         category: { select: { id: true, name: true } },
+        variants: true,
       },
     });
+
+    // Create variants if provided
+    if (hasVariants && Array.isArray(variants) && variants.length > 0) {
+      await prisma.productVariant.createMany({
+        data: variants.map((v: any) => ({
+          productId: product.id,
+          name: v.name || "",
+          sku: v.sku?.trim() || null,
+          price: v.price ? Number(v.price) : null,
+          stock: parseInt(v.stock) || 0,
+          size: v.size?.trim() || null,
+          color: v.color?.trim() || null,
+          material: v.material?.trim() || null,
+        })),
+      });
+    }
 
     logActivity({
       userId: seller.userId,
@@ -471,7 +599,12 @@ router.post("/products", authenticate, requireSeller, async (req: SellerRequest,
       description: `Created product "${name.trim()}" (${productStatus})`,
     });
 
-    return res.status(201).json({ product });
+    const result = await prisma.product.findUnique({
+      where: { id: product.id },
+      include: { images: true, category: { select: { id: true, name: true } }, variants: true },
+    });
+
+    return res.status(201).json({ product: result });
   } catch (error) {
     console.error("Create product error:", error);
     return res.status(500).json({ error: "Failed to create product" });
@@ -511,6 +644,8 @@ router.put("/products/:id", authenticate, requireSeller, async (req: SellerReque
       trackInventory,
       allowBackorder,
       lowStockAlert,
+      hasVariants,
+      variants,
     } = req.body;
 
     const data: any = {};
@@ -529,6 +664,7 @@ router.put("/products/:id", authenticate, requireSeller, async (req: SellerReque
     if (trackInventory !== undefined) data.trackInventory = !!trackInventory;
     if (allowBackorder !== undefined) data.allowBackorder = !!allowBackorder;
     if (lowStockAlert !== undefined) data.lowStockAlert = parseInt(lowStockAlert) || 5;
+    if (hasVariants !== undefined) data.hasVariants = !!hasVariants;
     // Sellers can only set DRAFT or ACTIVE
     if (status !== undefined && ["DRAFT", "ACTIVE"].includes(status)) {
       if (status === "ACTIVE" && !seller.autoApproveProducts) {
@@ -538,12 +674,34 @@ router.put("/products/:id", authenticate, requireSeller, async (req: SellerReque
       }
     }
 
+    // Handle variants update in a transaction
+    if (Array.isArray(variants)) {
+      await prisma.$transaction([
+        prisma.productVariant.deleteMany({ where: { productId: req.params.id } }),
+        ...(variants.length > 0
+          ? [prisma.productVariant.createMany({
+              data: variants.map((v: any) => ({
+                productId: req.params.id,
+                name: v.name || "",
+                sku: v.sku?.trim() || null,
+                price: v.price ? Number(v.price) : null,
+                stock: parseInt(v.stock) || 0,
+                size: v.size?.trim() || null,
+                color: v.color?.trim() || null,
+                material: v.material?.trim() || null,
+              })),
+            })]
+          : []),
+      ]);
+    }
+
     const updated = await prisma.product.update({
       where: { id: req.params.id },
       data,
       include: {
         images: true,
         category: { select: { id: true, name: true } },
+        variants: true,
       },
     });
 
@@ -746,21 +904,27 @@ router.put("/orders/:id/status", authenticate, requireSeller, async (req: Seller
 router.get("/earnings", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
+    const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const skip = (page - 1) * limit;
 
-    const totalWithdrawn = await prisma.sellerPayout.aggregate({
-      where: { sellerId: seller.id, status: "COMPLETED" },
-      _sum: { amount: true },
-    });
-
-    const pendingPayouts = await prisma.sellerPayout.aggregate({
-      where: { sellerId: seller.id, status: { in: ["PENDING", "PROCESSING"] } },
-      _sum: { amount: true },
-    });
+    const [totalWithdrawn, pendingPayouts, total] = await Promise.all([
+      prisma.sellerPayout.aggregate({
+        where: { sellerId: seller.id, status: "COMPLETED" },
+        _sum: { amount: true },
+      }),
+      prisma.sellerPayout.aggregate({
+        where: { sellerId: seller.id, status: { in: ["PENDING", "PROCESSING"] } },
+        _sum: { amount: true },
+      }),
+      prisma.orderItem.count({ where: { sellerId: seller.id } }),
+    ]);
 
     const recentItems = await prisma.orderItem.findMany({
       where: { sellerId: seller.id },
       orderBy: { order: { createdAt: "desc" } },
-      take: 20,
+      skip,
+      take: limit,
       include: {
         order: { select: { id: true, orderNumber: true, createdAt: true, status: true } },
         product: { select: { id: true, name: true } },
@@ -774,9 +938,11 @@ router.get("/earnings", authenticate, requireSeller, async (req: SellerRequest, 
       const commission = Math.round((amount * commissionRate) / 100);
       return {
         id: item.id,
+        orderId: item.order.id,
         orderNumber: item.order.orderNumber,
         productName: item.product?.name || "Unknown Product",
         amount,
+        commissionRate,
         commission,
         net: amount - commission,
         date: item.order.createdAt,
@@ -789,10 +955,66 @@ router.get("/earnings", authenticate, requireSeller, async (req: SellerRequest, 
       totalWithdrawn: totalWithdrawn._sum.amount || 0,
       pendingPayouts: pendingPayouts._sum.amount || 0,
       recentTransactions,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
     console.error("Earnings error:", error);
     return res.status(500).json({ error: "Failed to load earnings" });
+  }
+});
+
+// GET /earnings/invoice/:orderId — Structured invoice data
+router.get("/earnings/invoice/:orderId", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.orderId },
+      include: {
+        items: {
+          where: { sellerId: seller.id },
+          include: { product: { select: { name: true, sku: true } } },
+        },
+      },
+    });
+
+    if (!order || order.items.length === 0) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    const commissionRate = seller.commissionRate !== null ? Number(seller.commissionRate) : 15;
+    const items = order.items.map((item) => {
+      const amount = Number(item.price) * item.quantity;
+      const commission = Math.round((amount * commissionRate) / 100);
+      return {
+        productName: item.product?.name || "Unknown",
+        sku: item.product?.sku || "",
+        quantity: item.quantity,
+        unitPrice: Number(item.price),
+        amount,
+        commissionRate,
+        commission,
+        net: amount - commission,
+      };
+    });
+
+    const totals = items.reduce(
+      (acc, i) => ({ gross: acc.gross + i.amount, commission: acc.commission + i.commission, net: acc.net + i.net }),
+      { gross: 0, commission: 0, net: 0 }
+    );
+
+    return res.json({
+      invoice: {
+        orderNumber: order.orderNumber,
+        orderDate: order.createdAt,
+        seller: { storeName: seller.storeName, email: seller.email, phone: seller.phone },
+        customer: { name: order.customerName, email: order.customerEmail },
+        items,
+        totals,
+      },
+    });
+  } catch (error) {
+    console.error("Invoice error:", error);
+    return res.status(500).json({ error: "Failed to generate invoice" });
   }
 });
 
@@ -905,6 +1127,11 @@ router.put("/profile", authenticate, requireSeller, async (req: SellerRequest, r
       bankBranch,
       idDocument,
       businessLicense,
+      socialLinks,
+      operatingHours,
+      shippingPolicy,
+      returnPolicy,
+      notificationPrefs,
     } = req.body;
 
     const data: any = {};
@@ -927,6 +1154,11 @@ router.put("/profile", authenticate, requireSeller, async (req: SellerRequest, r
     if (bankBranch !== undefined) data.bankBranch = bankBranch?.trim() || null;
     if (idDocument !== undefined) data.idDocument = idDocument?.trim() || null;
     if (businessLicense !== undefined) data.businessLicense = businessLicense?.trim() || null;
+    if (socialLinks !== undefined) data.socialLinks = socialLinks || null;
+    if (operatingHours !== undefined) data.operatingHours = operatingHours || null;
+    if (shippingPolicy !== undefined) data.shippingPolicy = shippingPolicy?.trim() || null;
+    if (returnPolicy !== undefined) data.returnPolicy = returnPolicy?.trim() || null;
+    if (notificationPrefs !== undefined) data.notificationPrefs = notificationPrefs || null;
 
     const updated = await prisma.seller.update({
       where: { id: seller.id },
@@ -1107,9 +1339,24 @@ router.get("/analytics", authenticate, requireSeller, async (req: SellerRequest,
   try {
     const seller = req.seller!;
 
-    const period = Math.min(parseInt(req.query.period as string) || 30, 365);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - period);
+    // Support custom date range via from/to params, or period
+    const fromParam = req.query.from as string;
+    const toParam = req.query.to as string;
+    const compareWith = req.query.compareWith as string;
+    let startDate: Date;
+    let endDate = new Date();
+    let period: number;
+
+    if (fromParam && toParam) {
+      startDate = new Date(fromParam);
+      endDate = new Date(toParam);
+      endDate.setHours(23, 59, 59, 999);
+      period = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    } else {
+      period = Math.min(parseInt(req.query.period as string) || 30, 365);
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - period);
+    }
 
     // Get seller's product IDs
     const sellerProducts = await prisma.product.findMany({
@@ -1206,12 +1453,52 @@ router.get("/analytics", authenticate, requireSeller, async (req: SellerRequest,
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
 
+    // Period comparison
+    let comparison: any = null;
+    if (compareWith === "previous") {
+      const prevStart = new Date(startDate);
+      prevStart.setDate(prevStart.getDate() - period);
+      const prevEnd = new Date(startDate);
+      prevEnd.setMilliseconds(prevEnd.getMilliseconds() - 1);
+
+      const prevItems = await prisma.orderItem.findMany({
+        where: {
+          sellerId: seller.id,
+          order: {
+            createdAt: { gte: prevStart, lte: prevEnd },
+            status: { in: ["CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED"] },
+          },
+        },
+        include: { order: { select: { createdAt: true } } },
+      });
+
+      const prevRevenue = prevItems.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
+      const prevUnitsSold = prevItems.reduce((sum, item) => sum + item.quantity, 0);
+      const prevViews = productIds.length > 0
+        ? await prisma.browseEvent.count({ where: { productId: { in: productIds }, viewedAt: { gte: prevStart, lte: prevEnd } } })
+        : 0;
+      const prevOrderCount = new Set(prevItems.map((i) => i.orderId)).size;
+      const prevConversion = prevViews > 0 ? Math.round((prevOrderCount / prevViews) * 10000) / 100 : 0;
+
+      comparison = {
+        totalRevenue: prevRevenue,
+        totalUnitsSold: prevUnitsSold,
+        totalViews: prevViews,
+        conversionRate: prevConversion,
+        revenueChange: prevRevenue > 0 ? Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 10000) / 100 : null,
+        unitsSoldChange: prevUnitsSold > 0 ? Math.round(((totalUnitsSold - prevUnitsSold) / prevUnitsSold) * 10000) / 100 : null,
+        viewsChange: prevViews > 0 ? Math.round(((totalViews - prevViews) / prevViews) * 10000) / 100 : null,
+        conversionChange: prevConversion > 0 ? Math.round(((conversionRate - prevConversion) / prevConversion) * 10000) / 100 : null,
+      };
+    }
+
     return res.json({
       summary: { totalRevenue, totalUnitsSold, totalViews, conversionRate },
       salesTrend,
       topProducts,
       revenueByCategory,
       customerGeography,
+      comparison,
     });
   } catch (error) {
     console.error("Analytics error:", error);
@@ -1638,9 +1925,9 @@ router.post("/chat/:id/messages", authenticate, requireSeller, async (req: Selle
       return res.status(404).json({ error: "Conversation not found" });
     }
 
-    const { message } = req.body;
-    if (!message || typeof message !== "string" || message.trim().length === 0) {
-      return res.status(400).json({ error: "Message is required" });
+    const { message, attachment } = req.body;
+    if ((!message || typeof message !== "string" || message.trim().length === 0) && !attachment) {
+      return res.status(400).json({ error: "Message or attachment is required" });
     }
 
     const [chatMessage] = await prisma.$transaction([
@@ -1649,7 +1936,8 @@ router.post("/chat/:id/messages", authenticate, requireSeller, async (req: Selle
           conversationId: req.params.id,
           senderId: seller.id,
           senderType: "SELLER",
-          message: message.trim(),
+          message: message?.trim() || "",
+          attachment: attachment?.trim() || null,
         },
       }),
       prisma.conversation.update({
@@ -1721,6 +2009,113 @@ router.get("/onboarding-status", authenticate, requireSeller, async (req: Seller
   } catch (error) {
     console.error("Onboarding status error:", error);
     return res.status(500).json({ error: "Failed to fetch onboarding status" });
+  }
+});
+
+// ============ SELLER COUPONS ============
+
+// GET /coupons — List seller's coupons
+router.get("/coupons", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const coupons = await prisma.coupon.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { createdAt: "desc" },
+    });
+    return res.json({ coupons });
+  } catch (error) {
+    console.error("List seller coupons error:", error);
+    return res.status(500).json({ error: "Failed to load coupons" });
+  }
+});
+
+// POST /coupons — Create a coupon
+router.post("/coupons", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const { code, description, type, value, minOrderAmount, maxDiscount, usageLimit, validFrom, validUntil } = req.body;
+
+    if (!code || typeof code !== "string" || code.trim().length < 2) {
+      return res.status(400).json({ error: "Coupon code is required (min 2 characters)" });
+    }
+    if (!type || !["PERCENTAGE", "FIXED"].includes(type)) {
+      return res.status(400).json({ error: "Type must be PERCENTAGE or FIXED" });
+    }
+    if (value === undefined || isNaN(Number(value)) || Number(value) <= 0) {
+      return res.status(400).json({ error: "Value must be a positive number" });
+    }
+
+    // Check for duplicate code
+    const existing = await prisma.coupon.findUnique({ where: { code: code.trim().toUpperCase() } });
+    if (existing) {
+      return res.status(400).json({ error: "A coupon with this code already exists" });
+    }
+
+    const coupon = await prisma.coupon.create({
+      data: {
+        code: code.trim().toUpperCase(),
+        description: description?.trim() || null,
+        type,
+        value: Number(value),
+        minOrderAmount: minOrderAmount ? Number(minOrderAmount) : null,
+        maxDiscount: maxDiscount ? Number(maxDiscount) : null,
+        usageLimit: usageLimit ? parseInt(usageLimit) : null,
+        validFrom: validFrom ? new Date(validFrom) : new Date(),
+        validUntil: validUntil ? new Date(validUntil) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        sellerId: seller.id,
+      },
+    });
+
+    return res.status(201).json({ coupon });
+  } catch (error) {
+    console.error("Create coupon error:", error);
+    return res.status(500).json({ error: "Failed to create coupon" });
+  }
+});
+
+// PUT /coupons/:id — Update a coupon (verify ownership)
+router.put("/coupons/:id", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const coupon = await prisma.coupon.findUnique({ where: { id: req.params.id } });
+    if (!coupon || coupon.sellerId !== seller.id) {
+      return res.status(404).json({ error: "Coupon not found" });
+    }
+
+    const { description, type, value, minOrderAmount, maxDiscount, usageLimit, validFrom, validUntil, active } = req.body;
+    const data: any = {};
+    if (description !== undefined) data.description = description?.trim() || null;
+    if (type !== undefined && ["PERCENTAGE", "FIXED"].includes(type)) data.type = type;
+    if (value !== undefined) data.value = Number(value);
+    if (minOrderAmount !== undefined) data.minOrderAmount = minOrderAmount ? Number(minOrderAmount) : null;
+    if (maxDiscount !== undefined) data.maxDiscount = maxDiscount ? Number(maxDiscount) : null;
+    if (usageLimit !== undefined) data.usageLimit = usageLimit ? parseInt(usageLimit) : null;
+    if (validFrom !== undefined) data.validFrom = new Date(validFrom);
+    if (validUntil !== undefined) data.validUntil = new Date(validUntil);
+    if (active !== undefined) data.active = !!active;
+
+    const updated = await prisma.coupon.update({ where: { id: req.params.id }, data });
+    return res.json({ coupon: updated });
+  } catch (error) {
+    console.error("Update coupon error:", error);
+    return res.status(500).json({ error: "Failed to update coupon" });
+  }
+});
+
+// DELETE /coupons/:id — Soft delete (set active: false)
+router.delete("/coupons/:id", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const coupon = await prisma.coupon.findUnique({ where: { id: req.params.id } });
+    if (!coupon || coupon.sellerId !== seller.id) {
+      return res.status(404).json({ error: "Coupon not found" });
+    }
+
+    await prisma.coupon.update({ where: { id: req.params.id }, data: { active: false } });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Delete coupon error:", error);
+    return res.status(500).json({ error: "Failed to delete coupon" });
   }
 });
 

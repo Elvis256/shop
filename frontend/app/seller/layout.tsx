@@ -24,6 +24,7 @@ import {
   MessageCircle,
   Bell,
   Zap,
+  Tag,
 } from "lucide-react";
 
 interface NavItem {
@@ -41,6 +42,7 @@ const navItems: NavItem[] = [
   { href: "/seller/returns", icon: RotateCcw, label: "Returns" },
   { href: "/seller/analytics", icon: BarChart2, label: "Analytics" },
   { href: "/seller/ads", icon: Zap, label: "Promote & Ads" },
+  { href: "/seller/promotions", icon: Tag, label: "Coupons" },
   { href: "/seller/earnings", icon: Wallet, label: "Earnings" },
   { href: "/seller/messages", icon: MessageCircle, label: "Messages" },
   { href: "/seller/settings", icon: Settings, label: "Store Settings" },

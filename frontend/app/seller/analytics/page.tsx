@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { TrendingUp, ShoppingCart, Eye, Target, AlertTriangle, Download } from "lucide-react";
+import { TrendingUp, ShoppingCart, Eye, Target, AlertTriangle, Download, ArrowUpRight, ArrowDownRight, Award } from "lucide-react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -28,10 +28,27 @@ interface AnalyticsData {
     totalViews: number;
     conversionRate: number;
   };
+  comparison?: {
+    totalRevenue: number;
+    totalUnitsSold: number;
+    totalViews: number;
+    conversionRate: number;
+    revenueChange: number | null;
+    unitsSoldChange: number | null;
+    viewsChange: number | null;
+    conversionChange: number | null;
+  };
   salesTrend: Array<{ date: string; revenue: number; orders: number }>;
   topProducts: Array<{ name: string; revenue: number; unitsSold: number }>;
   revenueByCategory: Array<{ name: string; revenue: number }>;
   customerGeography: Array<{ name: string; count: number }>;
+}
+
+interface Scorecard {
+  fulfillmentRate: number;
+  returnRate: number;
+  rating: number;
+  warningCount: number;
 }
 
 const periods = [
@@ -60,22 +77,41 @@ export default function SellerAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [period, setPeriod] = useState(30);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [useCustomRange, setUseCustomRange] = useState(false);
+  const [compareEnabled, setCompareEnabled] = useState(false);
+  const [scorecard, setScorecard] = useState<Scorecard | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
   const fetchAnalytics = useCallback(async () => {
     try {
       setLoading(true);
-      const result = await apiFetch(`/api/seller/analytics?period=${period}`);
+      let url = `/api/seller/analytics?period=${period}`;
+      if (useCustomRange && customFrom && customTo) {
+        url = `/api/seller/analytics?from=${customFrom}&to=${customTo}`;
+      }
+      if (compareEnabled) {
+        url += "&compareWith=previous";
+      }
+      const result = await apiFetch(url);
       setData(result);
     } catch (err: any) {
       setError(err.message || "Failed to load analytics");
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, customFrom, customTo, useCustomRange, compareEnabled]);
 
   useEffect(() => {
     fetchAnalytics();
   }, [fetchAnalytics]);
+
+  useEffect(() => {
+    apiFetch("/api/seller/scorecard")
+      .then((d) => setScorecard(d))
+      .catch(() => {});
+  }, []);
 
   const handleExportCSV = () => {
     if (!data) return;
@@ -109,18 +145,29 @@ export default function SellerAnalyticsPage() {
 
   if (!data) return null;
 
+  const changeBadge = (change: number | null | undefined) => {
+    if (change === null || change === undefined) return null;
+    const isPositive = change >= 0;
+    return (
+      <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${isPositive ? "text-green-600" : "text-red-600"}`}>
+        {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+        {Math.abs(change)}%
+      </span>
+    );
+  };
+
   const summaryCards = [
-    { label: "Revenue", value: `UGX ${data.summary.totalRevenue.toLocaleString()}`, icon: TrendingUp, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Units Sold", value: data.summary.totalUnitsSold.toString(), icon: ShoppingCart, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Views", value: data.summary.totalViews.toLocaleString(), icon: Eye, color: "text-purple-600", bg: "bg-purple-50" },
-    { label: "Conversion", value: `${data.summary.conversionRate}%`, icon: Target, color: "text-orange-600", bg: "bg-orange-50" },
+    { label: "Revenue", value: `UGX ${data.summary.totalRevenue.toLocaleString()}`, icon: TrendingUp, color: "text-green-600", bg: "bg-green-50", change: data.comparison?.revenueChange },
+    { label: "Units Sold", value: data.summary.totalUnitsSold.toString(), icon: ShoppingCart, color: "text-blue-600", bg: "bg-blue-50", change: data.comparison?.unitsSoldChange },
+    { label: "Views", value: data.summary.totalViews.toLocaleString(), icon: Eye, color: "text-purple-600", bg: "bg-purple-50", change: data.comparison?.viewsChange },
+    { label: "Conversion", value: `${data.summary.conversionRate}%`, icon: Target, color: "text-orange-600", bg: "bg-orange-50", change: data.comparison?.conversionChange },
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={handleExportCSV}
             className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -128,13 +175,22 @@ export default function SellerAnalyticsPage() {
             <Download className="w-4 h-4" />
             Export CSV
           </button>
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={compareEnabled}
+              onChange={(e) => setCompareEnabled(e.target.checked)}
+              className="rounded border-gray-300 text-primary focus:ring-primary"
+            />
+            Compare
+          </label>
           <div className="flex gap-2">
             {periods.map((p) => (
               <button
                 key={p.value}
-                onClick={() => setPeriod(p.value)}
+                onClick={() => { setPeriod(p.value); setUseCustomRange(false); }}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  period === p.value ? "bg-primary text-white" : "bg-white text-gray-600 border hover:bg-gray-50"
+                  !useCustomRange && period === p.value ? "bg-primary text-white" : "bg-white text-gray-600 border hover:bg-gray-50"
                 }`}
               >
                 {p.label}
@@ -142,6 +198,36 @@ export default function SellerAnalyticsPage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Custom Date Range */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={useCustomRange}
+            onChange={(e) => setUseCustomRange(e.target.checked)}
+            className="rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          Custom range
+        </label>
+        {useCustomRange && (
+          <>
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <span className="text-gray-400">to</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </>
+        )}
       </div>
 
       {/* Summary Cards */}
@@ -152,12 +238,41 @@ export default function SellerAnalyticsPage() {
               <div className={`w-10 h-10 ${card.bg} rounded-lg flex items-center justify-center`}>
                 <card.icon className={`w-5 h-5 ${card.color}`} />
               </div>
+              {compareEnabled && changeBadge(card.change)}
             </div>
             <p className="text-2xl font-bold text-gray-900">{card.value}</p>
             <p className="text-sm text-gray-600 mt-1">{card.label}</p>
           </div>
         ))}
       </div>
+
+      {/* Seller Scorecard */}
+      {scorecard && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Award className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold text-gray-900">Seller Scorecard</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-900">{scorecard.fulfillmentRate}%</p>
+              <p className="text-xs text-gray-500 mt-1">Fulfillment Rate</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-900">{scorecard.returnRate}%</p>
+              <p className="text-xs text-gray-500 mt-1">Return Rate</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-900">{scorecard.rating.toFixed(1)}</p>
+              <p className="text-xs text-gray-500 mt-1">Rating</p>
+            </div>
+            <div className="text-center">
+              <p className={`text-2xl font-bold ${scorecard.warningCount > 0 ? "text-red-600" : "text-gray-900"}`}>{scorecard.warningCount}</p>
+              <p className="text-xs text-gray-500 mt-1">Warnings</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sales Trend Chart */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -198,22 +313,45 @@ export default function SellerAnalyticsPage() {
           {data.topProducts.length === 0 ? (
             <p className="text-gray-400 text-center py-8">No product data</p>
           ) : (
-            <ResponsiveContainer width="100%" height={Math.max(200, data.topProducts.length * 40)}>
-              <RBarChart data={data.topProducts} layout="vertical" margin={{ left: 10, right: 30 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" horizontal={false} />
-                <XAxis type="number" tickFormatter={fmtCompact} tick={{ fontSize: 12 }} stroke="#9ca3af" />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={120}
-                  tick={{ fontSize: 11 }}
-                  stroke="#9ca3af"
-                  tickFormatter={(v: any) => String(v).length > 18 ? String(v).slice(0, 16) + "..." : String(v)}
-                />
-                <Tooltip formatter={(val: any) => [`UGX ${Number(val).toLocaleString()}`, "Revenue"]} />
-                <Bar dataKey="revenue" fill="#6366f1" radius={[0, 4, 4, 0]} name="Revenue" />
-              </RBarChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={Math.max(200, data.topProducts.length * 40)}>
+                <RBarChart
+                  data={data.topProducts}
+                  layout="vertical"
+                  margin={{ left: 10, right: 30 }}
+                  onClick={(e: any) => {
+                    if (e?.activeLabel) setSelectedProduct(e.activeLabel === selectedProduct ? null : e.activeLabel);
+                  }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" horizontal={false} />
+                  <XAxis type="number" tickFormatter={fmtCompact} tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={120}
+                    tick={{ fontSize: 11 }}
+                    stroke="#9ca3af"
+                    tickFormatter={(v: any) => String(v).length > 18 ? String(v).slice(0, 16) + "..." : String(v)}
+                  />
+                  <Tooltip formatter={(val: any) => [`UGX ${Number(val).toLocaleString()}`, "Revenue"]} />
+                  <Bar dataKey="revenue" fill="#6366f1" radius={[0, 4, 4, 0]} name="Revenue" cursor="pointer" />
+                </RBarChart>
+              </ResponsiveContainer>
+              {selectedProduct && (
+                <div className="mt-3 p-3 bg-indigo-50 rounded-lg text-sm">
+                  <p className="font-medium text-gray-900">{selectedProduct}</p>
+                  {(() => {
+                    const prod = data.topProducts.find((p) => p.name === selectedProduct);
+                    return prod ? (
+                      <div className="flex gap-4 mt-1 text-xs text-gray-600">
+                        <span>Revenue: UGX {prod.revenue.toLocaleString()}</span>
+                        <span>Units: {prod.unitsSold}</span>
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              )}
+            </>
           )}
         </div>
 

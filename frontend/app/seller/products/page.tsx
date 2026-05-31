@@ -20,9 +20,24 @@ import {
   Square,
   Power,
   PowerOff,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  FileUp,
+  Layers,
 } from "lucide-react";
 import { useToast } from "@/lib/hooks/useToast";
 import { useRouter } from "next/navigation";
+
+interface ProductVariant {
+  name: string;
+  sku: string;
+  price: string;
+  stock: string;
+  size?: string;
+  color?: string;
+  material?: string;
+}
 
 interface Product {
   id: string;
@@ -34,12 +49,19 @@ interface Product {
   moderationNote?: string;
   images: string[];
   category?: { id: string; name: string };
+  hasVariants?: boolean;
+  variants?: ProductVariant[];
   createdAt: string;
 }
 
 interface Category {
   id: string;
   name: string;
+}
+
+interface SpecEntry {
+  key: string;
+  value: string;
 }
 
 interface ProductForm {
@@ -51,6 +73,18 @@ interface ProductForm {
   stock: string;
   imageUrls: string[];
   tags: string;
+  sku: string;
+  weight: string;
+  specifications: SpecEntry[];
+  metaTitle: string;
+  metaDescription: string;
+  trackInventory: boolean;
+  allowBackorder: boolean;
+  lowStockAlert: string;
+  hasVariants: boolean;
+  variantOptionTypes: string[];
+  variantOptionValues: Record<string, string[]>;
+  variants: ProductVariant[];
 }
 
 const emptyForm: ProductForm = {
@@ -62,6 +96,18 @@ const emptyForm: ProductForm = {
   stock: "",
   imageUrls: [],
   tags: "",
+  sku: "",
+  weight: "",
+  specifications: [],
+  metaTitle: "",
+  metaDescription: "",
+  trackInventory: true,
+  allowBackorder: false,
+  lowStockAlert: "5",
+  hasVariants: false,
+  variantOptionTypes: [],
+  variantOptionValues: {},
+  variants: [],
 };
 
 const statusTabs = ["ALL", "ACTIVE", "DRAFT", "PENDING_REVIEW"];
@@ -83,6 +129,16 @@ export default function SellerProducts() {
   const [formError, setFormError] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [showInventory, setShowInventory] = useState(false);
+  const [showSpecs, setShowSpecs] = useState(false);
+  const [showSeo, setShowSeo] = useState(false);
+  const [showVariants, setShowVariants] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<string[][]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string>("");
+  const [exporting, setExporting] = useState(false);
   const { showToast } = useToast();
   const router = useRouter();
 
@@ -143,18 +199,36 @@ export default function SellerProducts() {
         stock: (p.stock ?? product.stock).toString(),
         imageUrls: p.images?.map((img: any) => typeof img === "string" ? img : img.url) || product.images || [],
         tags: Array.isArray(p.tags) ? p.tags.join(", ") : "",
+        sku: p.sku || "",
+        weight: p.weight?.toString() || "",
+        specifications: Array.isArray(p.specifications) ? p.specifications : [],
+        metaTitle: p.metaTitle || "",
+        metaDescription: p.metaDescription || "",
+        trackInventory: p.trackInventory !== false,
+        allowBackorder: p.allowBackorder === true,
+        lowStockAlert: (p.lowStockAlert ?? 5).toString(),
+        hasVariants: p.hasVariants || false,
+        variantOptionTypes: [],
+        variantOptionValues: {},
+        variants: (p.variants || []).map((v: any) => ({
+          name: v.name || "",
+          sku: v.sku || "",
+          price: v.price?.toString() || "",
+          stock: v.stock?.toString() || "0",
+          size: v.size || "",
+          color: v.color || "",
+          material: v.material || "",
+        })),
       });
     } catch {
-      // Fallback to list data if fetch fails
       setForm({
+        ...emptyForm,
         name: product.name,
-        description: "",
         price: product.price.toString(),
         comparePrice: product.comparePrice?.toString() || "",
         categoryId: product.category?.id || "",
         stock: product.stock.toString(),
         imageUrls: product.images || [],
-        tags: "",
       });
     }
   };
@@ -196,7 +270,7 @@ export default function SellerProducts() {
     try {
       setSaving(true);
       setFormError("");
-      const body = {
+      const body: any = {
         name: form.name,
         description: form.description,
         price: parseFloat(form.price),
@@ -207,6 +281,24 @@ export default function SellerProducts() {
         tags: form.tags
           ? form.tags.split(",").map((s) => s.trim()).filter(Boolean)
           : [],
+        sku: form.sku || undefined,
+        weight: form.weight ? parseFloat(form.weight) : undefined,
+        specifications: form.specifications.filter((s) => s.key && s.value),
+        metaTitle: form.metaTitle || undefined,
+        metaDescription: form.metaDescription || undefined,
+        trackInventory: form.trackInventory,
+        allowBackorder: form.allowBackorder,
+        lowStockAlert: form.lowStockAlert ? parseInt(form.lowStockAlert) : 5,
+        hasVariants: form.hasVariants,
+        variants: form.hasVariants ? form.variants.map((v) => ({
+          name: v.name,
+          sku: v.sku || undefined,
+          price: v.price ? parseFloat(v.price) : undefined,
+          stock: parseInt(v.stock) || 0,
+          size: v.size || undefined,
+          color: v.color || undefined,
+          material: v.material || undefined,
+        })) : undefined,
       };
       if (editingId) {
         await apiFetch(`/api/seller/products/${editingId}`, {
@@ -255,6 +347,82 @@ export default function SellerProducts() {
     }
   };
 
+  // CSV Export
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await apiFetch("/api/seller/products/export");
+      const blob = new Blob([res.csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `products-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Products exported", "success");
+    } catch (err: any) {
+      showToast(err.message || "Export failed", "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // CSV Import - parse preview
+  const handleImportFile = (file: File) => {
+    setImportFile(file);
+    setImportResult("");
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split("\n").filter((l) => l.trim());
+      const parsed = lines.slice(0, 6).map((l) => l.split(",").map((c) => c.trim().replace(/^"|"$/g, "")));
+      setImportPreview(parsed);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    setImportResult("");
+    try {
+      const formData = new FormData();
+      formData.append("file", importFile);
+      const res = await apiFetch("/api/seller/products/import", {
+        method: "POST",
+        body: formData,
+      });
+      setImportResult(`Successfully imported ${res.imported} products${res.errors?.length ? `. ${res.errors.length} errors.` : "."}`);
+      fetchProducts();
+    } catch (err: any) {
+      setImportResult(err.message || "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Generate variant matrix from option types/values
+  const generateVariants = () => {
+    const types = form.variantOptionTypes.filter((t) => form.variantOptionValues[t]?.length > 0);
+    if (types.length === 0) return;
+    const valueSets = types.map((t) => form.variantOptionValues[t]);
+    const combos: string[][] = valueSets.reduce<string[][]>(
+      (acc, vals) => acc.flatMap((combo) => vals.map((v) => [...combo, v])),
+      [[]]
+    );
+    const variants: ProductVariant[] = combos.map((combo) => {
+      const nameStr = combo.join(" / ");
+      const variant: ProductVariant = { name: nameStr, sku: "", price: "", stock: "0" };
+      types.forEach((t, i) => {
+        if (t === "Size") variant.size = combo[i];
+        else if (t === "Color") variant.color = combo[i];
+        else if (t === "Material") variant.material = combo[i];
+      });
+      return variant;
+    });
+    setForm((prev) => ({ ...prev, variants }));
+  };
+
   const handleBulk = async (action: "activate" | "deactivate" | "delete") => {
     if (selectedIds.size === 0) return;
     if (action === "delete" && !confirm(`Delete ${selectedIds.size} products?`)) return;
@@ -279,13 +447,30 @@ export default function SellerProducts() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h2 className="text-xl font-bold text-gray-900">My Products</h2>
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" />
-          Add Product
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            {exporting ? "Exporting..." : "Export CSV"}
+          </button>
+          <button
+            onClick={() => { setShowImportModal(true); setImportFile(null); setImportPreview([]); setImportResult(""); }}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <FileUp className="w-4 h-4" />
+            Import CSV
+          </button>
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Add Product
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -406,6 +591,12 @@ export default function SellerProducts() {
                           </p>
                           {product.category && (
                             <p className="text-xs text-gray-500">{product.category.name}</p>
+                          )}
+                          {product.hasVariants && (
+                            <span className="inline-flex items-center gap-1 text-xs text-indigo-600">
+                              <Layers className="w-3 h-3" />
+                              {product.variants?.length || 0} variants
+                            </span>
                           )}
                           {product.moderationNote && product.status === "PENDING_REVIEW" && (
                             <p className="text-xs text-yellow-600 mt-0.5" title={product.moderationNote}>
@@ -707,6 +898,310 @@ export default function SellerProducts() {
                   placeholder="tag1, tag2, tag3"
                 />
               </div>
+
+              {/* Inventory Section */}
+              <button
+                type="button"
+                onClick={() => setShowInventory(!showInventory)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                Inventory Settings
+                {showInventory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+              {showInventory && (
+                <div className="space-y-4 pl-1">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
+                      <input
+                        type="text"
+                        value={form.sku}
+                        onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        placeholder="SKU-001"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Weight (grams)</label>
+                      <input
+                        type="number"
+                        value={form.weight}
+                        onChange={(e) => setForm({ ...form, weight: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        placeholder="0"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Low Stock Alert</label>
+                    <input
+                      type="number"
+                      value={form.lowStockAlert}
+                      onChange={(e) => setForm({ ...form, lowStockAlert: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="5"
+                      min="0"
+                    />
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.trackInventory}
+                        onChange={(e) => setForm({ ...form, trackInventory: e.target.checked })}
+                        className="rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Track Inventory</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.allowBackorder}
+                        onChange={(e) => setForm({ ...form, allowBackorder: e.target.checked })}
+                        className="rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Allow Backorder</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Specifications Section */}
+              <button
+                type="button"
+                onClick={() => setShowSpecs(!showSpecs)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                Specifications
+                {showSpecs ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+              {showSpecs && (
+                <div className="space-y-2 pl-1">
+                  {form.specifications.map((spec, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={spec.key}
+                        onChange={(e) => {
+                          const specs = [...form.specifications];
+                          specs[i] = { ...specs[i], key: e.target.value };
+                          setForm({ ...form, specifications: specs });
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        placeholder="Key (e.g. Material)"
+                      />
+                      <input
+                        type="text"
+                        value={spec.value}
+                        onChange={(e) => {
+                          const specs = [...form.specifications];
+                          specs[i] = { ...specs[i], value: e.target.value };
+                          setForm({ ...form, specifications: specs });
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        placeholder="Value"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, specifications: form.specifications.filter((_, j) => j !== i) })}
+                        className="p-2 text-gray-400 hover:text-red-500"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, specifications: [...form.specifications, { key: "", value: "" }] })}
+                    className="text-sm text-primary hover:text-primary/80 font-medium"
+                  >
+                    + Add Specification
+                  </button>
+                </div>
+              )}
+
+              {/* SEO Section */}
+              <button
+                type="button"
+                onClick={() => setShowSeo(!showSeo)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                SEO
+                {showSeo ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+              {showSeo && (
+                <div className="space-y-4 pl-1">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Meta Title</label>
+                    <input
+                      type="text"
+                      value={form.metaTitle}
+                      onChange={(e) => setForm({ ...form, metaTitle: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="SEO title"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Meta Description</label>
+                    <textarea
+                      value={form.metaDescription}
+                      onChange={(e) => setForm({ ...form, metaDescription: e.target.value })}
+                      rows={2}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                      placeholder="SEO description"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Variants Section */}
+              <button
+                type="button"
+                onClick={() => setShowVariants(!showVariants)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                Product Variants
+                {showVariants ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+              {showVariants && (
+                <div className="space-y-4 pl-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.hasVariants}
+                      onChange={(e) => setForm({ ...form, hasVariants: e.target.checked })}
+                      className="rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm text-gray-700">This product has variants</span>
+                  </label>
+                  {form.hasVariants && (
+                    <>
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-gray-500 uppercase">Option Types</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {["Size", "Color", "Material"].map((opt) => (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => {
+                                const types = form.variantOptionTypes.includes(opt)
+                                  ? form.variantOptionTypes.filter((t) => t !== opt)
+                                  : [...form.variantOptionTypes, opt];
+                                setForm({ ...form, variantOptionTypes: types });
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                form.variantOptionTypes.includes(opt)
+                                  ? "bg-primary text-white border-primary"
+                                  : "bg-white text-gray-600 border-gray-200 hover:border-primary"
+                              }`}
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {form.variantOptionTypes.map((opt) => (
+                        <div key={opt}>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{opt} Values (comma-separated)</label>
+                          <input
+                            type="text"
+                            value={(form.variantOptionValues[opt] || []).join(", ")}
+                            onChange={(e) => setForm({
+                              ...form,
+                              variantOptionValues: {
+                                ...form.variantOptionValues,
+                                [opt]: e.target.value.split(",").map((v) => v.trim()).filter(Boolean),
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                            placeholder={opt === "Size" ? "S, M, L, XL" : opt === "Color" ? "Red, Blue, Black" : "Cotton, Silk"}
+                          />
+                        </div>
+                      ))}
+                      {form.variantOptionTypes.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={generateVariants}
+                          className="text-sm text-primary hover:text-primary/80 font-medium"
+                        >
+                          Generate Variant Matrix
+                        </button>
+                      )}
+                      {form.variants.length > 0 && (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b">
+                                <th className="text-left py-2 px-1 text-xs font-medium text-gray-500">Variant</th>
+                                <th className="text-left py-2 px-1 text-xs font-medium text-gray-500">SKU</th>
+                                <th className="text-left py-2 px-1 text-xs font-medium text-gray-500">Price</th>
+                                <th className="text-left py-2 px-1 text-xs font-medium text-gray-500">Stock</th>
+                                <th className="py-2 px-1 w-8"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {form.variants.map((v, i) => (
+                                <tr key={i} className="border-b border-gray-50">
+                                  <td className="py-1.5 px-1 text-gray-700 text-xs">{v.name}</td>
+                                  <td className="py-1.5 px-1">
+                                    <input
+                                      type="text"
+                                      value={v.sku}
+                                      onChange={(e) => {
+                                        const variants = [...form.variants];
+                                        variants[i] = { ...v, sku: e.target.value };
+                                        setForm({ ...form, variants });
+                                      }}
+                                      className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+                                      placeholder="SKU"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-1">
+                                    <input
+                                      type="number"
+                                      value={v.price}
+                                      onChange={(e) => {
+                                        const variants = [...form.variants];
+                                        variants[i] = { ...v, price: e.target.value };
+                                        setForm({ ...form, variants });
+                                      }}
+                                      className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+                                      placeholder="Override"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-1">
+                                    <input
+                                      type="number"
+                                      value={v.stock}
+                                      onChange={(e) => {
+                                        const variants = [...form.variants];
+                                        variants[i] = { ...v, stock: e.target.value };
+                                        setForm({ ...form, variants });
+                                      }}
+                                      className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                      placeholder="0"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setForm({ ...form, variants: form.variants.filter((_, j) => j !== i) })}
+                                      className="text-gray-400 hover:text-red-500"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
               <button
@@ -721,6 +1216,88 @@ export default function SellerProducts() {
                 className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
               >
                 {saving ? "Saving..." : editingId ? "Update Product" : "Create Product"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 z-[400] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-900">Import Products from CSV</h3>
+              <button onClick={() => setShowImportModal(false)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  const tmpl = "name,description,price,comparePrice,stock,sku,categoryId,tags\nExample Product,A great product,25000,,100,SKU-001,,tag1|tag2";
+                  const blob = new Blob([tmpl], { type: "text/csv" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "product-import-template.csv";
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="text-sm text-primary hover:underline"
+              >
+                Download CSV Template
+              </a>
+              <label
+                className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer hover:border-primary/60 hover:bg-gray-50 transition-colors"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]); }}
+              >
+                <input type="file" accept=".csv" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleImportFile(e.target.files[0]); }} />
+                <FileUp className="w-8 h-8 text-gray-400 mb-2" />
+                <span className="text-sm text-gray-500">{importFile ? importFile.name : "Click or drag CSV file here"}</span>
+              </label>
+              {importPreview.length > 0 && (
+                <div className="overflow-x-auto">
+                  <p className="text-xs font-medium text-gray-500 mb-2">Preview (first 5 rows):</p>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b">
+                        {importPreview[0]?.map((h, i) => (
+                          <th key={i} className="text-left py-1 px-2 font-medium text-gray-500">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.slice(1, 6).map((row, i) => (
+                        <tr key={i} className="border-b border-gray-50">
+                          {row.map((cell, j) => (
+                            <td key={j} className="py-1 px-2 text-gray-700 truncate max-w-[120px]">{cell}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {importResult && (
+                <div className={`p-3 rounded-lg text-sm ${importResult.includes("failed") || importResult.includes("error") ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>
+                  {importResult}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+              <button onClick={() => setShowImportModal(false)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                Close
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={!importFile || importing}
+                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                {importing ? "Importing..." : "Import Products"}
               </button>
             </div>
           </div>

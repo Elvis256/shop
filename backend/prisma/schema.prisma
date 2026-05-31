@@ -521,9 +521,13 @@ model Coupon {
   validFrom       DateTime
   validUntil      DateTime
   active          Boolean      @default(true)
+  sellerId        String?
+  seller          Seller?      @relation(fields: [sellerId], references: [id], onDelete: SetNull)
   orders          Order[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+
+  @@index([sellerId])
 }
 
 model Setting {
@@ -1745,6 +1749,14 @@ model Seller {
   adTransactions AdTransaction[]
   badges        SellerBadge[]
   disputes      Dispute[]
+  coupons       Coupon[]
+
+  // Extended settings
+  socialLinks       Json?
+  operatingHours    Json?
+  shippingPolicy    String?   @db.Text
+  returnPolicy      String?   @db.Text
+  notificationPrefs Json?
 
   // Ad balance (separate from earnings balance)
   adBalance     Decimal      @default(0) @db.Decimal(12, 2)
@@ -1848,6 +1860,7 @@ model ChatMessage {
   senderId       String
   senderType     SenderType
   message        String       @db.Text
+  attachment     String?
   isRead         Boolean      @default(false)
   createdAt      DateTime     @default(now())
 

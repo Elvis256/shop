@@ -2,8 +2,30 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { Settings, Save, AlertTriangle, CheckCircle2, Upload, Loader2, X as XIcon, ImageIcon, FileText, Shield, ShieldCheck } from "lucide-react";
+import { Settings, Save, AlertTriangle, CheckCircle2, Upload, Loader2, X as XIcon, ImageIcon, FileText, Shield, ShieldCheck, ChevronDown, ChevronUp, Phone, Globe, Clock } from "lucide-react";
 import { useToast } from "@/lib/hooks/useToast";
+
+interface SocialLinks {
+  whatsapp?: string;
+  instagram?: string;
+  facebook?: string;
+  twitter?: string;
+  tiktok?: string;
+}
+
+interface OperatingHour {
+  open: string;
+  close: string;
+  closed: boolean;
+}
+
+interface NotificationPrefs {
+  email: boolean;
+  sms: boolean;
+  push: boolean;
+  orderUpdates: boolean;
+  messages: boolean;
+}
 
 interface SellerProfile {
   storeName: string;
@@ -13,15 +35,41 @@ interface SellerProfile {
   website: string;
   address: string;
   city: string;
+  country: string;
   logo: string;
   banner: string;
   payoutMethod: string;
   payoutPhone: string;
   bankName: string;
   bankAccount: string;
+  bankBranch: string;
   idDocument: string;
   businessLicense: string;
+  socialLinks: SocialLinks;
+  operatingHours: Record<string, OperatingHour>;
+  shippingPolicy: string;
+  returnPolicy: string;
+  notificationPrefs: NotificationPrefs;
 }
+
+const COUNTRIES = [
+  { code: "UG", name: "Uganda" },
+  { code: "KE", name: "Kenya" },
+  { code: "TZ", name: "Tanzania" },
+  { code: "RW", name: "Rwanda" },
+  { code: "NG", name: "Nigeria" },
+  { code: "GH", name: "Ghana" },
+  { code: "ZA", name: "South Africa" },
+  { code: "ET", name: "Ethiopia" },
+  { code: "CD", name: "DR Congo" },
+  { code: "SN", name: "Senegal" },
+];
+
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+const defaultHours: Record<string, OperatingHour> = Object.fromEntries(
+  DAYS.map((d) => [d, { open: "08:00", close: "18:00", closed: d === "Sunday" }])
+);
 
 const emptyProfile: SellerProfile = {
   storeName: "",
@@ -31,14 +79,21 @@ const emptyProfile: SellerProfile = {
   website: "",
   address: "",
   city: "",
+  country: "UG",
   logo: "",
   banner: "",
   payoutMethod: "MOBILE_MONEY",
   payoutPhone: "",
   bankName: "",
   bankAccount: "",
+  bankBranch: "",
   idDocument: "",
   businessLicense: "",
+  socialLinks: {},
+  operatingHours: defaultHours,
+  shippingPolicy: "",
+  returnPolicy: "",
+  notificationPrefs: { email: true, sms: false, push: true, orderUpdates: true, messages: true },
 };
 
 export default function SellerSettings() {
@@ -67,14 +122,21 @@ export default function SellerSettings() {
         website: seller.website || "",
         address: seller.address || "",
         city: seller.city || "",
+        country: seller.country || "UG",
         logo: seller.logo || "",
         banner: seller.banner || "",
         payoutMethod: seller.payoutMethod || "MOBILE_MONEY",
         payoutPhone: seller.payoutPhone || "",
         bankName: seller.bankName || "",
         bankAccount: seller.bankAccount || "",
+        bankBranch: seller.bankBranch || "",
         idDocument: seller.idDocument || "",
         businessLicense: seller.businessLicense || "",
+        socialLinks: seller.socialLinks || {},
+        operatingHours: seller.operatingHours || defaultHours,
+        shippingPolicy: seller.shippingPolicy || "",
+        returnPolicy: seller.returnPolicy || "",
+        notificationPrefs: seller.notificationPrefs || { email: true, sms: false, push: true, orderUpdates: true, messages: true },
       });
       setSellerStatus(seller.status || "");
     } catch (err: any) {
@@ -343,17 +405,17 @@ export default function SellerSettings() {
               placeholder="https://yourstore.com"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+            <input
+              type="text"
+              value={form.address}
+              onChange={(e) => updateField("address", e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              placeholder="Street address"
+            />
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-              <input
-                type="text"
-                value={form.address}
-                onChange={(e) => updateField("address", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                placeholder="Street address"
-              />
-            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
               <input
@@ -363,6 +425,18 @@ export default function SellerSettings() {
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 placeholder="City"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+              <select
+                value={form.country}
+                onChange={(e) => updateField("country", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white"
+              >
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>{c.name}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
@@ -536,48 +610,217 @@ export default function SellerSettings() {
             >
               <option value="MOBILE_MONEY">Mobile Money</option>
               <option value="BANK_TRANSFER">Bank Transfer</option>
+              <option value="FLUTTERWAVE">Flutterwave</option>
             </select>
           </div>
-          {form.payoutMethod === "MOBILE_MONEY" && (
+          {(form.payoutMethod === "MOBILE_MONEY" || form.payoutMethod === "FLUTTERWAVE") && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Mobile Money Number
+                {form.payoutMethod === "FLUTTERWAVE" ? "Flutterwave Phone / Email" : "Mobile Money Number"}
               </label>
               <input
                 type="text"
                 value={form.payoutPhone}
                 onChange={(e) => updateField("payoutPhone", e.target.value)}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                placeholder="+256..."
+                placeholder={form.payoutMethod === "FLUTTERWAVE" ? "Phone or email" : "+256..."}
               />
             </div>
           )}
           {form.payoutMethod === "BANK_TRANSFER" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
-                <input
-                  type="text"
-                  value={form.bankName}
-                  onChange={(e) => updateField("bankName", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  placeholder="Bank name"
-                />
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+                  <input
+                    type="text"
+                    value={form.bankName}
+                    onChange={(e) => updateField("bankName", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    placeholder="Bank name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
+                  <input
+                    type="text"
+                    value={form.bankAccount}
+                    onChange={(e) => updateField("bankAccount", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    placeholder="Account number"
+                  />
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Account Number
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bank Branch</label>
                 <input
                   type="text"
-                  value={form.bankAccount}
-                  onChange={(e) => updateField("bankAccount", e.target.value)}
+                  value={form.bankBranch}
+                  onChange={(e) => updateField("bankBranch", e.target.value)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  placeholder="Account number"
+                  placeholder="Branch name"
                 />
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Social Media */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900">Social Media</h3>
+          <p className="text-sm text-gray-500 mt-1">Connect your social profiles</p>
+        </div>
+        <div className="p-6 space-y-4">
+          {([
+            { key: "whatsapp", label: "WhatsApp", placeholder: "+256700000000" },
+            { key: "instagram", label: "Instagram", placeholder: "@yourstore" },
+            { key: "facebook", label: "Facebook", placeholder: "facebook.com/yourstore" },
+            { key: "twitter", label: "Twitter / X", placeholder: "@yourstore" },
+            { key: "tiktok", label: "TikTok", placeholder: "@yourstore" },
+          ] as const).map((s) => (
+            <div key={s.key}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{s.label}</label>
+              <input
+                type="text"
+                value={(form.socialLinks as any)?.[s.key] || ""}
+                onChange={(e) => setForm((prev) => ({
+                  ...prev,
+                  socialLinks: { ...prev.socialLinks, [s.key]: e.target.value },
+                }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                placeholder={s.placeholder}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Business Hours */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900">Business Hours</h3>
+          <p className="text-sm text-gray-500 mt-1">Set your operating hours</p>
+        </div>
+        <div className="p-6 space-y-3">
+          {DAYS.map((day) => {
+            const hours = form.operatingHours?.[day] || { open: "08:00", close: "18:00", closed: false };
+            return (
+              <div key={day} className="flex items-center gap-3">
+                <span className="text-sm font-medium text-gray-700 w-24">{day}</span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!hours.closed}
+                    onChange={(e) => setForm((prev) => ({
+                      ...prev,
+                      operatingHours: {
+                        ...prev.operatingHours,
+                        [day]: { ...hours, closed: !e.target.checked },
+                      },
+                    }))}
+                    className="rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <span className="text-xs text-gray-500">Open</span>
+                </label>
+                {!hours.closed && (
+                  <>
+                    <input
+                      type="time"
+                      value={hours.open}
+                      onChange={(e) => setForm((prev) => ({
+                        ...prev,
+                        operatingHours: {
+                          ...prev.operatingHours,
+                          [day]: { ...hours, open: e.target.value },
+                        },
+                      }))}
+                      className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <span className="text-gray-400 text-sm">to</span>
+                    <input
+                      type="time"
+                      value={hours.close}
+                      onChange={(e) => setForm((prev) => ({
+                        ...prev,
+                        operatingHours: {
+                          ...prev.operatingHours,
+                          [day]: { ...hours, close: e.target.value },
+                        },
+                      }))}
+                      className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </>
+                )}
+                {hours.closed && <span className="text-xs text-gray-400 italic">Closed</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Store Policies */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900">Store Policies</h3>
+          <p className="text-sm text-gray-500 mt-1">Set your shipping and return policies</p>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Policy</label>
+            <textarea
+              value={form.shippingPolicy}
+              onChange={(e) => updateField("shippingPolicy", e.target.value)}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+              placeholder="Describe your shipping policy, delivery timeframes, etc."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Return Policy</label>
+            <textarea
+              value={form.returnPolicy}
+              onChange={(e) => updateField("returnPolicy", e.target.value)}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+              placeholder="Describe your return and refund policy..."
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Notification Preferences */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900">Notification Preferences</h3>
+          <p className="text-sm text-gray-500 mt-1">Choose how you want to be notified</p>
+        </div>
+        <div className="p-6 space-y-4">
+          {([
+            { key: "email", label: "Email Notifications" },
+            { key: "sms", label: "SMS Notifications" },
+            { key: "push", label: "Push Notifications" },
+            { key: "orderUpdates", label: "Order Updates" },
+            { key: "messages", label: "New Messages" },
+          ] as const).map((pref) => (
+            <label key={pref.key} className="flex items-center justify-between cursor-pointer">
+              <span className="text-sm text-gray-700">{pref.label}</span>
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={!!(form.notificationPrefs as any)?.[pref.key]}
+                  onChange={(e) => setForm((prev) => ({
+                    ...prev,
+                    notificationPrefs: { ...prev.notificationPrefs, [pref.key]: e.target.checked },
+                  }))}
+                  className="sr-only peer"
+                />
+                <div className="w-10 h-6 bg-gray-200 peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:bg-primary transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
+              </div>
+            </label>
+          ))}
         </div>
       </div>
 
