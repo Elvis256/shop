@@ -283,6 +283,8 @@ model ProductImage {
   url       String
   alt       String?
   position  Int     @default(0)
+
+  @@index([productId])
 }
 
 model Category {
@@ -422,6 +424,8 @@ model OrderEvent {
   status    String
   note      String?
   createdAt DateTime @default(now())
+
+  @@index([orderId])
 }
 
 // Stock reservation during checkout (expires after timeout)
@@ -1028,7 +1032,7 @@ model AbandonedCart {
   
   cartData      Json     // Snapshot of cart items
   cartValue     Decimal  @db.Decimal(10, 2)
-  currency      String   @default("KES")
+  currency      String   @default("UGX")
   
   // Email tracking
   email1SentAt  DateTime?

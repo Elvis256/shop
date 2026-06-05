@@ -169,22 +169,18 @@ router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: 
       return res.status(400).json({ error: "Minimum 100 points required for redemption" });
     }
 
-    const account = await prisma.loyaltyAccount.findUnique({
-      where: { userId },
-    });
-
-    if (!account || account.points < points) {
-      return res.status(400).json({ error: "Insufficient points" });
-    }
-
     // Calculate discount value
     const discountValue = Math.floor(points / 100);
-
-    // Create a coupon for the user
     const couponCode = `LOYALTY-${userId.slice(-6).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
-    
-    const [updatedAccount, coupon] = await prisma.$transaction([
-      prisma.loyaltyAccount.update({
+
+    // Atomic: read + check + update in a single transaction to prevent race conditions
+    const result = await prisma.$transaction(async (tx) => {
+      const account = await tx.loyaltyAccount.findUnique({ where: { userId } });
+      if (!account || account.points < points) {
+        throw Object.assign(new Error("Insufficient points"), { statusCode: 400 });
+      }
+
+      const updatedAccount = await tx.loyaltyAccount.update({
         where: { userId },
         data: {
           points: { decrement: points },
@@ -196,8 +192,9 @@ router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: 
             },
           },
         },
-      }),
-      prisma.coupon.create({
+      });
+
+      const coupon = await tx.coupon.create({
         data: {
           code: couponCode,
           description: `Loyalty points redemption - ${points} points`,
@@ -205,11 +202,15 @@ router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: 
           value: discountValue,
           usageLimit: 1,
           validFrom: new Date(),
-          validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+          validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           active: true,
         },
-      }),
-    ]);
+      });
+
+      return { updatedAccount, coupon };
+    });
+
+    const { updatedAccount, coupon } = result;
 
     res.json({
       message: "Points redeemed successfully",
@@ -220,7 +221,10 @@ router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: 
       },
       remainingPoints: updatedAccount.points,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error("Redeem points error", { error });
     res.status(500).json({ error: "Failed to redeem points" });
   }

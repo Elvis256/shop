@@ -61,8 +61,11 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
         logger.warn(`Currency mismatch for order ${tx_ref}: expected ${order.currency}, got ${currency}`);
         return res.status(200).json({ error: "Currency mismatch", received: true });
       }
-      if (Number(order.totalAmount) !== amount) {
-        logger.warn(`Amount mismatch for order ${tx_ref}: expected ${order.totalAmount}, got ${amount}`);
+      // Compare against the payment record amount (handles installments correctly)
+      const matchingPayment = order.payments.find(p => p.flwRef === flw_ref);
+      const expectedAmount = matchingPayment ? Number(matchingPayment.amount) : Number(order.totalAmount);
+      if (expectedAmount !== amount) {
+        logger.warn(`Amount mismatch for order ${tx_ref}: expected ${expectedAmount}, got ${amount}`);
         return res.status(200).json({ error: "Amount mismatch", received: true });
       }
 
@@ -249,7 +252,8 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
     return res.status(200).json({ received: true });
   } catch (error) {
     logger.error("Webhook error", { error });
-    return res.status(500).json({ error: "Webhook processing failed" });
+    // Return 200 to prevent payment provider retries on processing errors
+    return res.status(200).json({ error: "Webhook processing failed", received: true });
   }
 }));
 

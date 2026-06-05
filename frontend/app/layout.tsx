@@ -7,6 +7,8 @@ import { AuthProvider } from "@/lib/hooks/useAuth";
 import { CartProvider } from "@/lib/hooks/useCart";
 import { ToastProvider } from "@/lib/hooks/useToast";
 import { WishlistProvider } from "@/lib/hooks/useWishlist";
+import { CompareProvider } from "@/contexts/CompareContext";
+import { LiteModeProvider } from "@/components/BandwidthToggle";
 import { ThemeProvider } from "@/lib/hooks/useTheme";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
@@ -92,11 +94,12 @@ export default function RootLayout({
         <link rel="preconnect" href="https://res.cloudinary.com" />
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
         <link rel="dns-prefetch" href="https://analytics.tiktok.com" />
-        <meta name="theme-color" content="#ec4899" />
+        <meta name="theme-color" content="#0071e3" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
       <body className="min-h-screen flex flex-col bg-bg text-text transition-colors" suppressHydrationWarning>
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:bg-pink-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm">Skip to content</a>
         <GoogleAnalytics />
         <ServiceWorkerRegistration />
         <OrganizationSchema />
@@ -106,12 +109,16 @@ export default function RootLayout({
           <AuthProvider>
             <CurrencyProvider>
               <WishlistProvider>
+                <CompareProvider>
+                <LiteModeProvider>
                 <CartProvider>
                   <Suspense fallback={null}>
                     <LoadingBar />
                   </Suspense>
                   {children}
                 </CartProvider>
+                </LiteModeProvider>
+                </CompareProvider>
               </WishlistProvider>
             </CurrencyProvider>
           </AuthProvider>

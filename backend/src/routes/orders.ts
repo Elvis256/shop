@@ -8,16 +8,21 @@ import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
-// GET /api/orders/track/:orderNumber - Public order tracking
+// GET /api/orders/track/:orderNumber - Track order (requires email for verification)
 router.get("/track/:orderNumber", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { orderNumber } = req.params;
+    const email = (req.query.email as string || "").toLowerCase().trim();
+
+    if (!email) {
+      return res.status(400).json({ error: "Email is required to track an order" });
+    }
 
     const order = await prisma.order.findUnique({
       where: { orderNumber },
       include: {
         items: {
-          include: { 
+          include: {
             product: {
               select: { name: true, slug: true, images: { take: 1, orderBy: { position: "asc" } } },
             }
@@ -36,6 +41,11 @@ router.get("/track/:orderNumber", asyncHandler(async (req: Request, res: Respons
     });
 
     if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Verify email matches the order customer
+    if (order.customerEmail?.toLowerCase() !== email) {
       return res.status(404).json({ error: "Order not found" });
     }
 
@@ -71,8 +81,7 @@ router.get("/track/:orderNumber", asyncHandler(async (req: Request, res: Respons
       paymentStatus: order.paymentStatus,
       paymentMethod: rawMethod ? (paymentMethodLabels[rawMethod] || rawMethod) : null,
       paymentMethodCode: rawMethod || null,
-      customerName: order.customerName,
-      shippingAddress,
+      customerName: order.customerName?.split(" ")[0] || "Customer",
       trackingNumber: order.trackingNumber,
       discreet: order.discreet,
       items: order.items.map((item) => ({
@@ -105,14 +114,21 @@ router.get("/track/:orderNumber", asyncHandler(async (req: Request, res: Respons
   }
 }));
 
-// GET /api/orders/:id/payment-status — Public endpoint for polling payment status
-router.get("/:id/payment-status", asyncHandler(async (req: Request, res: Response) => {
+// GET /api/orders/:id/payment-status — Poll payment status (auth + ownership)
+router.get("/:id/payment-status", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const order = await prisma.order.findUnique({
       where: { id: req.params.id },
-      select: { paymentStatus: true, status: true, orderNumber: true },
+      select: { paymentStatus: true, status: true, orderNumber: true, userId: true, customerEmail: true },
     });
     if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    // Verify ownership: user must own the order or match the email
+    const user = req.user;
+    const isOwner = user && (order.userId === user.id || order.customerEmail === user.email);
+    const isAdmin = user && (user.role === "ADMIN" || user.role === "MANAGER");
+    if (!isOwner && !isAdmin) {
       return res.status(404).json({ error: "Order not found" });
     }
     return res.json({
@@ -126,7 +142,7 @@ router.get("/:id/payment-status", asyncHandler(async (req: Request, res: Respons
 }));
 
 // GET /api/orders/:id — requires authentication + ownership check
-router.get("/:id", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 

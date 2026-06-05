@@ -179,6 +179,7 @@ export default function Home() {
       <PointsMultiplier />
       <ScrollProgress />
       <HeroBanner />
+      <h1 className="sr-only">PleasureZone Uganda - Premium Intimate Wellness Products</h1>
       <TrustStrip />
       <ValueProposition />
       <DailyDeal />
@@ -455,6 +456,35 @@ export default function Home() {
             <div className="col-span-full text-center py-12 text-text-muted">No products available</div>
           )}
         </StaggerGrid>
+      </Section>
+
+      {/* Learn & Explore Section */}
+      <Section title="" bgColor="gray">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold mb-2">Learn &amp; Explore</h2>
+          <p className="text-text-muted">Guides, tips, and insights to help you explore with confidence</p>
+        </div>
+        <div className="grid md:grid-cols-3 gap-6">
+          {[
+            { title: "Beginner's Guide to Wellness Products", category: "Beginner's Guides", slug: "beginners-guide" },
+            { title: "How to Choose the Right Product for You", category: "Product Guides", slug: "choosing-products" },
+            { title: "Body-Safe Materials: What You Need to Know", category: "Safety & Materials", slug: "body-safe-materials" },
+          ].map((article) => (
+            <Link key={article.slug} href={`/blog/${article.slug}`} className="bg-white rounded-xl p-6 hover:shadow-md transition-shadow group">
+              <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded-full">{article.category}</span>
+              <h3 className="mt-3 font-semibold text-gray-900 group-hover:text-primary transition-colors">{article.title}</h3>
+              <p className="mt-2 text-sm text-text-muted">Read our expert guide to make informed decisions about your wellness journey.</p>
+              <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary">
+                Read More <ArrowRight className="w-3.5 h-3.5" />
+              </span>
+            </Link>
+          ))}
+        </div>
+        <div className="text-center mt-8">
+          <Link href="/blog" className="btn-secondary">
+            View All Articles
+          </Link>
+        </div>
       </Section>
 
       <PrivacySection />

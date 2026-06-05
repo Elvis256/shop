@@ -139,12 +139,23 @@ router.post("/purchase", authenticate, asyncHandler(async (req: Request, res: Re
 }));
 
 // POST /api/gift-cards/redeem - Redeem gift card (apply to order)
-router.post("/redeem", authenticate, asyncHandler(async (req: Request, res: Response) => {
+router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { code, amount, orderId } = req.body;
 
     if (!code || !amount) {
       return res.status(400).json({ error: "Code and amount are required" });
+    }
+
+    // Verify order ownership if orderId is provided
+    if (orderId) {
+      const order = await prisma.order.findUnique({ where: { id: orderId }, select: { userId: true } });
+      if (!order) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      if (order.userId !== req.user!.id) {
+        return res.status(403).json({ error: "Not authorized to modify this order" });
+      }
     }
 
     // Perform all reads and writes inside an interactive transaction to prevent race conditions

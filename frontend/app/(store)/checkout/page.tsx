@@ -12,8 +12,9 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { useCountry } from "@/contexts/CountryContext";
 import { parseDaysRange, formatDateRange } from "@/components/DeliveryEstimate";
-import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck, Banknote, Wallet } from "lucide-react";
+import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck, Banknote, Wallet, Star, MessageCircle } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import AddressAutocomplete, { type AddressSelection } from "@/components/AddressAutocomplete";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -67,6 +68,9 @@ export default function CheckoutPage() {
   });
 
   const [deliveryTimeSlot, setDeliveryTimeSlot] = useState("");
+  const [whatsappOptIn, setWhatsappOptIn] = useState(true);
+  const [deliveryMethod, setDeliveryMethod] = useState<"home" | "pickup">("home");
+  const [selectedPickupPoint, setSelectedPickupPoint] = useState("");
 
   // Stable idempotency key — generated once per checkout session, reused on retries
   const idempotencyKeyRef = useRef(`ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`);
@@ -82,6 +86,22 @@ export default function CheckoutPage() {
     idempotencyKeyRef.current = `ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`;
   }, [installmentsEnabled, installmentCount, paymentMethod, storeCreditApplied]);
 
+  // Loyalty points state
+  const [loyaltyBalance, setLoyaltyBalance] = useState(0);
+  const [loyaltyRedeem, setLoyaltyRedeem] = useState(0);
+  const [loyaltyApplied, setLoyaltyApplied] = useState(false);
+
+  // Saved addresses state
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  const [usingSavedAddress, setUsingSavedAddress] = useState(false);
+
+  // Gift card state
+  const [giftCardCode, setGiftCardCode] = useState("");
+  const [giftCardBalance, setGiftCardBalance] = useState(0);
+  const [giftCardApplied, setGiftCardApplied] = useState(false);
+  const [giftCardLoading, setGiftCardLoading] = useState(false);
+  const [giftCardError, setGiftCardError] = useState("");
+
   // Coupon state (synced from OrderSummary)
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -91,12 +111,26 @@ export default function CheckoutPage() {
     setCouponDiscount(discount);
   };
 
-  // Fetch store credit balance for authenticated users
+  // Fetch store credit + loyalty balance for authenticated users
   useEffect(() => {
     if (user) {
       apiFetch("/api/store-credit")
         .then((d) => {
           if (d && d.balance > 0) setStoreCreditBalance(d.balance);
+        })
+        .catch(() => {});
+      apiFetch("/api/loyalty/balance")
+        .then((d) => {
+          if (d && d.points > 0) setLoyaltyBalance(d.points);
+        })
+        .catch(() => {});
+      apiFetch("/api/addresses")
+        .then((d) => {
+          const addrs = Array.isArray(d) ? d : d?.addresses || [];
+          setSavedAddresses(addrs);
+          // Auto-select default address
+          const defaultAddr = addrs.find((a: any) => a.isDefault) || addrs[0];
+          if (defaultAddr) selectSavedAddress(defaultAddr);
         })
         .catch(() => {});
     }
@@ -111,6 +145,50 @@ export default function CheckoutPage() {
   const removeStoreCredit = () => {
     setStoreCreditApplied(false);
     setStoreCreditAmount(0);
+  };
+
+  const checkGiftCard = async () => {
+    if (!giftCardCode.trim()) return;
+    setGiftCardLoading(true);
+    setGiftCardError("");
+    try {
+      const data = await apiFetch(`/api/gift-cards/check/${giftCardCode.trim()}`);
+      if (data.balance > 0) {
+        setGiftCardBalance(Number(data.balance));
+        setGiftCardApplied(true);
+      } else {
+        setGiftCardError("Gift card has no remaining balance");
+      }
+    } catch (err: any) {
+      setGiftCardError(err?.message || "Invalid or expired gift card");
+      setGiftCardApplied(false);
+      setGiftCardBalance(0);
+    } finally {
+      setGiftCardLoading(false);
+    }
+  };
+
+  const removeGiftCard = () => {
+    setGiftCardApplied(false);
+    setGiftCardBalance(0);
+    setGiftCardCode("");
+    setGiftCardError("");
+  };
+
+  const selectSavedAddress = (addr: any) => {
+    const nameParts = (addr.name || "").split(" ");
+    setShipping({
+      firstName: nameParts[0] || shipping.firstName,
+      lastName: nameParts.slice(1).join(" ") || shipping.lastName,
+      email: shipping.email,
+      phone: addr.phone || shipping.phone,
+      address: addr.address || addr.street || "",
+      city: addr.city || "",
+      county: addr.county || addr.state || "",
+      postalCode: addr.postalCode || addr.zip || "",
+      discreet: shipping.discreet,
+    });
+    setUsingSavedAddress(true);
   };
 
   // Enrich cart items missing shippingBadge
@@ -143,7 +221,8 @@ export default function CheckoutPage() {
   const shippingCost = shippingCalc.total;
   const orderTotal = cartTotal - couponDiscount + shippingCost;
   const creditDiscount = storeCreditApplied ? Math.min(storeCreditAmount, orderTotal) : 0;
-  const finalTotal = orderTotal - creditDiscount;
+  const giftCardDiscount = giftCardApplied ? Math.min(giftCardBalance, orderTotal - creditDiscount) : 0;
+  const finalTotal = orderTotal - creditDiscount - giftCardDiscount;
   const firstInstallmentAmount = installmentsEnabled && installmentCount >= 2
     ? Math.ceil(finalTotal / installmentCount)
     : finalTotal;
@@ -267,8 +346,11 @@ export default function CheckoutPage() {
           phone: shipping.phone,
         },
         discreet: shipping.discreet,
+        whatsappOptIn,
         ...(couponCode ? { couponCode } : {}),
         ...(storeCreditApplied && creditDiscount > 0 ? { storeCreditAmount: creditDiscount } : {}),
+        ...(loyaltyApplied && loyaltyRedeem > 0 ? { loyaltyPointsRedeem: loyaltyRedeem } : {}),
+        ...(giftCardApplied && giftCardDiscount > 0 ? { giftCardCode: giftCardCode.trim(), giftCardAmount: giftCardDiscount } : {}),
         ...(installmentsEnabled ? { installments: installmentCount } : {}),
         // Include affiliate referral code if present
         ...(typeof window !== "undefined" && localStorage.getItem("affiliate_ref")
@@ -402,7 +484,7 @@ export default function CheckoutPage() {
   return (
     <Section title="Checkout">
       {/* Progress Steps */}
-      <div className="flex items-center justify-center gap-4 mb-12">
+      <div className="flex items-center justify-center gap-4 mb-12" aria-label="Checkout steps">
         {steps.map((s, i) => (
           <div key={s.num} className="flex items-center">
             <div
@@ -424,7 +506,7 @@ export default function CheckoutPage() {
 
       {/* Error Alert */}
       {error && (
-        <div className="max-w-2xl mx-auto mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
+        <div role="alert" className="max-w-2xl mx-auto mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
           <p className="text-red-700">{error}</p>
         </div>
@@ -435,102 +517,241 @@ export default function CheckoutPage() {
         <div className="lg:col-span-2">
           {step === 1 && (
             <div className="card space-y-6">
+              {/* Guest Checkout Banner */}
+              {!user && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-8">
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div>
+                      <p className="font-medium text-blue-900 text-sm">Checking out as guest</p>
+                      <p className="text-xs text-blue-700 mt-0.5">No account needed. We&apos;ll email your order confirmation.</p>
+                    </div>
+                    <Link href={`/auth/login?redirect=/checkout`} className="text-sm font-medium text-blue-700 hover:text-blue-900 underline">
+                      Sign in instead
+                    </Link>
+                  </div>
+                </div>
+              )}
+
               <h3 className="flex items-center gap-2"><Package className="w-5 h-5 text-accent" />Shipping Information</h3>
 
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-small font-medium mb-2">First Name *</label>
-                  <input
-                    className="input"
-                    placeholder="John"
-                    autoComplete="given-name"
-                    value={shipping.firstName}
-                    onChange={(e) => updateShipping("firstName", e.target.value)}
-                  />
+              {/* Saved Address — compact summary when selected */}
+              {user && savedAddresses.length > 0 && usingSavedAddress ? (
+                <div className="p-4 bg-primary-50 border border-primary/20 rounded-12 space-y-2">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-medium text-sm">{shipping.firstName} {shipping.lastName}</p>
+                      <p className="text-sm text-text-muted">{shipping.address}, {shipping.city}</p>
+                      <p className="text-sm text-text-muted">{shipping.phone}</p>
+                      {shipping.email && <p className="text-sm text-text-muted">{shipping.email}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setUsingSavedAddress(false)}
+                      className="text-sm text-primary font-medium hover:underline shrink-0"
+                    >
+                      Change
+                    </button>
+                  </div>
+                  {savedAddresses.length > 1 && (
+                    <div className="flex gap-2 pt-1 flex-wrap">
+                      {savedAddresses.map((addr) => (
+                        <button
+                          key={addr.id}
+                          type="button"
+                          onClick={() => selectSavedAddress(addr)}
+                          className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                            shipping.address === (addr.address || addr.street)
+                              ? "border-primary bg-primary text-white"
+                              : "border-border bg-surface hover:border-primary/50 text-text-muted"
+                          }`}
+                        >
+                          {addr.label || addr.city || "Address"}
+                          {addr.isDefault && " (Default)"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-small font-medium mb-2">Last Name *</label>
-                  <input
-                    className="input"
-                    placeholder="Doe"
-                    autoComplete="family-name"
-                    value={shipping.lastName}
-                    onChange={(e) => updateShipping("lastName", e.target.value)}
-                  />
-                </div>
-              </div>
+              ) : (
+                <>
+                  {/* Saved Address Selector — expanded */}
+                  {user && savedAddresses.length > 0 && !usingSavedAddress && (
+                    <div className="space-y-2">
+                      <p className="text-small text-text-muted">Select a saved address:</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {savedAddresses.map((addr) => (
+                          <button
+                            key={addr.id}
+                            type="button"
+                            onClick={() => selectSavedAddress(addr)}
+                            className={`text-left p-3 rounded-12 border transition-all duration-150 ${
+                              shipping.address === (addr.address || addr.street)
+                                ? "border-primary bg-primary-50 ring-1 ring-primary"
+                                : "border-border hover:border-primary/50 bg-surface"
+                            }`}
+                          >
+                            <p className="font-medium text-sm">{addr.name || addr.label || "Address"}</p>
+                            <p className="text-xs text-text-muted mt-0.5">
+                              {addr.address || addr.street}, {addr.city}
+                              {addr.isDefault && <span className="ml-1 text-primary font-medium">(Default)</span>}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="firstName" className="block text-small font-medium mb-2">First Name *</label>
+                      <input
+                        id="firstName"
+                        className="input"
+                        placeholder="John"
+                        autoComplete="given-name"
+                        value={shipping.firstName}
+                        onChange={(e) => updateShipping("firstName", e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="lastName" className="block text-small font-medium mb-2">Last Name *</label>
+                      <input
+                        id="lastName"
+                        className="input"
+                        placeholder="Doe"
+                        autoComplete="family-name"
+                        value={shipping.lastName}
+                        onChange={(e) => updateShipping("lastName", e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="email" className="block text-small font-medium mb-2">Email <span className="text-text-muted font-normal">(optional)</span></label>
+                    <input
+                      id="email"
+                      className="input"
+                      type="email"
+                      placeholder="john@example.com"
+                      autoComplete="email"
+                      value={shipping.email}
+                      onChange={(e) => updateShipping("email", e.target.value)}
+                    />
+                    {!shipping.email && shipping.phone && (
+                      <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                        <Smartphone className="w-3 h-3" /> Phone number is enough — we&apos;ll text your order updates
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label htmlFor="phone" className="block text-small font-medium mb-2">Phone * <span className="text-text-muted font-normal">(Uganda format)</span></label>
+                    <input
+                      id="phone"
+                      className="input"
+                      type="tel"
+                      placeholder="+256 700 000 000"
+                      autoComplete="tel"
+                      value={shipping.phone}
+                      onChange={(e) => updateShipping("phone", e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="address" className="block text-small font-medium mb-2">Address *</label>
+                    <AddressAutocomplete
+                      id="address"
+                      className="input"
+                      placeholder="Start typing your address..."
+                      value={shipping.address}
+                      onChange={(e) => updateShipping("address", e.target.value)}
+                      onAddressSelect={(addr: AddressSelection) => {
+                        updateShipping("address", addr.street);
+                        updateShipping("city", addr.city);
+                        updateShipping("county", addr.county);
+                        updateShipping("postalCode", addr.postalCode);
+                      }}
+                      enableGeocoding={deliveryMethod === "home"}
+                    />
+                  </div>
+
+                  <div className="grid sm:grid-cols-3 gap-4">
+                    <div>
+                      <label htmlFor="city" className="block text-small font-medium mb-2">City *</label>
+                      <input
+                        id="city"
+                        className="input"
+                        placeholder="Kampala"
+                        autoComplete="address-level2"
+                        value={shipping.city}
+                        onChange={(e) => updateShipping("city", e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="county" className="block text-small font-medium mb-2">District</label>
+                      <input
+                        id="county"
+                        className="input"
+                        placeholder="Kampala"
+                        autoComplete="address-level1"
+                        value={shipping.county}
+                        onChange={(e) => updateShipping("county", e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="postalCode" className="block text-small font-medium mb-2">Postal Code</label>
+                      <input
+                        id="postalCode"
+                        className="input"
+                        placeholder="e.g. 256"
+                        autoComplete="postal-code"
+                        value={shipping.postalCode}
+                        onChange={(e) => updateShipping("postalCode", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Delivery Method */}
               <div>
-                <label className="block text-small font-medium mb-2">Email <span className="text-text-muted font-normal">(optional)</span></label>
-                <input
-                  className="input"
-                  type="email"
-                  placeholder="john@example.com"
-                  autoComplete="email"
-                  value={shipping.email}
-                  onChange={(e) => updateShipping("email", e.target.value)}
-                />
-                {!shipping.email && shipping.phone && (
-                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                    <Smartphone className="w-3 h-3" /> Phone number is enough — we&apos;ll text your order updates
-                  </p>
+                <span id="deliveryMethodLabel" className="block text-small font-medium mb-2">Delivery Method</span>
+                <div className="grid grid-cols-2 gap-3" role="group" aria-labelledby="deliveryMethodLabel">
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMethod("home")}
+                    className={`p-3 border rounded-8 text-sm font-medium text-center transition-colors ${
+                      deliveryMethod === "home" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-gray-300"
+                    }`}
+                  >
+                    <Truck className="w-5 h-5 mx-auto mb-1" />
+                    Home Delivery
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMethod("pickup")}
+                    className={`p-3 border rounded-8 text-sm font-medium text-center transition-colors ${
+                      deliveryMethod === "pickup" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-gray-300"
+                    }`}
+                  >
+                    <Package className="w-5 h-5 mx-auto mb-1" />
+                    Pickup Point
+                  </button>
+                </div>
+                {deliveryMethod === "pickup" && (
+                  <div className="mt-3">
+                    <input
+                      type="text"
+                      placeholder="Enter pickup point name or area..."
+                      value={selectedPickupPoint}
+                      onChange={(e) => setSelectedPickupPoint(e.target.value)}
+                      className="input text-sm"
+                    />
+                    <p className="text-xs text-text-muted mt-1">
+                      <Link href="/pickup-points" target="_blank" className="text-primary hover:underline">View all pickup points →</Link>
+                    </p>
+                  </div>
                 )}
-              </div>
-
-              <div>
-                <label className="block text-small font-medium mb-2">Phone * <span className="text-text-muted font-normal">(Uganda format)</span></label>
-                <input
-                  className="input"
-                  type="tel"
-                  placeholder="+256 700 000 000"
-                  autoComplete="tel"
-                  value={shipping.phone}
-                  onChange={(e) => updateShipping("phone", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="block text-small font-medium mb-2">Address *</label>
-                <input
-                  className="input"
-                  placeholder="Street address"
-                  autoComplete="street-address"
-                  value={shipping.address}
-                  onChange={(e) => updateShipping("address", e.target.value)}
-                />
-              </div>
-
-              <div className="grid sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-small font-medium mb-2">City *</label>
-                  <input
-                    className="input"
-                    placeholder="Kampala"
-                    autoComplete="address-level2"
-                    value={shipping.city}
-                    onChange={(e) => updateShipping("city", e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-small font-medium mb-2">District</label>
-                  <input
-                    className="input"
-                    placeholder="Kampala"
-                    autoComplete="address-level1"
-                    value={shipping.county}
-                    onChange={(e) => updateShipping("county", e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-small font-medium mb-2">Postal Code</label>
-                  <input
-                    className="input"
-                    placeholder="e.g. 256"
-                    autoComplete="postal-code"
-                    value={shipping.postalCode}
-                    onChange={(e) => updateShipping("postalCode", e.target.value)}
-                  />
-                </div>
               </div>
 
               {/* Discreet Option */}
@@ -551,12 +772,30 @@ export default function CheckoutPage() {
                 </div>
               </label>
 
+              {/* WhatsApp Updates Opt-in */}
+              <label className="flex items-start gap-3 p-4 border border-border rounded-8 cursor-pointer hover:border-green-400 transition-colors">
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-green-500"
+                  checked={whatsappOptIn}
+                  onChange={(e) => setWhatsappOptIn(e.target.checked)}
+                />
+                <div>
+                  <span className="font-medium flex items-center gap-2">
+                    <MessageCircle className="w-4 h-4 text-green-500" />Get updates via WhatsApp
+                  </span>
+                  <p className="text-small text-text-muted">
+                    Receive order confirmations, shipping updates, and delivery notifications on WhatsApp.
+                  </p>
+                </div>
+              </label>
+
               {/* Delivery Time Slot */}
               <div>
-                <label className="block text-small font-medium mb-2 flex items-center gap-2">
+                <span id="deliveryTimeLabel" className="block text-small font-medium mb-2 flex items-center gap-2">
                   <Truck className="w-4 h-4 text-accent" />Preferred Delivery Time
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="group" aria-labelledby="deliveryTimeLabel">
                   {[
                     { value: "", label: "No preference" },
                     { value: "Morning (8am-12pm)", label: "Morning" },
@@ -730,8 +969,9 @@ export default function CheckoutPage() {
               {paymentMethod === "mobile_money" && (
                 <div className="space-y-4 pt-4 border-t border-border">
                   <div>
-                    <label className="block text-small font-medium mb-2">Select Network</label>
+                    <label htmlFor="mobileNetwork" className="block text-small font-medium mb-2">Select Network</label>
                     <select
+                      id="mobileNetwork"
                       className="input-select"
                       value={mobileNetwork}
                       onChange={(e) => setMobileNetwork(e.target.value as "MPESA" | "AIRTEL" | "MTN")}
@@ -745,8 +985,9 @@ export default function CheckoutPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-small font-medium mb-2">Phone Number *</label>
+                    <label htmlFor="mobilePhone" className="block text-small font-medium mb-2">Phone Number *</label>
                     <input
+                      id="mobilePhone"
                       className="input"
                       placeholder={`${country.dialCode} ${country.phonePlaceholder || "700 000 000"}`}
                       value={mobilePhone}
@@ -823,9 +1064,9 @@ export default function CheckoutPage() {
 
                 {installmentsEnabled && (
                   <div className="px-4 pb-4 space-y-3 border-t border-border pt-3">
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                    <span className="block text-xs font-medium text-gray-600 mb-1">
                       Number of payments
-                    </label>
+                    </span>
                     <div className="flex gap-2">
                       {[2, 3, 4].map((n) => (
                         <button
@@ -1008,6 +1249,98 @@ export default function CheckoutPage() {
                   )}
                 </div>
               )}
+
+              {/* Loyalty Points Redemption */}
+              {user && loyaltyBalance > 0 && (
+                <div className="p-4 bg-purple-50 border border-purple-100 rounded-8 space-y-3">
+                  <h4 className="font-medium text-small text-purple-900 flex items-center gap-2">
+                    <Star className="w-4 h-4 text-purple-600" /> Loyalty Points
+                  </h4>
+                  <p className="text-small text-purple-800">
+                    Available: <strong>{loyaltyBalance.toLocaleString()} points</strong> (worth {formatPrice(loyaltyBalance)})
+                  </p>
+                  {!loyaltyApplied ? (
+                    <div className="space-y-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={Math.min(loyaltyBalance, Math.floor(finalTotal))}
+                        value={loyaltyRedeem}
+                        onChange={(e) => setLoyaltyRedeem(Number(e.target.value))}
+                        className="w-full accent-purple-600"
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className="text-small text-purple-700">Redeem: {formatPrice(loyaltyRedeem)}</span>
+                        <button
+                          onClick={() => { if (loyaltyRedeem > 0) setLoyaltyApplied(true); }}
+                          disabled={loyaltyRedeem <= 0}
+                          className="btn-secondary text-small"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-small text-green-700">
+                        Points applied: -{formatPrice(loyaltyRedeem)}
+                      </span>
+                      <button onClick={() => { setLoyaltyApplied(false); setLoyaltyRedeem(0); }} className="text-small text-red-600 hover:underline">
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-xs text-purple-600">
+                    You&apos;ll earn <strong>{Math.floor(cartTotal / 1000)}</strong> new points from this order!
+                  </p>
+                </div>
+              )}
+
+              {/* Gift Card Redemption */}
+              <div className="p-4 bg-blue-50 border border-blue-100 rounded-8 space-y-3">
+                <h4 className="font-medium text-small text-blue-900 flex items-center gap-2">
+                  <CreditCard className="w-4 h-4" /> Gift Card
+                </h4>
+                {!giftCardApplied ? (
+                  <>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className="input flex-1 uppercase"
+                        placeholder="Enter gift card code"
+                        value={giftCardCode}
+                        onChange={(e) => { setGiftCardCode(e.target.value.toUpperCase()); setGiftCardError(""); }}
+                      />
+                      <button
+                        onClick={checkGiftCard}
+                        disabled={!giftCardCode.trim() || giftCardLoading}
+                        className="btn-secondary"
+                      >
+                        {giftCardLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
+                      </button>
+                    </div>
+                    {giftCardError && (
+                      <p className="text-small text-red-600">{giftCardError}</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-small text-green-700">
+                        Gift card applied: -{formatPrice(giftCardDiscount)}
+                      </span>
+                      <button onClick={removeGiftCard} className="text-small text-red-600 hover:underline">
+                        Remove
+                      </button>
+                    </div>
+                    {giftCardBalance > giftCardDiscount && (
+                      <p className="text-xs text-blue-700">
+                        Remaining balance after purchase: {formatPrice(giftCardBalance - giftCardDiscount)}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {shipping.discreet && (
                 <div className="p-4 bg-green-50 border border-green-200 rounded-8">

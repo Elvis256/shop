@@ -65,8 +65,10 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
       where.items = { some: { sellerId: sellerId as string } };
     }
 
+    const allowedSortFields = ["createdAt", "totalAmount", "status", "paymentStatus", "orderNumber"];
+    const sortField = allowedSortFields.includes(sort as string) ? (sort as string) : "createdAt";
     const orderBy: any = {};
-    orderBy[sort as string] = order;
+    orderBy[sortField] = order;
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({

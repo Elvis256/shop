@@ -12,6 +12,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import CheckoutHeader from "@/components/CheckoutHeader";
 
 // Lazy-load heavy layout components to avoid SSR cost on checkout
+const AnnouncementBar = dynamic(() => import("@/components/AnnouncementBar"), { ssr: false });
 const Header = dynamic(() => import("@/components/Header"), { ssr: true });
 const Footer = dynamic(() => import("@/components/Footer"), { ssr: true });
 const CartDrawer = dynamic(() => import("@/components/CartDrawer"), { ssr: false });
@@ -26,10 +27,13 @@ export default function StoreChrome({ children }: { children: React.ReactNode })
       {isCheckout ? (
         <CheckoutHeader />
       ) : (
-        <ErrorBoundary><Header /></ErrorBoundary>
+        <>
+          <ErrorBoundary><AnnouncementBar /></ErrorBoundary>
+          <ErrorBoundary><Header /></ErrorBoundary>
+        </>
       )}
 
-      <main className="flex-1">{children}</main>
+      <main id="main-content" className="flex-1">{children}</main>
 
       {!isCheckout && (
         <>

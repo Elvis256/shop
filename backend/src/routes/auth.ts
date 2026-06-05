@@ -393,13 +393,14 @@ router.post("/reset-password", asyncHandler(async (req, res: Response) => {
     // Hash new password
     const hashedPassword = await bcrypt.hash(body.password, 12);
 
-    // Update password and delete reset token
+    // Update password, delete reset token, and invalidate all sessions
     await prisma.$transaction([
       prisma.user.update({
         where: { id: resetRecord.userId },
         data: { password: hashedPassword },
       }),
       prisma.passwordReset.delete({ where: { id: resetRecord.id } }),
+      prisma.refreshToken.deleteMany({ where: { userId: resetRecord.userId } }),
     ]);
 
     return res.json({ message: "Password reset successful" });

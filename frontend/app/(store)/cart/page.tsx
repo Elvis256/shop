@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import ProductImage from "@/components/ProductImage";
-import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Tag, Shield, Package, Lock, Check, Truck } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Tag, Shield, Package, Lock, Check, Truck, Bookmark, ShoppingCart, Star, Gift } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
 import FreeShippingBar from "@/components/FreeShippingBar";
@@ -41,9 +42,122 @@ export default function CartPage() {
   const { config: shippingCfg } = useShippingConfig();
   const [reorderToast, setReorderToast] = useState("");
 
+  // Save for Later
+  interface SavedItem {
+    id: string;
+    productId: string;
+    name: string;
+    slug: string;
+    price: number;
+    imageUrl?: string;
+    stock: number;
+  }
+  const [savedForLater, setSavedForLater] = useState<SavedItem[]>([]);
+
+  // Gift wrapping per item (itemId -> { enabled, message })
+  const [giftWrapping, setGiftWrapping] = useState<Record<string, { enabled: boolean; message: string }>>({});
+  const GIFT_WRAP_PRICE = 5000;
+
+  const toggleGiftWrap = (itemId: string) => {
+    setGiftWrapping((prev) => ({
+      ...prev,
+      [itemId]: { enabled: !prev[itemId]?.enabled, message: prev[itemId]?.message || "" },
+    }));
+  };
+
+  const setGiftMessage = (itemId: string, message: string) => {
+    setGiftWrapping((prev) => ({
+      ...prev,
+      [itemId]: { enabled: prev[itemId]?.enabled || true, message },
+    }));
+  };
+
+  // Frequently Bought Together
+  interface FBTProduct {
+    id: string;
+    name: string;
+    slug: string;
+    price: number;
+    imageUrl?: string;
+  }
+  const [fbtProducts, setFbtProducts] = useState<FBTProduct[]>([]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("savedForLater") || "[]");
+      setSavedForLater(saved);
+    } catch {}
+  }, []);
+
+  const saveForLater = (item: CartItem) => {
+    const savedItem: SavedItem = {
+      id: item.id,
+      productId: item.product.id,
+      name: item.product.name,
+      slug: item.product.slug,
+      price: Number(item.product.price),
+      imageUrl: item.product.images?.[0]?.url,
+      stock: item.product.stock,
+    };
+    const updated = [...savedForLater.filter((s) => s.productId !== savedItem.productId), savedItem];
+    setSavedForLater(updated);
+    localStorage.setItem("savedForLater", JSON.stringify(updated));
+    removeItem(item.id);
+  };
+
+  const removeSavedItem = (productId: string) => {
+    const updated = savedForLater.filter((s) => s.productId !== productId);
+    setSavedForLater(updated);
+    localStorage.setItem("savedForLater", JSON.stringify(updated));
+  };
+
+  const moveToCart = async (saved: SavedItem) => {
+    try {
+      let cartId = localStorage.getItem("cartId");
+      if (!cartId) {
+        const createRes = await fetch(`${API_URL}/api/cart/create`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include" });
+        if (createRes.ok) {
+          const createData = await createRes.json();
+          cartId = createData.id;
+          if (cartId) localStorage.setItem("cartId", cartId);
+        }
+      }
+      if (!cartId) return;
+      const res = await fetch(`${API_URL}/api/cart/${cartId}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ productId: saved.productId, quantity: 1 }),
+      });
+      if (res.ok) {
+        removeSavedItem(saved.productId);
+        loadCart();
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     loadCart();
   }, []);
+
+  // Load FBT when cart changes
+  useEffect(() => {
+    if (!cart?.items?.length) return;
+    const productIds = cart.items.map((i) => i.product.id).slice(0, 2);
+    fetch(`${API_URL}/api/products?limit=4&exclude=${productIds.join(",")}&sort=rating`)
+      .then((r) => r.json())
+      .then((data) => {
+        const products = (data.products || []).slice(0, 4).map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          price: Number(p.price),
+          imageUrl: p.images?.[0]?.url || p.imageUrl,
+        }));
+        setFbtProducts(products);
+      })
+      .catch(() => {});
+  }, [cart?.items?.length]);
 
   // Handle reorder URL param: ?reorder=productId:qty
   useEffect(() => {
@@ -57,16 +171,23 @@ export default function CartPage() {
 
     (async () => {
       try {
-        const cartId = localStorage.getItem("cartId");
-        const res = await fetch(`${API_URL}/api/cart/add`, {
+        let cartId = localStorage.getItem("cartId");
+        if (!cartId) {
+          const createRes = await fetch(`${API_URL}/api/cart/create`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include" });
+          if (createRes.ok) {
+            const createData = await createRes.json();
+            cartId = createData.id;
+            if (cartId) localStorage.setItem("cartId", cartId);
+          }
+        }
+        if (!cartId) return;
+        const res = await fetch(`${API_URL}/api/cart/${cartId}/items`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ productId, quantity: qty, cartId }),
+          body: JSON.stringify({ productId, quantity: qty }),
         });
         if (res.ok) {
-          const data = await res.json();
-          if (data.cartId) localStorage.setItem("cartId", data.cartId);
           setReorderToast("Product added from your reorder link!");
           loadCart();
         }
@@ -165,7 +286,12 @@ export default function CartPage() {
 
   function calculateSubtotal() {
     if (!cart?.items) return 0;
-    return cart.items.reduce((sum, item) => sum + Number(item.product.price) * item.quantity, 0);
+    return cart.items.reduce((sum, item) => {
+      const p = item.product as any;
+      const hasFlash = p.flashSalePrice && p.flashSaleEndsAt && new Date(p.flashSaleEndsAt) > new Date();
+      const effectivePrice = hasFlash ? Number(p.flashSalePrice) : Number(p.price);
+      return sum + effectivePrice * item.quantity;
+    }, 0);
   }
 
   function calculateSavings() {
@@ -180,6 +306,7 @@ export default function CartPage() {
 
   async function clearCart() {
     if (!cart) return;
+    if (!window.confirm("Are you sure you want to clear your entire cart?")) return;
     setUpdating("all");
     try {
       await fetch(`${API_URL}/api/cart/${cart.id}/items`, { method: "DELETE" });
@@ -191,10 +318,15 @@ export default function CartPage() {
     }
   }
 
+  function calculateGiftWrapTotal() {
+    return Object.values(giftWrapping).filter((g) => g.enabled).length * GIFT_WRAP_PRICE;
+  }
+
   function calculateTotal() {
     const subtotal = calculateSubtotal();
     const discount = couponApplied?.discount || 0;
-    return Math.max(0, subtotal - discount);
+    const giftWrapTotal = calculateGiftWrapTotal();
+    return Math.max(0, subtotal - discount + giftWrapTotal);
   }
 
   if (loading) {
@@ -353,6 +485,30 @@ export default function CartPage() {
                         Only {item.product.stock} left in stock!
                       </p>
                     )}
+
+                    {/* Gift Wrapping */}
+                    <div className="mt-3">
+                      <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={giftWrapping[item.id]?.enabled || false}
+                          onChange={() => toggleGiftWrap(item.id)}
+                          className="rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        <Gift className="w-3.5 h-3.5 text-pink-500" />
+                        <span className="text-gray-600">Gift wrap (+{formatPrice(GIFT_WRAP_PRICE)})</span>
+                      </label>
+                      {giftWrapping[item.id]?.enabled && (
+                        <input
+                          type="text"
+                          placeholder="Add a gift message (optional)"
+                          value={giftWrapping[item.id]?.message || ""}
+                          onChange={(e) => setGiftMessage(item.id, e.target.value)}
+                          maxLength={150}
+                          className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                      )}
+                    </div>
                   </div>
 
                   {/* Desktop: Quantity & Total */}
@@ -379,13 +535,22 @@ export default function CartPage() {
                       <p className="text-lg font-bold text-gray-900">
                         {formatPrice(Number(item.product.price) * item.quantity)}
                       </p>
-                      <button
-                        onClick={() => removeItem(item.id)}
-                        className="mt-1 text-sm text-gray-400 hover:text-red-500 transition-colors inline-flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Remove
-                      </button>
+                      <div className="mt-1 flex items-center gap-3">
+                        <button
+                          onClick={() => saveForLater(item)}
+                          className="text-sm text-gray-400 hover:text-primary transition-colors inline-flex items-center gap-1"
+                        >
+                          <Bookmark className="w-3.5 h-3.5" />
+                          Save for Later
+                        </button>
+                        <button
+                          onClick={() => removeItem(item.id)}
+                          className="text-sm text-gray-400 hover:text-red-500 transition-colors inline-flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -408,6 +573,70 @@ export default function CartPage() {
               <ArrowRight className="w-4 h-4 rotate-180" />
               Continue Shopping
             </Link>
+
+            {/* Frequently Bought Together */}
+            {fbtProducts.length > 0 && (
+              <div className="mt-8 pt-8 border-t border-gray-200">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">Customers Also Bought</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {fbtProducts.map((p) => (
+                    <Link key={p.id} href={`/product/${p.slug}`} className="bg-white rounded-xl border border-gray-100 p-3 hover:shadow-md transition-shadow group">
+                      <div className="aspect-square bg-gray-50 rounded-lg overflow-hidden mb-2">
+                        <ProductImage
+                          src={p.imageUrl}
+                          alt={p.name}
+                          width={120}
+                          height={120}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                      </div>
+                      <p className="text-xs font-medium text-gray-900 line-clamp-2">{p.name}</p>
+                      <p className="text-sm font-bold text-primary mt-1">{formatPrice(p.price)}</p>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Saved for Later */}
+            {savedForLater.length > 0 && (
+              <div className="mt-8 pt-8 border-t border-gray-200">
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Bookmark className="w-5 h-5 text-primary" />
+                  Saved for Later ({savedForLater.length})
+                </h3>
+                <div className="space-y-3">
+                  {savedForLater.map((saved) => (
+                    <div key={saved.productId} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-4">
+                      <Link href={`/product/${saved.slug}`} className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                        {saved.imageUrl && <Image src={saved.imageUrl} alt={saved.name} width={64} height={64} className="w-full h-full object-cover" />}
+                      </Link>
+                      <div className="flex-1 min-w-0">
+                        <Link href={`/product/${saved.slug}`} className="font-medium text-gray-900 hover:text-primary text-sm line-clamp-1">
+                          {saved.name}
+                        </Link>
+                        <p className="text-sm font-bold text-gray-900 mt-1">{formatPrice(saved.price)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => moveToCart(saved)}
+                          className="text-sm text-primary hover:text-primary/80 font-medium flex items-center gap-1"
+                        >
+                          <ShoppingCart className="w-3.5 h-3.5" />
+                          Move to Cart
+                        </button>
+                        <button
+                          onClick={() => removeSavedItem(saved.productId)}
+                          className="text-sm text-gray-400 hover:text-red-500 ml-2"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Order Summary */}
@@ -471,7 +700,14 @@ export default function CartPage() {
                     <span>-{formatPrice(couponApplied.discount)}</span>
                   </div>
                 )}
-                
+
+                {calculateGiftWrapTotal() > 0 && (
+                  <div className="flex justify-between text-pink-600">
+                    <span className="flex items-center gap-1"><Gift className="w-3.5 h-3.5" /> Gift Wrapping</span>
+                    <span>+{formatPrice(calculateGiftWrapTotal())}</span>
+                  </div>
+                )}
+
                 <div className="flex justify-between">
                   <span className="text-gray-600">Shipping</span>
                   <span className="text-gray-500 text-xs">Calculated at checkout</span>
@@ -481,6 +717,14 @@ export default function CartPage() {
                   <span>Total</span>
                   <span className="text-primary">{formatPrice(total)}</span>
                 </div>
+              </div>
+
+              {/* Loyalty Points Preview */}
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+                <p className="text-amber-800 font-medium flex items-center gap-1.5">
+                  <Star className="w-4 h-4 text-amber-500" />
+                  You&apos;ll earn <span className="font-bold">{Math.floor(subtotal / 1000)}</span> loyalty points with this purchase
+                </p>
               </div>
 
               <Link

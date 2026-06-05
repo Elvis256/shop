@@ -175,22 +175,17 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
       prisma.product.count({ where: { sellerId: { not: null }, status: "ACTIVE" } }),
     ]);
 
-    // Calculate direct revenue (price * quantity for items without seller)
-    // Note: aggregate _sum.price gives sum of unit prices, we need quantity-weighted
-    const directItemsAll = await prisma.orderItem.findMany({
-      where: { sellerId: null, order: { paymentStatus: "SUCCESSFUL" } },
-      select: { price: true, quantity: true },
-    });
-    const directRevenueTotal = directItemsAll.reduce((s, i) => s + Number(i.price) * i.quantity, 0);
-
-    const directItemsMonth = await prisma.orderItem.findMany({
-      where: {
-        sellerId: null,
-        order: { paymentStatus: "SUCCESSFUL", createdAt: { gte: startOfMonth } },
-      },
-      select: { price: true, quantity: true },
-    });
-    const directRevenueMonth = directItemsMonth.reduce((s, i) => s + Number(i.price) * i.quantity, 0);
+    // Calculate direct revenue using SQL aggregation (not loading all rows into memory)
+    const [directRevenueResult] = await prisma.$queryRaw<[{ total: bigint | null, month: bigint | null }]>`
+      SELECT
+        COALESCE(SUM(oi.price * oi.quantity), 0) as total,
+        COALESCE(SUM(CASE WHEN o."createdAt" >= ${startOfMonth} THEN oi.price * oi.quantity ELSE 0 END), 0) as month
+      FROM "OrderItem" oi
+      JOIN "Order" o ON o.id = oi."orderId"
+      WHERE oi."sellerId" IS NULL AND o."paymentStatus" = 'SUCCESSFUL'
+    `;
+    const directRevenueTotal = Number(directRevenueResult?.total || 0);
+    const directRevenueMonth = Number(directRevenueResult?.month || 0);
 
     const totalCommissionAmount = Number(totalCommissions._sum.commission || 0);
     const monthCommissionAmount = Number(commissionsThisMonth._sum.commission || 0);
