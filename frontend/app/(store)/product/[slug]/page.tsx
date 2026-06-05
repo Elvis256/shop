@@ -132,7 +132,7 @@ export default async function ProductPage({ params }: Props) {
       <div className="max-w-7xl mx-auto px-4">
         <BreadcrumbUI items={breadcrumbItems} className="my-4" />
       </div>
-      <ProductPageClient />
+      <ProductPageClient initialProduct={product} />
       {relatedProducts.length > 0 && (
         <div className="max-w-7xl mx-auto px-4">
           <RelatedProducts

@@ -8,7 +8,6 @@ import DOMPurify from "isomorphic-dompurify";
 import ProductGallery from "@/components/ProductGallery";
 import ProductTabs from "@/components/ProductTabs";
 import AddToCartButton from "@/components/AddToCartButton";
-import { ProductSchema, BreadcrumbSchema } from "@/components/StructuredData";
 import VariantSelector from "@/components/VariantSelector";
 import RecentlyViewed, { useRecentlyViewed } from "@/components/RecentlyViewed";
 import RelatedProducts from "@/components/RelatedProducts";
@@ -23,11 +22,12 @@ import PriceSlashButton from "@/components/PriceSlash";
 import {
   Star, Heart, Shield, Truck, Package, ArrowLeft, Share2, Check, Eye,
   Users, ShoppingBag, Copy, MessageCircle, Clock, Tag, Zap, RotateCcw,
-  ChevronDown, Lock, X,
+  ChevronDown, Lock, X, ArrowLeftRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { useWishlist } from "@/lib/hooks/useWishlist";
+import { useCompare } from "@/contexts/CompareContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { useCart } from "@/lib/hooks/useCart";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -86,6 +86,7 @@ interface Product {
     rating: number;
     reviewCount: number;
   };
+  sizeGuide?: { id: string; name: string; content: string } | null;
 }
 
 /** Compute estimated delivery date string */
@@ -178,21 +179,23 @@ function PriceAlertInline({ productId, currentPrice }: { productId: string; curr
   );
 }
 
-export default function ProductPageClient() {
+export default function ProductPageClient({ initialProduct }: { initialProduct?: Product | null }) {
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
-  const [product, setProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [product, setProduct] = useState<Product | null>(initialProduct || null);
+  const [loading, setLoading] = useState(!initialProduct);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
   const [boughtTogether, setBoughtTogether] = useState<any[]>([]);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [showStickyBar, setShowStickyBar] = useState(false);
   const { addItem: addToRecentlyViewed } = useRecentlyViewed();
   const { formatPrice } = useCurrency();
   const { isInWishlist, toggleItem: toggleWishlist } = useWishlist();
+  const { addToCompare, isInCompare, removeFromCompare, canAddMore } = useCompare();
   const { showToast } = useToast();
   const { addItem: addToCart } = useCart();
   const { user } = useAuth();
@@ -200,7 +203,24 @@ export default function ProductPageClient() {
   const shareMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (slug) loadProduct();
+    if (initialProduct) {
+      // Server already provided the product — just track view + set variant
+      addToRecentlyViewed({
+        id: initialProduct.id,
+        name: initialProduct.name,
+        slug: initialProduct.slug,
+        price: Number(initialProduct.price),
+        imageUrl: initialProduct.imageUrl ?? undefined,
+      });
+      if (initialProduct.hasVariants && initialProduct.variants?.length) {
+        const availableVariant = initialProduct.variants.find((v: ProductVariant) => v.stock > 0);
+        setSelectedVariant(availableVariant || initialProduct.variants[0]);
+      }
+      api.trackProductView(initialProduct.id).then((r) => setViewerCount(r.viewerCount)).catch(() => {});
+      api.getBoughtTogether(initialProduct.id).then((r) => setBoughtTogether(r.products || [])).catch(() => {});
+    } else if (slug) {
+      loadProduct();
+    }
   }, [slug]);
 
   // Track browse event for logged-in users
@@ -374,34 +394,9 @@ export default function ProductPageClient() {
     : 0;
   const savingsAmount = discountPercent > 0 ? Number(originalPrice) - Number(effectivePrice) : 0;
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
-  const breadcrumbItems = [
-    { name: "Home", url: siteUrl },
-    { name: "Shop", url: `${siteUrl}/category` },
-    ...(product.category ? [{ name: product.category.name, url: `${siteUrl}/category?cat=${product.category.slug}` }] : []),
-    { name: product.name, url: `${siteUrl}/product/${product.slug}` },
-  ];
-
   return (
     <div className="min-h-screen bg-white pb-20 lg:pb-8">
-      <ProductSchema
-        product={{
-          id: product.id,
-          name: product.name,
-          slug: product.slug,
-          description: product.description || undefined,
-          price: effectivePrice,
-          comparePrice: product.comparePrice,
-          currency: product.currency || "UGX",
-          rating: product.rating,
-          reviewCount: product.reviewCount,
-          imageUrl: product.imageUrl || product.images?.[0],
-          inStock: product.inStock,
-          sku: product.id,
-          category: product.category?.name,
-        }}
-      />
-      <BreadcrumbSchema items={breadcrumbItems} />
+      {/* Structured data rendered by server component in page.tsx */}
 
       {/* Breadcrumb */}
       <div className="container pt-4 pb-2">
@@ -486,7 +481,7 @@ export default function ProductPageClient() {
                 ))}
               </div>
               <span className="text-sm text-gray-500">
-                {Number(product.rating).toFixed(1)}
+                {Number(product.rating || 0).toFixed(1)}
               </span>
               <span className="text-sm text-gray-400">·</span>
               <span className="text-sm text-primary cursor-pointer hover:underline" onClick={() => {
@@ -587,6 +582,15 @@ export default function ProductPageClient() {
                   onSelect={handleVariantChange as any}
                   productPrice={Number(product.price)}
                 />
+                {product.sizeGuide && (
+                  <button
+                    onClick={() => setSizeGuideOpen(true)}
+                    className="mt-2 text-sm text-primary hover:underline flex items-center gap-1"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                    Size Guide
+                  </button>
+                )}
               </div>
             )}
 
@@ -661,7 +665,7 @@ export default function ProductPageClient() {
                 <NotifyMe productId={product.id} />
               )}
 
-              {/* Wishlist + Share */}
+              {/* Wishlist + Compare + Share */}
               <div className="flex items-center justify-center gap-4 pt-1">
                 <button
                   onClick={() => {
@@ -681,6 +685,37 @@ export default function ProductPageClient() {
                 >
                   <Heart className={`w-4 h-4 ${isInWishlist(product.id) ? "fill-current" : ""}`} />
                   {isInWishlist(product.id) ? "In Wishlist" : "Add to Wishlist"}
+                </button>
+                <span className="text-gray-200">|</span>
+                <button
+                  onClick={() => {
+                    if (!product) return;
+                    if (isInCompare(product.id)) {
+                      removeFromCompare(product.id);
+                      showToast("Removed from compare", "info");
+                    } else if (canAddMore) {
+                      addToCompare({
+                        id: product.id,
+                        name: product.name,
+                        slug: product.slug,
+                        price: Number(effectivePrice),
+                        comparePrice: product.comparePrice ? Number(product.comparePrice) : undefined,
+                        imageUrl: product.imageUrl || null,
+                        category: product.category?.name,
+                        rating: product.rating,
+                        reviewCount: product.reviewCount,
+                      });
+                      showToast("Added to compare", "success");
+                    } else {
+                      showToast("Compare list is full (max 4)", "info");
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${
+                    isInCompare(product.id) ? "text-primary" : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                  {isInCompare(product.id) ? "In Compare" : "Compare"}
                 </button>
                 <span className="text-gray-200">|</span>
                 <div className="relative" ref={shareMenuRef}>
@@ -988,6 +1023,21 @@ export default function ProductPageClient() {
           />
         </div>
       </div>
+
+      {/* Size Guide Modal */}
+      {sizeGuideOpen && product.sizeGuide && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setSizeGuideOpen(false)}>
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">{product.sizeGuide.name || "Size Guide"}</h3>
+              <button onClick={() => setSizeGuideOpen(false)} className="p-1 text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(product.sizeGuide.content) }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
