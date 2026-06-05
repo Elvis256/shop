@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import crypto from "crypto";
+import { logger } from "../lib/logger";
 
 async function getSetting(key: string): Promise<string | null> {
   const s = await prisma.setting.findUnique({ where: { key } });
@@ -76,13 +77,13 @@ export async function sendMetaConversionEvent(event: MetaEvent): Promise<boolean
 
     if (!res.ok) {
       const err = await res.text();
-      console.error("Meta Conversions API error:", res.status, err);
+      logger.error("Meta Conversions API error", { status: res.status, body: err });
       return false;
     }
 
     return true;
   } catch (e: any) {
-    console.error("Meta Conversions error:", e.message);
+    logger.error("Meta Conversions error", { error: e.message });
     return false;
   }
 }

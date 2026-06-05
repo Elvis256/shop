@@ -158,7 +158,7 @@ export async function logSecurityEvent(event: Partial<SecurityEvent> & { type: S
 
   // For critical events, log with high visibility
   if (event.severity === "critical" || event.severity === "high") {
-    console.error(`[SECURITY] ${event.type}: ${JSON.stringify(securityEvent, null, 2)}`);
+    logger.error(`[SECURITY] ${event.type}: ${JSON.stringify(securityEvent, null, 2)}`);
   }
 
   // Store in database for audit trail (non-blocking)

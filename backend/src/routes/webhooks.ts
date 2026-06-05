@@ -4,15 +4,17 @@ import prisma from "../lib/prisma";
 import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
 import { placeCJOrdersForOrder } from "../services/cjOrder";
 import { getCommissionRate } from "./seller";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 const router = Router();
 
 // POST /api/webhooks/flutterwave
-router.post("/flutterwave", async (req: Request, res: Response) => {
+router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => {
   try {
     // Verify webhook signature
     const hash = req.headers["verif-hash"] as string | undefined;
     if (!verifyFlutterwaveHash(hash)) {
-      console.warn("Invalid webhook hash received");
+      logger.warn("Invalid webhook hash received");
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -37,7 +39,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
         });
       } catch (idempotencyError: any) {
         if (idempotencyError.code === "P2002") {
-          console.log(`Webhook ${flw_ref} already processed (unique constraint), skipping`);
+          logger.info(`Webhook ${flw_ref} already processed (unique constraint), skipping`);
           return res.status(200).json({ received: true, duplicate: true });
         }
         throw idempotencyError;
@@ -50,17 +52,17 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
       });
 
       if (!order) {
-        console.warn(`Order not found for tx_ref: ${tx_ref}`);
+        logger.warn(`Order not found for tx_ref: ${tx_ref}`);
         return res.status(200).json({ error: "Order not found", received: true });
       }
 
       // Verify amount AND currency match
       if (currency !== order.currency) {
-        console.warn(`Currency mismatch for order ${tx_ref}: expected ${order.currency}, got ${currency}`);
+        logger.warn(`Currency mismatch for order ${tx_ref}: expected ${order.currency}, got ${currency}`);
         return res.status(200).json({ error: "Currency mismatch", received: true });
       }
       if (Number(order.totalAmount) !== amount) {
-        console.warn(`Amount mismatch for order ${tx_ref}: expected ${order.totalAmount}, got ${amount}`);
+        logger.warn(`Amount mismatch for order ${tx_ref}: expected ${order.totalAmount}, got ${amount}`);
         return res.status(200).json({ error: "Amount mismatch", received: true });
       }
 
@@ -78,7 +80,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
             select: { paymentStatus: true },
           });
           if (existingOrder?.paymentStatus === "SUCCESSFUL") {
-            console.log(`Order ${tx_ref} already paid, skipping duplicate confirmation`);
+            logger.info(`Order ${tx_ref} already paid, skipping duplicate confirmation`);
             return;
           }
 
@@ -149,7 +151,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
             });
           }
 
-          console.log(`✅ Order ${tx_ref} marked as CONFIRMED`);
+          logger.info(`Order ${tx_ref} marked as CONFIRMED`);
         } else {
           await tx.payment.updateMany({
             where: { orderId: tx_ref },
@@ -176,7 +178,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
             });
           }
 
-          console.log(`❌ Order ${tx_ref} payment failed`);
+          logger.info(`Order ${tx_ref} payment failed`);
         }
       });
 
@@ -185,10 +187,10 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
       if (status === "successful") {
 
         placeAliExpressOrdersForOrder(tx_ref).catch((err) => {
-          console.error(`AliExpress auto-order failed for ${tx_ref}:`, err.message);
+          logger.error(`AliExpress auto-order failed for ${tx_ref}`, { error: err.message });
         });
         placeCJOrdersForOrder(tx_ref).catch((err) => {
-          console.error(`CJ auto-order failed for ${tx_ref}:`, err.message);
+          logger.error(`CJ auto-order failed for ${tx_ref}`, { error: err.message });
         });
       }
     }
@@ -207,7 +209,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
             where: { id: payoutId },
           });
           if (!payout) {
-            console.warn(`Payout not found for reference: ${reference}`);
+            logger.warn(`Payout not found for reference: ${reference}`);
             return res.status(200).json({ received: true });
           }
 
@@ -220,7 +222,7 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
                 notes: `Flutterwave transfer completed. ID: ${transferData.id}`,
               },
             });
-            console.log(`✅ Payout ${payoutId} completed via Flutterwave`);
+            logger.info(`Payout ${payoutId} completed via Flutterwave`);
           } else {
             // Failed: mark payout as FAILED and refund seller balance
             await prisma.$transaction([
@@ -236,19 +238,19 @@ router.post("/flutterwave", async (req: Request, res: Response) => {
                 data: { balance: { increment: Number(payout.amount) } },
               }),
             ]);
-            console.log(`❌ Payout ${payoutId} failed, balance refunded`);
+            logger.info(`Payout ${payoutId} failed, balance refunded`);
           }
         } catch (err) {
-          console.error("Transfer webhook processing error:", err);
+          logger.error("Transfer webhook processing error", { error: err });
         }
       }
     }
 
     return res.status(200).json({ received: true });
   } catch (error) {
-    console.error("Webhook error:", error);
+    logger.error("Webhook error", { error });
     return res.status(500).json({ error: "Webhook processing failed" });
   }
-});
+}));
 
 export default router;

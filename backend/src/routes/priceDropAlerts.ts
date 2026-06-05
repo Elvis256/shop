@@ -2,11 +2,13 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { optionalAuth, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /api/price-alerts — Subscribe to price drop alert
-router.post("/", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.post("/", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const schema = z.object({
       productId: z.string(),
@@ -66,16 +68,16 @@ router.post("/", optionalAuth, async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ message: "Price alert set" });
   } catch (error) {
-    console.error("Price alert create error:", error);
+    logger.error("Price alert create error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to set price alert" });
   }
-});
+}));
 
 // GET /api/price-alerts/:productId — Check if current user is subscribed
-router.get("/:productId", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.get("/:productId", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = req.params;
     const email = req.query.email as string | undefined;
@@ -100,10 +102,10 @@ router.get("/:productId", optionalAuth, async (req: AuthRequest, res: Response) 
   } catch (error) {
     return res.status(500).json({ error: "Failed to check alert" });
   }
-});
+}));
 
 // DELETE /api/price-alerts/:id — Unsubscribe
-router.delete("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/:id", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     await prisma.priceDropAlert.delete({ where: { id } });
@@ -111,7 +113,7 @@ router.delete("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
   } catch (error) {
     return res.status(500).json({ error: "Failed to remove alert" });
   }
-});
+}));
 
 /**
  * Check and notify subscribers when a product's price drops.
@@ -141,7 +143,7 @@ export async function checkPriceDropAlerts(productId: string, newPrice: number):
       sendSMS(alert.phone, message).catch(() => {});
     }
     if (alert.email) {
-      console.log(`[PriceDrop] Would email ${alert.email}: ${message}`);
+      logger.info(`[PriceDrop] Would email ${alert.email}: ${message}`);
     }
   }
 

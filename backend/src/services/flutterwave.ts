@@ -1,5 +1,6 @@
 import axios from "axios";
 import { withRetryAndCircuitBreaker } from "../utils/retry";
+import { logger } from "../lib/logger";
 
 type CreatePaymentInput = {
   tx_ref: string;
@@ -102,7 +103,7 @@ export async function createFlutterwavePayment(
       FLUTTERWAVE_RETRY_OPTIONS
     );
   } catch (error: any) {
-    console.error("Flutterwave payment error:", error.response?.data || error.message);
+    logger.error("Flutterwave payment error", { error: error.response?.data || error.message });
     throw new Error("Payment initiation failed. Please try again.");
   }
 }
@@ -121,7 +122,7 @@ export async function verifyFlutterwaveTransaction(transactionId: string) {
       FLUTTERWAVE_RETRY_OPTIONS
     );
   } catch (error: any) {
-    console.error("Flutterwave verify error:", error.response?.data || error.message);
+    logger.error("Flutterwave verify error", { error: error.response?.data || error.message });
     throw new Error("Transaction verification failed. Please try again.");
   }
 }
@@ -167,7 +168,7 @@ export async function createFlutterwaveTransfer(
       FLUTTERWAVE_RETRY_OPTIONS
     );
   } catch (error: any) {
-    console.error("Flutterwave transfer error:", error.response?.data || error.message);
+    logger.error("Flutterwave transfer error", { error: error.response?.data || error.message });
     throw new Error("Transfer initiation failed. Please try again.");
   }
 }
@@ -188,7 +189,7 @@ export async function getFlutterwaveTransferStatus(
       FLUTTERWAVE_RETRY_OPTIONS
     );
   } catch (error: any) {
-    console.error("Flutterwave transfer status error:", error.response?.data || error.message);
+    logger.error("Flutterwave transfer status error", { error: error.response?.data || error.message });
     throw new Error("Transfer status check failed.");
   }
 }
@@ -212,7 +213,7 @@ export async function refundFlutterwaveTransaction(
       FLUTTERWAVE_RETRY_OPTIONS
     );
   } catch (error: any) {
-    console.error("Flutterwave refund error:", error.response?.data || error.message);
+    logger.error("Flutterwave refund error", { error: error.response?.data || error.message });
     throw new Error("Refund failed. Please try again or contact Flutterwave support.");
   }
 }

@@ -6,6 +6,7 @@
 import axios from "axios";
 import crypto from "crypto";
 import { withRetryAndCircuitBreaker } from "../utils/retry";
+import { logger } from "../lib/logger";
 
 // AliExpress TOP API base URLs
 const AE_API_URL = "https://api-sg.aliexpress.com/sync";
@@ -316,7 +317,7 @@ export async function getOrderTracking(aliexpressOrderId: string): Promise<AETra
       })),
     };
   } catch (error) {
-    console.error(`Failed to get tracking for AE order ${aliexpressOrderId}:`, error);
+    logger.error(`Failed to get tracking for AE order ${aliexpressOrderId}`, { error });
     return null;
   }
 }
@@ -345,7 +346,7 @@ export async function getShippingInfo(productId: string, country = "UG"): Promis
       estimatedDays: f.estimated_delivery_time || "15-45 days",
     }));
   } catch (error) {
-    console.error(`Failed to get shipping for product ${productId}:`, error);
+    logger.error(`Failed to get shipping for product ${productId}`, { error });
     return [];
   }
 }

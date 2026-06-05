@@ -7,6 +7,7 @@ import prisma from "../lib/prisma";
 import { sendWhatsApp } from "./whatsapp";
 import { sendSMS } from "./sms";
 import { scheduleRestockReminders } from "./restockReminder";
+import { logger } from "../lib/logger";
 
 // Box definitions — admin can create these as products with isSubscribable=true
 export const BOX_DEFINITIONS = [
@@ -146,7 +147,7 @@ async function processDueSubscriptions(): Promise<void> {
       await scheduleRestockReminders(order.id);
 
     } catch (err: any) {
-      console.error(`Subscription processing failed for ${sub.id}:`, err.message);
+      logger.error(`Subscription processing failed for ${sub.id}`, { error: err.message });
     }
   }
 }
@@ -221,7 +222,7 @@ export function startSubscriptionBoxJob(): void {
       await processDueSubscriptions();
       await sendRenewalReminders();
     } catch (err: any) {
-      console.error("Subscription box job error:", err.message);
+      logger.error("Subscription box job error", { error: err.message });
     }
   };
 

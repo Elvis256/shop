@@ -1,10 +1,12 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/blog - List published posts
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { category, tag, featured, limit = "10", page = "1" } = req.query;
 
@@ -59,13 +61,13 @@ router.get("/", async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Get blog posts error:", error);
+    logger.error("Get blog posts error", { error });
     return res.status(500).json({ error: "Failed to fetch posts" });
   }
-});
+}));
 
 // GET /api/blog/categories - List all categories
-router.get("/categories", async (_req: Request, res: Response) => {
+router.get("/categories", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const categories = await prisma.blogPost.groupBy({
       by: ["category"],
@@ -82,13 +84,13 @@ router.get("/categories", async (_req: Request, res: Response) => {
         }))
     );
   } catch (error) {
-    console.error("Get blog categories error:", error);
+    logger.error("Get blog categories error", { error });
     return res.status(500).json({ error: "Failed to fetch categories" });
   }
-});
+}));
 
 // GET /api/blog/:slug - Get single post
-router.get("/:slug", async (req: Request, res: Response) => {
+router.get("/:slug", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -127,9 +129,9 @@ router.get("/:slug", async (req: Request, res: Response) => {
       relatedPosts,
     });
   } catch (error) {
-    console.error("Get blog post error:", error);
+    logger.error("Get blog post error", { error });
     return res.status(500).json({ error: "Failed to fetch post" });
   }
-});
+}));
 
 export default router;

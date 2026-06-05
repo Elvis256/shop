@@ -1,10 +1,11 @@
 import { Router } from "express";
 import prisma from "../lib/prisma";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/social/live-feed - Get recent purchases for social proof
-router.get("/live-feed", async (_req, res) => {
+router.get("/live-feed", asyncHandler(async (_req, res) => {
   try {
     const recentOrders = await prisma.orderItem.findMany({
       where: {
@@ -56,7 +57,7 @@ router.get("/live-feed", async (_req, res) => {
       ],
     });
   }
-});
+}));
 
 function getTimeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);

@@ -5,6 +5,7 @@
 
 import prisma from "../lib/prisma";
 import { placeOrder } from "./aliexpress";
+import { logger } from "../lib/logger";
 
 /**
  * Parse a shipping address string into structured fields.
@@ -49,7 +50,7 @@ export async function placeAliExpressOrdersForOrder(orderId: string): Promise<vo
   });
 
   if (!order) {
-    console.error(`[AE-Order] Order ${orderId} not found`);
+    logger.error(`[AE-Order] Order ${orderId} not found`);
     return;
   }
 
@@ -103,9 +104,9 @@ export async function placeAliExpressOrdersForOrder(orderId: string): Promise<vo
         },
       });
 
-      console.log(`✅ [AE-Order] Placed AE order ${result.aliexpressOrderId} for product ${item.product.name}`);
+      logger.info(`[AE-Order] Placed AE order ${result.aliexpressOrderId} for product ${item.product.name}`);
     } catch (error: any) {
-      console.error(`❌ [AE-Order] Failed to place AE order for ${item.product.name}:`, error.message);
+      logger.error(`[AE-Order] Failed to place AE order for ${item.product.name}`, { error: error.message });
 
       // Record the failure
       await prisma.aliExpressOrder.updateMany({

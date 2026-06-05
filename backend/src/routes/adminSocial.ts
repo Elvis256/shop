@@ -1,6 +1,8 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authenticate } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -11,7 +13,7 @@ const adminOnly = async (req: AuthRequest, res: Response, next: any) => {
 };
 
 // ─── Dashboard Stats ─────────────────────────────────
-router.get("/stats", authenticate, adminOnly, async (_req, res) => {
+router.get("/stats", authenticate, adminOnly, asyncHandler(async (_req, res) => {
   try {
     const [
       activeGroupBuys,
@@ -46,11 +48,11 @@ router.get("/stats", authenticate, adminOnly, async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch social stats" });
   }
-});
+}));
 
 // ─── Group Buy CRUD ──────────────────────────────────
 // List all group buys
-router.get("/group-buys", authenticate, adminOnly, async (req, res) => {
+router.get("/group-buys", authenticate, adminOnly, asyncHandler(async (req, res) => {
   try {
     const { status } = req.query;
     const where: any = {};
@@ -69,10 +71,10 @@ router.get("/group-buys", authenticate, adminOnly, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch group buys" });
   }
-});
+}));
 
 // Create a group buy
-router.post("/group-buys", authenticate, adminOnly, async (req: AuthRequest, res: Response) => {
+router.post("/group-buys", authenticate, adminOnly, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId, targetCount, discountPercent, expiresInHours } = req.body;
 
@@ -102,13 +104,13 @@ router.post("/group-buys", authenticate, adminOnly, async (req: AuthRequest, res
 
     res.json({ groupBuy });
   } catch (err) {
-    console.error("Create group buy error:", err);
+    logger.error("Create group buy error", { error: err });
     res.status(500).json({ error: "Failed to create group buy" });
   }
-});
+}));
 
 // Delete/cancel a group buy
-router.delete("/group-buys/:id", authenticate, adminOnly, async (req, res) => {
+router.delete("/group-buys/:id", authenticate, adminOnly, asyncHandler(async (req, res) => {
   try {
     await prisma.groupBuy.update({
       where: { id: req.params.id },
@@ -118,10 +120,10 @@ router.delete("/group-buys/:id", authenticate, adminOnly, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to cancel group buy" });
   }
-});
+}));
 
 // ─── Share Discounts (read-only for admin) ───────────
-router.get("/shares", authenticate, adminOnly, async (_req, res) => {
+router.get("/shares", authenticate, adminOnly, asyncHandler(async (_req, res) => {
   try {
     const shares = await prisma.shareDiscount.findMany({
       include: {
@@ -135,10 +137,10 @@ router.get("/shares", authenticate, adminOnly, async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch shares" });
   }
-});
+}));
 
 // ─── Price Slashes (read-only for admin) ─────────────
-router.get("/price-slashes", authenticate, adminOnly, async (_req, res) => {
+router.get("/price-slashes", authenticate, adminOnly, asyncHandler(async (_req, res) => {
   try {
     const slashes = await prisma.priceSlash.findMany({
       include: {
@@ -153,10 +155,10 @@ router.get("/price-slashes", authenticate, adminOnly, async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch price slashes" });
   }
-});
+}));
 
 // ─── Check-in Stats ──────────────────────────────────
-router.get("/check-ins", authenticate, adminOnly, async (_req, res) => {
+router.get("/check-ins", authenticate, adminOnly, asyncHandler(async (_req, res) => {
   try {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -188,6 +190,6 @@ router.get("/check-ins", authenticate, adminOnly, async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch check-in stats" });
   }
-});
+}));
 
 export default router;

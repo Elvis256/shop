@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -68,7 +70,7 @@ const PUBLIC_KEYS = [
 ];
 
 // GET /api/settings/public - Return safe public settings
-router.get("/public", async (_req: Request, res: Response) => {
+router.get("/public", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const settings = await prisma.setting.findMany({
       where: { key: { in: PUBLIC_KEYS } },
@@ -81,13 +83,13 @@ router.get("/public", async (_req: Request, res: Response) => {
 
     return res.json({ settings: map });
   } catch (error) {
-    console.error("Public settings error:", error);
+    logger.error("Public settings error", { error });
     return res.status(500).json({ error: "Failed to fetch settings" });
   }
-});
+}));
 
 // GET /api/settings/shipping — shipping config + available zones for the storefront
-router.get("/shipping", async (_req: Request, res: Response) => {
+router.get("/shipping", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const shippingKeys = PUBLIC_KEYS.filter((k) => k.startsWith("shipping_"));
     const [settings, zones] = await Promise.all([
@@ -112,13 +114,13 @@ router.get("/shipping", async (_req: Request, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("Shipping config error:", error);
+    logger.error("Shipping config error", { error });
     return res.status(500).json({ error: "Failed to fetch shipping config" });
   }
-});
+}));
 
 // GET /api/settings/shipping-zones — public endpoint returning active shipping zones
-router.get("/shipping-zones", async (_req: Request, res: Response) => {
+router.get("/shipping-zones", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const zones = await prisma.shippingZone.findMany({
       where: { isActive: true },
@@ -136,13 +138,13 @@ router.get("/shipping-zones", async (_req: Request, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("Shipping zones error:", error);
+    logger.error("Shipping zones error", { error });
     return res.status(500).json({ error: "Failed to fetch shipping zones" });
   }
-});
+}));
 
 // POST /api/settings/shipping/calculate — calculate shipping for a given cart + address
-router.post("/shipping/calculate", async (req: Request, res: Response) => {
+router.post("/shipping/calculate", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { city, items } = req.body as {
       city?: string;
@@ -268,9 +270,9 @@ router.post("/shipping/calculate", async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Shipping calculate error:", error);
+    logger.error("Shipping calculate error", { error });
     return res.status(500).json({ error: "Failed to calculate shipping" });
   }
-});
+}));
 
 export default router;

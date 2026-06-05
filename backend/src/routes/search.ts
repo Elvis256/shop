@@ -1,11 +1,13 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { trackSearch, getPopularSearches, cacheGetOrSet, SHORT_TTL } from "../lib/cache";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/search
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", asyncHandler(async (req: Request, res: Response) => {
   try {
     const {
       q,
@@ -171,13 +173,13 @@ router.get("/", async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Search error:", error);
+    logger.error("Search error", { error });
     return res.status(500).json({ error: "Search failed" });
   }
-});
+}));
 
 // GET /api/search/suggestions - Enhanced with images & popular searches
-router.get("/suggestions", async (req: Request, res: Response) => {
+router.get("/suggestions", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { q } = req.query;
 
@@ -228,9 +230,9 @@ router.get("/suggestions", async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Suggestions error:", error);
+    logger.error("Suggestions error", { error });
     return res.status(500).json({ error: "Failed to get suggestions" });
   }
-});
+}));
 
 export default router;

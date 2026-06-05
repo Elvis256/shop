@@ -2,11 +2,13 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/qa/product/:productId — Get all questions + answers for a product
-router.get("/product/:productId", async (req: Request, res: Response) => {
+router.get("/product/:productId", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
     const { page = "1", limit = "10" } = req.query;
@@ -55,16 +57,16 @@ router.get("/product/:productId", async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Get product Q&A error:", error);
+    logger.error("Get product Q&A error", { error });
     return res.status(500).json({ error: "Failed to fetch Q&A" });
   }
-});
+}));
 
 // POST /api/qa/questions — Ask a question (auth required)
 router.post(
   "/questions",
   authenticate,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const schema = z.object({
         productId: z.string(),
@@ -92,7 +94,7 @@ router.post(
         .status(201)
         .json({ message: "Question submitted", id: question.id });
     } catch (error) {
-      console.error("Create question error:", error);
+      logger.error("Create question error", { error });
       if (error instanceof z.ZodError) {
         return res
           .status(400)
@@ -101,13 +103,13 @@ router.post(
       return res.status(500).json({ error: "Failed to submit question" });
     }
   }
-);
+));
 
 // POST /api/qa/answers — Answer a question (auth required)
 router.post(
   "/answers",
   authenticate,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const schema = z.object({
         questionId: z.string(),
@@ -139,7 +141,7 @@ router.post(
         .status(201)
         .json({ message: "Answer submitted", id: answer.id });
     } catch (error) {
-      console.error("Create answer error:", error);
+      logger.error("Create answer error", { error });
       if (error instanceof z.ZodError) {
         return res
           .status(400)
@@ -148,13 +150,13 @@ router.post(
       return res.status(500).json({ error: "Failed to submit answer" });
     }
   }
-);
+));
 
 // DELETE /api/qa/questions/:id — Delete own question or admin delete
 router.delete(
   "/questions/:id",
   authenticate,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -177,10 +179,10 @@ router.delete(
 
       return res.json({ message: "Question deleted" });
     } catch (error) {
-      console.error("Delete question error:", error);
+      logger.error("Delete question error", { error });
       return res.status(500).json({ error: "Failed to delete question" });
     }
   }
-);
+));
 
 export default router;

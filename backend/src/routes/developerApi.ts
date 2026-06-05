@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticateApiKey, requirePermission, ApiKeyRequest } from "../middleware/apiKeyAuth";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -12,7 +13,7 @@ router.use(authenticateApiKey);
 // ── Products ──────────────────────────────────────────
 
 // GET /api/v1/products
-router.get("/products", requirePermission("products:read"), async (req: ApiKeyRequest, res: Response) => {
+router.get("/products", requirePermission("products:read"), asyncHandler(async (req: ApiKeyRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const perPage = Math.min(100, Math.max(1, parseInt(req.query.per_page as string) || 20));
@@ -54,10 +55,10 @@ router.get("/products", requirePermission("products:read"), async (req: ApiKeyRe
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch products" } });
   }
-});
+}));
 
 // GET /api/v1/products/:idOrSlug
-router.get("/products/:idOrSlug", requirePermission("products:read"), async (req: ApiKeyRequest, res: Response) => {
+router.get("/products/:idOrSlug", requirePermission("products:read"), asyncHandler(async (req: ApiKeyRequest, res: Response) => {
   try {
     const { idOrSlug } = req.params;
     const product = await prisma.product.findFirst({
@@ -73,12 +74,12 @@ router.get("/products/:idOrSlug", requirePermission("products:read"), async (req
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch product" } });
   }
-});
+}));
 
 // ── Orders ──────────────────────────────────────────
 
 // GET /api/v1/orders
-router.get("/orders", requirePermission("orders:read"), async (req: ApiKeyRequest, res: Response) => {
+router.get("/orders", requirePermission("orders:read"), asyncHandler(async (req: ApiKeyRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const perPage = Math.min(100, Math.max(1, parseInt(req.query.per_page as string) || 20));
@@ -124,10 +125,10 @@ router.get("/orders", requirePermission("orders:read"), async (req: ApiKeyReques
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch orders" } });
   }
-});
+}));
 
 // GET /api/v1/orders/:id
-router.get("/orders/:id", requirePermission("orders:read"), async (req: ApiKeyRequest, res: Response) => {
+router.get("/orders/:id", requirePermission("orders:read"), asyncHandler(async (req: ApiKeyRequest, res: Response) => {
   try {
     const order = await prisma.order.findFirst({
       where: { OR: [{ id: req.params.id }, { orderNumber: req.params.id }] },
@@ -142,10 +143,10 @@ router.get("/orders/:id", requirePermission("orders:read"), async (req: ApiKeyRe
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch order" } });
   }
-});
+}));
 
 // PUT /api/v1/orders/:id
-router.put("/orders/:id", requirePermission("orders:write"), async (req: ApiKeyRequest, res: Response) => {
+router.put("/orders/:id", requirePermission("orders:write"), asyncHandler(async (req: ApiKeyRequest, res: Response) => {
   try {
     const { status, trackingNumber, notes } = req.body;
 
@@ -176,12 +177,12 @@ router.put("/orders/:id", requirePermission("orders:write"), async (req: ApiKeyR
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to update order" } });
   }
-});
+}));
 
 // ── Customers ──────────────────────────────────────────
 
 // GET /api/v1/customers
-router.get("/customers", requirePermission("customers:read"), async (req: ApiKeyRequest, res: Response) => {
+router.get("/customers", requirePermission("customers:read"), asyncHandler(async (req: ApiKeyRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const perPage = Math.min(100, Math.max(1, parseInt(req.query.per_page as string) || 20));
@@ -214,12 +215,12 @@ router.get("/customers", requirePermission("customers:read"), async (req: ApiKey
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch customers" } });
   }
-});
+}));
 
 // ── Categories ──────────────────────────────────────────
 
 // GET /api/v1/categories
-router.get("/categories", requirePermission("products:read"), async (_req: ApiKeyRequest, res: Response) => {
+router.get("/categories", requirePermission("products:read"), asyncHandler(async (_req: ApiKeyRequest, res: Response) => {
   try {
     const categories = await prisma.category.findMany({
       select: {
@@ -232,12 +233,12 @@ router.get("/categories", requirePermission("products:read"), async (_req: ApiKe
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch categories" } });
   }
-});
+}));
 
 // ── Inventory ──────────────────────────────────────────
 
 // GET /api/v1/inventory
-router.get("/inventory", requirePermission("inventory:read"), async (req: ApiKeyRequest, res: Response) => {
+router.get("/inventory", requirePermission("inventory:read"), asyncHandler(async (req: ApiKeyRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const perPage = Math.min(100, Math.max(1, parseInt(req.query.per_page as string) || 50));
@@ -268,10 +269,10 @@ router.get("/inventory", requirePermission("inventory:read"), async (req: ApiKey
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch inventory" } });
   }
-});
+}));
 
 // PUT /api/v1/inventory/:id
-router.put("/inventory/:id", requirePermission("inventory:write"), async (req: ApiKeyRequest, res: Response) => {
+router.put("/inventory/:id", requirePermission("inventory:write"), asyncHandler(async (req: ApiKeyRequest, res: Response) => {
   try {
     const { stock } = req.body;
     if (stock === undefined || stock === null) {
@@ -292,12 +293,12 @@ router.put("/inventory/:id", requirePermission("inventory:write"), async (req: A
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to update inventory" } });
   }
-});
+}));
 
 // ── Webhooks info ──────────────────────────────────────────
 
 // GET /api/v1/webhooks
-router.get("/webhooks", requirePermission("webhooks:read"), async (_req: ApiKeyRequest, res: Response) => {
+router.get("/webhooks", requirePermission("webhooks:read"), asyncHandler(async (_req: ApiKeyRequest, res: Response) => {
   try {
     const endpoints = await prisma.webhookEndpoint.findMany({
       select: { id: true, url: true, events: true, isActive: true, failCount: true, createdAt: true },
@@ -306,6 +307,6 @@ router.get("/webhooks", requirePermission("webhooks:read"), async (_req: ApiKeyR
   } catch {
     res.status(500).json({ error: { code: "INTERNAL", message: "Failed to fetch webhooks" } });
   }
-});
+}));
 
 export default router;

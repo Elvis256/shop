@@ -2,6 +2,8 @@ import { Router, Request, Response } from "express";
 import webpush from "web-push";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -14,7 +16,7 @@ if (!vapidPublicKey || !vapidPrivateKey) {
   vapidPublicKey = keys.publicKey;
   vapidPrivateKey = keys.privateKey;
   // Log only the public key; private key must be set via .env
-  console.warn("VAPID keys not configured. Generated temporary keys — set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in .env for production.");
+  logger.warn("VAPID keys not configured. Generated temporary keys — set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in .env for production.");
 }
 
 webpush.setVapidDetails(
@@ -26,7 +28,7 @@ webpush.setVapidDetails(
 export { vapidPublicKey };
 
 // POST /api/push/subscribe — Save push subscription
-router.post("/subscribe", async (req: Request, res: Response) => {
+router.post("/subscribe", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { endpoint, keys, userId } = req.body;
 
@@ -42,13 +44,13 @@ router.post("/subscribe", async (req: Request, res: Response) => {
 
     return res.status(201).json({ message: "Push subscription saved", vapidPublicKey });
   } catch (error) {
-    console.error("Save push subscription error:", error);
+    logger.error("Save push subscription error", { error });
     return res.status(500).json({ error: "Failed to save push subscription" });
   }
-});
+}));
 
 // POST /api/push/unsubscribe — Remove subscription by endpoint
-router.post("/unsubscribe", async (req: Request, res: Response) => {
+router.post("/unsubscribe", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { endpoint } = req.body;
 
@@ -60,13 +62,13 @@ router.post("/unsubscribe", async (req: Request, res: Response) => {
 
     return res.json({ message: "Push subscription removed" });
   } catch (error) {
-    console.error("Remove push subscription error:", error);
+    logger.error("Remove push subscription error", { error });
     return res.status(500).json({ error: "Failed to remove push subscription" });
   }
-});
+}));
 
 // POST /api/push/admin/send — Send push to all subscribers (admin)
-router.post("/admin/send", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post("/admin/send", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { title, body, url } = req.body;
 
@@ -101,13 +103,13 @@ router.post("/admin/send", authenticate, requireAdmin, async (req: AuthRequest, 
 
     return res.json({ message: "Push notifications sent", sent, failed });
   } catch (error) {
-    console.error("Send push notifications error:", error);
+    logger.error("Send push notifications error", { error });
     return res.status(500).json({ error: "Failed to send push notifications" });
   }
-});
+}));
 
 // GET /api/push/admin/subscribers — List all push subscribers (admin)
-router.get("/admin/subscribers", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/subscribers", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const subscribers = await prisma.pushSubscription.findMany({
       include: { user: { select: { name: true, email: true } } },
@@ -117,10 +119,10 @@ router.get("/admin/subscribers", authenticate, requireAdmin, async (_req: AuthRe
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // GET /api/push/admin/stats — Subscriber stats (admin)
-router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/stats", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const total = await prisma.pushSubscription.count();
     const withUser = await prisma.pushSubscription.count({ where: { userId: { not: null } } });
@@ -128,16 +130,16 @@ router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest,
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // DELETE /api/push/admin/:id — Delete a subscriber (admin)
-router.delete("/admin/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.delete("/admin/:id", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     await prisma.pushSubscription.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 export default router;

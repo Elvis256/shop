@@ -2,6 +2,8 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -20,7 +22,7 @@ const AddressSchema = z.object({
 });
 
 // GET /api/addresses
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const addresses = await prisma.address.findMany({
       where: { userId: req.user!.id },
@@ -29,13 +31,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 
     return res.json({ addresses });
   } catch (error) {
-    console.error("Get addresses error:", error);
+    logger.error("Get addresses error", { error });
     return res.status(500).json({ error: "Failed to fetch addresses" });
   }
-});
+}));
 
 // POST /api/addresses
-router.post("/", async (req: AuthRequest, res: Response) => {
+router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = AddressSchema.parse(req.body);
 
@@ -59,16 +61,16 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ message: "Address created", address });
   } catch (error) {
-    console.error("Create address error:", error);
+    logger.error("Create address error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to create address" });
   }
-});
+}));
 
 // PUT /api/addresses/:id
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const body = AddressSchema.partial().parse(req.body);
@@ -97,13 +99,13 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Address updated", address: updated });
   } catch (error) {
-    console.error("Update address error:", error);
+    logger.error("Update address error", { error });
     return res.status(500).json({ error: "Failed to update address" });
   }
-});
+}));
 
 // DELETE /api/addresses/:id
-router.delete("/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -133,13 +135,13 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Address deleted" });
   } catch (error) {
-    console.error("Delete address error:", error);
+    logger.error("Delete address error", { error });
     return res.status(500).json({ error: "Failed to delete address" });
   }
-});
+}));
 
 // POST /api/addresses/:id/set-default
-router.post("/:id/set-default", async (req: AuthRequest, res: Response) => {
+router.post("/:id/set-default", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -164,9 +166,9 @@ router.post("/:id/set-default", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Default address updated" });
   } catch (error) {
-    console.error("Set default address error:", error);
+    logger.error("Set default address error", { error });
     return res.status(500).json({ error: "Failed to set default address" });
   }
-});
+}));
 
 export default router;

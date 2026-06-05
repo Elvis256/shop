@@ -1,6 +1,8 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -149,7 +151,7 @@ const generateInvoiceHtml = (order: Record<string, unknown>, items: Array<Record
 };
 
 // GET /api/invoices/admin/all — List all invoices (admin)
-router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/all", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const orders = await prisma.order.findMany({
       where: { paymentStatus: { in: ["SUCCESSFUL", "PENDING"] } },
@@ -172,10 +174,10 @@ router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, r
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // Get invoice HTML for order
-router.get("/:orderId", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/:orderId", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const userRole = req.user?.role;
@@ -224,13 +226,13 @@ router.get("/:orderId", authenticate, async (req: AuthRequest, res: Response) =>
       html: invoiceHtml,
     });
   } catch (error) {
-    console.error("Get invoice error:", error);
+    logger.error("Get invoice error", { error });
     res.status(500).json({ error: "Failed to generate invoice" });
   }
-});
+}));
 
 // Download invoice (HTML format - frontend converts to PDF)
-router.get("/:orderId/download", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/:orderId/download", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const userRole = req.user?.role;
@@ -269,9 +271,9 @@ router.get("/:orderId/download", authenticate, async (req: AuthRequest, res: Res
     res.setHeader("Content-Disposition", `attachment; filename="invoice-${order.orderNumber}.html"`);
     res.send(invoiceHtml);
   } catch (error) {
-    console.error("Download invoice error:", error);
+    logger.error("Download invoice error", { error });
     res.status(500).json({ error: "Failed to download invoice" });
   }
-});
+}));
 
 export default router;

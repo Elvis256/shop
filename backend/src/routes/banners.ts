@@ -1,10 +1,12 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/banners - Get active banners
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { position } = req.query;
 
@@ -41,13 +43,13 @@ router.get("/", async (req: Request, res: Response) => {
 
     return res.json({ banners });
   } catch (error) {
-    console.error("Get banners error:", error);
+    logger.error("Get banners error", { error });
     return res.status(500).json({ error: "Failed to fetch banners" });
   }
-});
+}));
 
 // GET /api/banners/home - Get homepage banners (hero + secondary)
-router.get("/home", async (_req: Request, res: Response) => {
+router.get("/home", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const now = new Date();
 
@@ -75,9 +77,9 @@ router.get("/home", async (_req: Request, res: Response) => {
       secondary: secondaryBanners,
     });
   } catch (error) {
-    console.error("Get home banners error:", error);
+    logger.error("Get home banners error", { error });
     return res.status(500).json({ error: "Failed to fetch banners" });
   }
-});
+}));
 
 export default router;

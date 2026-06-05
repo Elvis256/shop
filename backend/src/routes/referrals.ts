@@ -2,6 +2,8 @@ import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 import crypto from "crypto";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -16,7 +18,7 @@ const generateReferralCode = (userId: string) => {
 };
 
 // Get or create referral code
-router.get("/code", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/code", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -77,13 +79,13 @@ router.get("/code", authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Get referral code error:", error);
+    logger.error("Get referral code error", { error });
     res.status(500).json({ error: "Failed to get referral code" });
   }
-});
+}));
 
 // Apply referral code during signup
-router.post("/apply", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/apply", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { code } = req.body;
@@ -158,13 +160,13 @@ router.post("/apply", authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Apply referral error:", error);
+    logger.error("Apply referral error", { error });
     res.status(500).json({ error: "Failed to apply referral code" });
   }
-});
+}));
 
 // Check referral code validity (public)
-router.get("/check/:code", async (req, res) => {
+router.get("/check/:code", asyncHandler(async (req, res) => {
   try {
     const { code } = req.params;
 
@@ -187,10 +189,10 @@ router.get("/check/:code", async (req, res) => {
       discount: REFEREE_DISCOUNT,
     });
   } catch (error) {
-    console.error("Check referral error:", error);
+    logger.error("Check referral error", { error });
     res.status(500).json({ error: "Failed to check referral code" });
   }
-});
+}));
 
 // Process referral reward when referee makes first order
 export const processReferralReward = async (userId: string, orderId: string) => {
@@ -239,13 +241,13 @@ export const processReferralReward = async (userId: string, orderId: string) => 
 
     return REFERRER_REWARD;
   } catch (error) {
-    console.error("Process referral reward error:", error);
+    logger.error("Process referral reward error", { error });
     return null;
   }
 };
 
 // GET /api/referrals/leaderboard — Top 10 referrers (public, anonymized)
-router.get("/leaderboard", async (_req, res) => {
+router.get("/leaderboard", asyncHandler(async (_req, res) => {
   try {
     const topReferrers = await prisma.referralCode.findMany({
       where: { usageCount: { gt: 0 } },
@@ -272,13 +274,13 @@ router.get("/leaderboard", async (_req, res) => {
 
     return res.json({ leaderboard });
   } catch (error) {
-    console.error("Get referral leaderboard error:", error);
+    logger.error("Get referral leaderboard error", { error });
     return res.status(500).json({ error: "Failed to fetch leaderboard" });
   }
-});
+}));
 
 // GET /api/referrals/admin/all — List all referral codes with referrals (admin)
-router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/all", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const codes = await prisma.referralCode.findMany({
       include: {
@@ -296,10 +298,10 @@ router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, r
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // GET /api/referrals/admin/stats — Referral program stats (admin)
-router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/stats", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const totalCodes = await prisma.referralCode.count();
     const totalReferrals = await prisma.referral.count();
@@ -316,10 +318,10 @@ router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest,
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // PUT /api/referrals/admin/:id/payout — Mark referral reward as paid (admin)
-router.put("/admin/:id/payout", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.put("/admin/:id/payout", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const updated = await prisma.referral.update({
       where: { id: req.params.id },
@@ -329,6 +331,6 @@ router.put("/admin/:id/payout", authenticate, requireAdmin, async (req: AuthRequ
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 export default router;

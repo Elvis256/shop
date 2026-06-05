@@ -1,11 +1,13 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /api/installments/create — Create installment plan for an order
-router.post("/create", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/create", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { orderId, installments } = req.body;
@@ -54,13 +56,13 @@ router.post("/create", authenticate, async (req: AuthRequest, res: Response) => 
 
     return res.status(201).json({ plan });
   } catch (error) {
-    console.error("Create installment plan error:", error);
+    logger.error("Create installment plan error", { error });
     return res.status(500).json({ error: "Failed to create installment plan" });
   }
-});
+}));
 
 // GET /api/installments/my-plans — List user's installment plans
-router.get("/my-plans", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/my-plans", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
 
@@ -75,13 +77,13 @@ router.get("/my-plans", authenticate, async (req: AuthRequest, res: Response) =>
 
     return res.json({ plans });
   } catch (error) {
-    console.error("Get installment plans error:", error);
+    logger.error("Get installment plans error", { error });
     return res.status(500).json({ error: "Failed to fetch installment plans" });
   }
-});
+}));
 
 // POST /api/installments/pay/:planId — Mark next installment as paid
-router.post("/pay/:planId", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/pay/:planId", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { planId } = req.params;
@@ -132,13 +134,13 @@ router.post("/pay/:planId", authenticate, async (req: AuthRequest, res: Response
 
     return res.json({ message: "Installment paid", paidCount: newPaidCount, completed: isCompleted });
   } catch (error) {
-    console.error("Pay installment error:", error);
+    logger.error("Pay installment error", { error });
     return res.status(500).json({ error: "Failed to process installment payment" });
   }
-});
+}));
 
 // GET /api/installments/admin/overdue — List overdue plans (admin)
-router.get("/admin/overdue", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/overdue", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const overduePlans = await prisma.installmentPlan.findMany({
       where: {
@@ -156,9 +158,9 @@ router.get("/admin/overdue", authenticate, requireAdmin, async (_req: AuthReques
 
     return res.json({ overduePlans });
   } catch (error) {
-    console.error("Get overdue plans error:", error);
+    logger.error("Get overdue plans error", { error });
     return res.status(500).json({ error: "Failed to fetch overdue plans" });
   }
-});
+}));
 
 export default router;

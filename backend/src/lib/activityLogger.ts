@@ -1,4 +1,5 @@
 import prisma from "./prisma";
+import { logger } from "./logger";
 
 interface LogActivityParams {
   userId: string;
@@ -29,6 +30,6 @@ export async function logActivity({
       },
     });
   } catch (error) {
-    console.error("Activity log error:", error);
+    logger.error("Activity log error", { error });
   }
 }

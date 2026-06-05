@@ -2,6 +2,8 @@ import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import crypto from "crypto";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -65,7 +67,7 @@ const generateBackupCodes = (): string[] => {
 };
 
 // Get 2FA status
-router.get("/status", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/status", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -81,13 +83,13 @@ router.get("/status", authenticate, async (req: AuthRequest, res: Response) => {
       hasBackupCodes: (twoFactor?.backupCodes?.length ?? 0) > 0,
     });
   } catch (error) {
-    console.error("Get 2FA status error:", error);
+    logger.error("Get 2FA status error", { error });
     res.status(500).json({ error: "Failed to get 2FA status" });
   }
-});
+}));
 
 // Setup 2FA (generate secret)
-router.post("/setup", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/setup", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const userEmail = req.user?.email;
@@ -130,13 +132,13 @@ router.post("/setup", authenticate, async (req: AuthRequest, res: Response) => {
       backupCodes, // Show only once
     });
   } catch (error) {
-    console.error("Setup 2FA error:", error);
+    logger.error("Setup 2FA error", { error });
     res.status(500).json({ error: "Failed to setup 2FA" });
   }
-});
+}));
 
 // Enable 2FA (verify first code)
-router.post("/enable", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/enable", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { token } = req.body;
@@ -173,13 +175,13 @@ router.post("/enable", authenticate, async (req: AuthRequest, res: Response) => 
 
     res.json({ message: "Two-factor authentication enabled successfully" });
   } catch (error) {
-    console.error("Enable 2FA error:", error);
+    logger.error("Enable 2FA error", { error });
     res.status(500).json({ error: "Failed to enable 2FA" });
   }
-});
+}));
 
 // Verify 2FA token (during login)
-router.post("/verify", async (req, res) => {
+router.post("/verify", asyncHandler(async (req, res) => {
   try {
     const { userId, token } = req.body;
 
@@ -226,13 +228,13 @@ router.post("/verify", async (req, res) => {
 
     res.status(400).json({ valid: false, error: "Invalid verification code" });
   } catch (error) {
-    console.error("Verify 2FA error:", error);
+    logger.error("Verify 2FA error", { error });
     res.status(500).json({ error: "Failed to verify 2FA" });
   }
-});
+}));
 
 // Disable 2FA
-router.post("/disable", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/disable", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { password, token } = req.body;
@@ -260,13 +262,13 @@ router.post("/disable", authenticate, async (req: AuthRequest, res: Response) =>
 
     res.json({ message: "Two-factor authentication disabled" });
   } catch (error) {
-    console.error("Disable 2FA error:", error);
+    logger.error("Disable 2FA error", { error });
     res.status(500).json({ error: "Failed to disable 2FA" });
   }
-});
+}));
 
 // Regenerate backup codes
-router.post("/backup-codes", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/backup-codes", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { token } = req.body;
@@ -300,9 +302,9 @@ router.post("/backup-codes", authenticate, async (req: AuthRequest, res: Respons
 
     res.json({ backupCodes: newBackupCodes });
   } catch (error) {
-    console.error("Regenerate backup codes error:", error);
+    logger.error("Regenerate backup codes error", { error });
     res.status(500).json({ error: "Failed to regenerate backup codes" });
   }
-});
+}));
 
 export default router;

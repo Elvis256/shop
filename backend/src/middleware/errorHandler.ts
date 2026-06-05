@@ -1,28 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import logger from "../lib/logger";
 
-// Extend Express Request to include request ID
-declare global {
-  namespace Express {
-    interface Request {
-      id?: string;
-    }
-  }
-}
-
-/**
- * Standardized API Error Response
- */
-export interface ApiErrorResponse {
-  error: {
-    code: string;
-    message: string;
-    details?: Record<string, any>;
-    requestId?: string;
-    timestamp: string;
-  };
-}
-
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -37,16 +15,16 @@ export class ApiError extends Error {
 
 /**
  * Global error handler middleware
- * Catches all errors and returns standardized response
+ * Returns simple { error: "message" } matching the format the frontend expects.
+ * Structured details are captured in the logger call, not the HTTP response.
  */
 export function errorHandler(
   err: Error | ApiError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) {
-  const requestId = req.id || "unknown";
-  const timestamp = new Date().toISOString();
+  const requestId = (req as any).requestId || "unknown";
 
   // Handle ApiError (application errors)
   if (err instanceof ApiError) {
@@ -60,14 +38,9 @@ export function errorHandler(
     });
 
     return res.status(err.statusCode).json({
-      error: {
-        code: err.code,
-        message: err.message,
-        details: err.details,
-        requestId,
-        timestamp,
-      },
-    } as ApiErrorResponse);
+      error: err.message,
+      ...(err.details && { details: err.details }),
+    });
   }
 
   // Handle validation errors (Zod)
@@ -80,19 +53,12 @@ export function errorHandler(
     });
 
     return res.status(400).json({
-      error: {
-        code: "VALIDATION_ERROR",
-        message: "Request validation failed",
-        details: {
-          errors: (err as any).errors?.map((e: any) => ({
-            field: e.path.join("."),
-            message: e.message,
-          })),
-        },
-        requestId,
-        timestamp,
-      },
-    } as ApiErrorResponse);
+      error: "Validation failed",
+      details: (err as any).errors?.map((e: any) => ({
+        field: e.path.join("."),
+        message: e.message,
+      })),
+    });
   }
 
   // Handle Prisma errors
@@ -103,14 +69,7 @@ export function errorHandler(
       message: err.message,
     });
 
-    return res.status(409).json({
-      error: {
-        code: "DUPLICATE_ENTRY",
-        message: "A record with this value already exists",
-        requestId,
-        timestamp,
-      },
-    } as ApiErrorResponse);
+    return res.status(409).json({ error: "A record with this value already exists" });
   }
 
   if ((err as any).code === "P2025") {
@@ -119,14 +78,7 @@ export function errorHandler(
       path: req.path,
     });
 
-    return res.status(404).json({
-      error: {
-        code: "NOT_FOUND",
-        message: "The requested resource was not found",
-        requestId,
-        timestamp,
-      },
-    } as ApiErrorResponse);
+    return res.status(404).json({ error: "The requested resource was not found" });
   }
 
   // Handle JWT errors
@@ -137,14 +89,7 @@ export function errorHandler(
       message: err.message,
     });
 
-    return res.status(401).json({
-      error: {
-        code: "INVALID_TOKEN",
-        message: "Invalid or expired authentication token",
-        requestId,
-        timestamp,
-      },
-    } as ApiErrorResponse);
+    return res.status(401).json({ error: "Invalid or expired authentication token" });
   }
 
   // Generic server error
@@ -152,21 +97,14 @@ export function errorHandler(
     requestId,
     path: req.path,
     method: req.method,
-    message: err.message,
-    stack: err.stack,
+    error: err,
   });
 
   res.status(500).json({
-    error: {
-      code: "INTERNAL_SERVER_ERROR",
-      message:
-        process.env.NODE_ENV === "production"
-          ? "An unexpected error occurred"
-          : err.message,
-      requestId,
-      timestamp,
-    },
-  } as ApiErrorResponse);
+    error: process.env.NODE_ENV === "production"
+      ? "An unexpected error occurred"
+      : err.message,
+  });
 }
 
 /**

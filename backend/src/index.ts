@@ -1,14 +1,12 @@
+import "./lib/validateEnv"; // Must be first — loads .env and validates
 import express from "express";
+import compression from "compression";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import dotenv from "dotenv";
 import path from "path";
 import logger, { requestIdMiddleware, requestLogMiddleware } from "./lib/logger";
 import prisma from "./lib/prisma";
 import redis from "./lib/redis";
-
-// Load environment variables
-dotenv.config();
 
 // Global error handlers — prevent silent crashes
 process.on("unhandledRejection", (reason) => {
@@ -77,6 +75,8 @@ import countryConfigRoutes from "./routes/countryConfig";
 import localCourierRoutes from "./routes/localCourier";
 import priceDropAlertsRoutes from "./routes/priceDropAlerts";
 import sellerAdsRoutes from "./routes/sellerAds";
+import pickupPointsRoutes from "./routes/pickupPoints";
+import supportChatRoutes from "./routes/supportChat";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -104,6 +104,7 @@ import adminMessages from "./routes/admin/messages";
 import adminAds from "./routes/admin/ads";
 import adminDisputes from "./routes/admin/disputes";
 import adminSellerBadges from "./routes/admin/sellerBadges";
+import adminAbandonedCarts from "./routes/admin/abandonedCarts";
 import disputesRoutes from "./routes/disputes";
 import settingsRoutes from "./routes/settings";
 
@@ -161,6 +162,9 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+// Response compression
+app.use(compression());
 
 // Body parsing
 app.use(express.json({ limit: "1mb" }));
@@ -267,6 +271,9 @@ app.use("/api/admin/messages", adminMessages);
 app.use("/api/admin/ads", adminAds);
 app.use("/api/admin/disputes", adminDisputes);
 app.use("/api/admin/seller-badges", adminSellerBadges);
+app.use("/api/admin/abandoned-carts", adminAbandonedCarts);
+app.use("/api/pickup-points", pickupPointsRoutes);
+app.use("/api/support-chat", supportChatRoutes);
 app.use("/api/disputes", disputesRoutes);
 app.use("/api/settings", settingsRoutes);
 

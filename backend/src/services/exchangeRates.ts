@@ -3,6 +3,7 @@
  * Fetches rates every 6 hours and updates the Currency table.
  */
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
 
 const RATE_API = "https://open.er-api.com/v6/latest/USD";
 const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -62,10 +63,10 @@ export async function fetchAndUpdateRates(): Promise<boolean> {
     );
 
     lastUpdated = new Date();
-    console.log(`💱 Exchange rates updated at ${lastUpdated.toISOString()} (1 USD = ${ugxPerUsd} UGX)`);
+    logger.info(`Exchange rates updated at ${lastUpdated.toISOString()} (1 USD = ${ugxPerUsd} UGX)`);
     return true;
   } catch (err) {
-    console.error("Failed to fetch exchange rates:", err);
+    logger.error("Failed to fetch exchange rates", { error: err });
     return false;
   }
 }
@@ -79,5 +80,5 @@ export function startRateRefreshJob(): void {
   fetchAndUpdateRates();
   // Then refresh every 6 hours
   setInterval(fetchAndUpdateRates, REFRESH_INTERVAL_MS);
-  console.log("💱 Exchange rate refresh job started (every 6 hours)");
+  logger.info("Exchange rate refresh job started (every 6 hours)");
 }

@@ -2,13 +2,15 @@ import { Router, Response } from "express";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { logActivity } from "../../lib/activityLogger";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // GET / — List PENDING_REVIEW products
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
@@ -49,13 +51,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("Product moderation list error:", error);
+    logger.error("Product moderation list error", { error });
     return res.status(500).json({ error: "Failed to load products for review" });
   }
-});
+}));
 
 // PUT /:id/approve — Approve product
-router.put("/:id/approve", async (req: AuthRequest, res: Response) => {
+router.put("/:id/approve", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const product = await prisma.product.findUnique({
       where: { id: req.params.id },
@@ -86,13 +88,13 @@ router.put("/:id/approve", async (req: AuthRequest, res: Response) => {
 
     return res.json({ product: updated });
   } catch (error) {
-    console.error("Product approve error:", error);
+    logger.error("Product approve error", { error });
     return res.status(500).json({ error: "Failed to approve product" });
   }
-});
+}));
 
 // PUT /:id/reject — Reject product (back to DRAFT)
-router.put("/:id/reject", async (req: AuthRequest, res: Response) => {
+router.put("/:id/reject", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { reason } = req.body;
     const product = await prisma.product.findUnique({
@@ -124,13 +126,13 @@ router.put("/:id/reject", async (req: AuthRequest, res: Response) => {
 
     return res.json({ product: updated });
   } catch (error) {
-    console.error("Product reject error:", error);
+    logger.error("Product reject error", { error });
     return res.status(500).json({ error: "Failed to reject product" });
   }
-});
+}));
 
 // PUT /:id/request-changes — Keep PENDING_REVIEW, add note
-router.put("/:id/request-changes", async (req: AuthRequest, res: Response) => {
+router.put("/:id/request-changes", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { reason } = req.body;
     if (!reason || typeof reason !== "string" || !reason.trim()) {
@@ -165,9 +167,9 @@ router.put("/:id/request-changes", async (req: AuthRequest, res: Response) => {
 
     return res.json({ product: updated });
   } catch (error) {
-    console.error("Product request changes error:", error);
+    logger.error("Product request changes error", { error });
     return res.status(500).json({ error: "Failed to request changes" });
   }
-});
+}));
 
 export default router;

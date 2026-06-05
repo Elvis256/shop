@@ -2,6 +2,8 @@ import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { uploadDocuments, validateUploadedDocuments } from "../middleware/upload";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -16,7 +18,7 @@ function generateDisputeNumber(): string {
 }
 
 // POST /api/disputes — File a dispute on an order
-router.post("/", async (req: AuthRequest, res: Response) => {
+router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { orderId, category, reason } = req.body;
@@ -98,13 +100,13 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json(dispute);
   } catch (error) {
-    console.error("Create dispute error:", error);
+    logger.error("Create dispute error", { error });
     return res.status(500).json({ error: "Failed to create dispute" });
   }
-});
+}));
 
 // GET /api/disputes — List user's disputes
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { status } = req.query;
@@ -133,13 +135,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 
     return res.json(disputes);
   } catch (error) {
-    console.error("List disputes error:", error);
+    logger.error("List disputes error", { error });
     return res.status(500).json({ error: "Failed to fetch disputes" });
   }
-});
+}));
 
 // GET /api/disputes/:id — Get dispute details
-router.get("/:id", async (req: AuthRequest, res: Response) => {
+router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
 
@@ -182,13 +184,13 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json(dispute);
   } catch (error) {
-    console.error("Get dispute error:", error);
+    logger.error("Get dispute error", { error });
     return res.status(500).json({ error: "Failed to fetch dispute" });
   }
-});
+}));
 
 // POST /api/disputes/:id/evidence — Upload evidence
-router.post("/:id/evidence", uploadDocuments, validateUploadedDocuments, async (req: AuthRequest, res: Response) => {
+router.post("/:id/evidence", uploadDocuments, validateUploadedDocuments, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const dispute = await prisma.dispute.findUnique({ where: { id: req.params.id } });
@@ -223,13 +225,13 @@ router.post("/:id/evidence", uploadDocuments, validateUploadedDocuments, async (
 
     return res.status(201).json(evidence);
   } catch (error) {
-    console.error("Upload evidence error:", error);
+    logger.error("Upload evidence error", { error });
     return res.status(500).json({ error: "Failed to upload evidence" });
   }
-});
+}));
 
 // POST /api/disputes/:id/messages — Add message to dispute
-router.post("/:id/messages", async (req: AuthRequest, res: Response) => {
+router.post("/:id/messages", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { message } = req.body;
@@ -278,9 +280,9 @@ router.post("/:id/messages", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json(msg);
   } catch (error) {
-    console.error("Add dispute message error:", error);
+    logger.error("Add dispute message error", { error });
     return res.status(500).json({ error: "Failed to add message" });
   }
-});
+}));
 
 export default router;

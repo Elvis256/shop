@@ -3,6 +3,8 @@ import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { uploadMultiple, validateUploadedFiles, uploadDocuments, validateUploadedDocuments } from "../middleware/upload";
 import { logActivity } from "../lib/activityLogger";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -78,7 +80,7 @@ export async function getCommissionRate(sellerId: string, categoryId: string | n
 // ============ PUBLIC ROUTES ============
 
 // POST /register — Register as a seller
-router.post("/register", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/register", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Authentication required" });
@@ -126,13 +128,13 @@ router.post("/register", authenticate, async (req: AuthRequest, res: Response) =
 
     return res.status(201).json({ seller });
   } catch (error) {
-    console.error("Seller registration error:", error);
+    logger.error("Seller registration error", { error });
     return res.status(500).json({ error: "Failed to register as seller" });
   }
-});
+}));
 
 // GET /store/:slug — Public seller profile
-router.get("/store/:slug", async (req: AuthRequest, res: Response) => {
+router.get("/store/:slug", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -171,13 +173,13 @@ router.get("/store/:slug", async (req: AuthRequest, res: Response) => {
 
     return res.json({ seller: { ...seller, productCount } });
   } catch (error) {
-    console.error("Get store error:", error);
+    logger.error("Get store error", { error });
     return res.status(500).json({ error: "Failed to load store" });
   }
-});
+}));
 
 // GET /store/:slug/products — Public seller product listing
-router.get("/store/:slug/products", async (req: AuthRequest, res: Response) => {
+router.get("/store/:slug/products", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { slug } = req.params;
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
@@ -219,15 +221,15 @@ router.get("/store/:slug/products", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Get store products error:", error);
+    logger.error("Get store products error", { error });
     return res.status(500).json({ error: "Failed to load store products" });
   }
-});
+}));
 
 // ============ SELLER AUTHENTICATED ROUTES ============
 
 // GET /dashboard — Seller dashboard stats
-router.get("/dashboard", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/dashboard", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -306,13 +308,13 @@ router.get("/dashboard", authenticate, requireSeller, async (req: SellerRequest,
       topProducts: topProductsFormatted,
     });
   } catch (error) {
-    console.error("Dashboard error:", error);
+    logger.error("Dashboard error", { error });
     return res.status(500).json({ error: "Failed to load dashboard" });
   }
-});
+}));
 
 // GET /products — List seller's own products
-router.get("/products", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/products", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -353,13 +355,13 @@ router.get("/products", authenticate, requireSeller, async (req: SellerRequest, 
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("List seller products error:", error);
+    logger.error("List seller products error", { error });
     return res.status(500).json({ error: "Failed to load products" });
   }
-});
+}));
 
 // GET /products/export — Export all products as CSV
-router.get("/products/export", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/products/export", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const products = await prisma.product.findMany({
@@ -387,13 +389,13 @@ router.get("/products/export", authenticate, requireSeller, async (req: SellerRe
     const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${v}"`).join(","))].join("\n");
     return res.json({ csv });
   } catch (error) {
-    console.error("Export products error:", error);
+    logger.error("Export products error", { error });
     return res.status(500).json({ error: "Failed to export products" });
   }
-});
+}));
 
 // POST /products/import — Import products from CSV
-router.post("/products/import", authenticate, requireSeller, uploadMultiple, async (req: SellerRequest, res: Response) => {
+router.post("/products/import", authenticate, requireSeller, uploadMultiple, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const file = (req as any).files?.[0] || (req as any).file;
@@ -459,13 +461,52 @@ router.post("/products/import", authenticate, requireSeller, uploadMultiple, asy
 
     return res.json({ imported: imported.length, errors });
   } catch (error) {
-    console.error("Import products error:", error);
+    logger.error("Import products error", { error });
     return res.status(500).json({ error: "Failed to import products" });
   }
-});
+}));
+
+// PUT /products/bulk — Bulk activate/deactivate/delete products (must be before /products/:id)
+router.put("/products/bulk", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const { action, productIds } = req.body;
+
+    if (!action || !["activate", "deactivate", "delete"].includes(action)) {
+      return res.status(400).json({ error: "Invalid action. Use: activate, deactivate, delete" });
+    }
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return res.status(400).json({ error: "Product IDs are required" });
+    }
+
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds }, sellerId: seller.id },
+      select: { id: true },
+    });
+    if (products.length !== productIds.length) {
+      return res.status(403).json({ error: "Some products do not belong to you" });
+    }
+
+    const statusMap: Record<string, "ACTIVE" | "DRAFT"> = {
+      activate: "ACTIVE",
+      deactivate: "DRAFT",
+      delete: "DRAFT",
+    };
+
+    await prisma.product.updateMany({
+      where: { id: { in: productIds }, sellerId: seller.id },
+      data: { status: statusMap[action] },
+    });
+
+    return res.json({ message: `${products.length} products ${action}d successfully` });
+  } catch (error) {
+    logger.error("Bulk product operation error", { error });
+    return res.status(500).json({ error: "Failed to perform bulk operation" });
+  }
+}));
 
 // GET /products/:id — Get single product details for editing
-router.get("/products/:id", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/products/:id", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -486,13 +527,13 @@ router.get("/products/:id", authenticate, requireSeller, async (req: SellerReque
 
     return res.json({ product });
   } catch (error) {
-    console.error("Get seller product error:", error);
+    logger.error("Get seller product error", { error });
     return res.status(500).json({ error: "Failed to load product" });
   }
-});
+}));
 
 // POST /products — Create a product as seller
-router.post("/products", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.post("/products", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -606,13 +647,13 @@ router.post("/products", authenticate, requireSeller, async (req: SellerRequest,
 
     return res.status(201).json({ product: result });
   } catch (error) {
-    console.error("Create product error:", error);
+    logger.error("Create product error", { error });
     return res.status(500).json({ error: "Failed to create product" });
   }
-});
+}));
 
 // PUT /products/:id — Update own product
-router.put("/products/:id", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.put("/products/:id", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -715,13 +756,13 @@ router.put("/products/:id", authenticate, requireSeller, async (req: SellerReque
 
     return res.json({ product: updated });
   } catch (error) {
-    console.error("Update product error:", error);
+    logger.error("Update product error", { error });
     return res.status(500).json({ error: "Failed to update product" });
   }
-});
+}));
 
 // DELETE /products/:id — Soft delete (set to DRAFT)
-router.delete("/products/:id", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.delete("/products/:id", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -743,13 +784,13 @@ router.delete("/products/:id", authenticate, requireSeller, async (req: SellerRe
 
     return res.json({ message: "Product removed from listing" });
   } catch (error) {
-    console.error("Delete product error:", error);
+    logger.error("Delete product error", { error });
     return res.status(500).json({ error: "Failed to delete product" });
   }
-});
+}));
 
 // GET /orders — List orders containing seller's items
-router.get("/orders", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/orders", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -818,13 +859,13 @@ router.get("/orders", authenticate, requireSeller, async (req: SellerRequest, re
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("List seller orders error:", error);
+    logger.error("List seller orders error", { error });
     return res.status(500).json({ error: "Failed to load orders" });
   }
-});
+}));
 
 // GET /orders/:id — Single order detail for seller's items
-router.get("/orders/:id", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/orders/:id", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -849,13 +890,13 @@ router.get("/orders/:id", authenticate, requireSeller, async (req: SellerRequest
 
     return res.json({ order });
   } catch (error) {
-    console.error("Get seller order error:", error);
+    logger.error("Get seller order error", { error });
     return res.status(500).json({ error: "Failed to load order" });
   }
-});
+}));
 
 // PUT /orders/:id/status — Update fulfillment status for seller's items
-router.put("/orders/:id/status", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.put("/orders/:id/status", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -895,13 +936,13 @@ router.put("/orders/:id/status", authenticate, requireSeller, async (req: Seller
 
     return res.json({ order });
   } catch (error) {
-    console.error("Update order status error:", error);
+    logger.error("Update order status error", { error });
     return res.status(500).json({ error: "Failed to update order status" });
   }
-});
+}));
 
 // GET /earnings — Earnings summary
-router.get("/earnings", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/earnings", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
@@ -958,13 +999,13 @@ router.get("/earnings", authenticate, requireSeller, async (req: SellerRequest, 
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("Earnings error:", error);
+    logger.error("Earnings error", { error });
     return res.status(500).json({ error: "Failed to load earnings" });
   }
-});
+}));
 
 // GET /earnings/invoice/:orderId — Structured invoice data
-router.get("/earnings/invoice/:orderId", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/earnings/invoice/:orderId", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const order = await prisma.order.findUnique({
@@ -1013,13 +1054,13 @@ router.get("/earnings/invoice/:orderId", authenticate, requireSeller, async (req
       },
     });
   } catch (error) {
-    console.error("Invoice error:", error);
+    logger.error("Invoice error", { error });
     return res.status(500).json({ error: "Failed to generate invoice" });
   }
-});
+}));
 
 // POST /payouts/request — Request a payout
-router.post("/payouts/request", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.post("/payouts/request", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1058,13 +1099,13 @@ router.post("/payouts/request", authenticate, requireSeller, async (req: SellerR
 
     return res.status(201).json({ payout });
   } catch (error) {
-    console.error("Payout request error:", error);
+    logger.error("Payout request error", { error });
     return res.status(500).json({ error: "Failed to request payout" });
   }
-});
+}));
 
 // GET /payouts — List payout history
-router.get("/payouts", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/payouts", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1087,25 +1128,25 @@ router.get("/payouts", authenticate, requireSeller, async (req: SellerRequest, r
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("List payouts error:", error);
+    logger.error("List payouts error", { error });
     return res.status(500).json({ error: "Failed to load payouts" });
   }
-});
+}));
 
 // GET /profile — Get seller's own profile for settings
-router.get("/profile", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/profile", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
     return res.json({ seller });
   } catch (error) {
-    console.error("Get seller profile error:", error);
+    logger.error("Get seller profile error", { error });
     return res.status(500).json({ error: "Failed to load profile" });
   }
-});
+}));
 
 // PUT /profile — Update seller profile
-router.put("/profile", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.put("/profile", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1167,13 +1208,13 @@ router.put("/profile", authenticate, requireSeller, async (req: SellerRequest, r
 
     return res.json({ seller: updated });
   } catch (error) {
-    console.error("Update profile error:", error);
+    logger.error("Update profile error", { error });
     return res.status(500).json({ error: "Failed to update profile" });
   }
-});
+}));
 
 // GET /reviews — List reviews of this seller
-router.get("/reviews", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/reviews", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1196,13 +1237,13 @@ router.get("/reviews", authenticate, requireSeller, async (req: SellerRequest, r
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("List reviews error:", error);
+    logger.error("List reviews error", { error });
     return res.status(500).json({ error: "Failed to load reviews" });
   }
-});
+}));
 
 // POST /upload-images — Upload product images (max 10 files)
-router.post("/upload-images", authenticate, requireSeller, uploadMultiple, validateUploadedFiles, async (req: SellerRequest, res: Response) => {
+router.post("/upload-images", authenticate, requireSeller, uploadMultiple, validateUploadedFiles, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1214,13 +1255,13 @@ router.post("/upload-images", authenticate, requireSeller, uploadMultiple, valid
     const urls = files.map((f) => `/uploads/${f.filename}`);
     return res.json({ urls });
   } catch (error) {
-    console.error("Upload images error:", error);
+    logger.error("Upload images error", { error });
     return res.status(500).json({ error: "Failed to upload images" });
   }
-});
+}));
 
 // POST /upload-documents — Upload KYC documents (max 5 files, images + PDF)
-router.post("/upload-documents", authenticate, requireSeller, uploadDocuments, validateUploadedDocuments, async (req: SellerRequest, res: Response) => {
+router.post("/upload-documents", authenticate, requireSeller, uploadDocuments, validateUploadedDocuments, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
@@ -1230,15 +1271,15 @@ router.post("/upload-documents", authenticate, requireSeller, uploadDocuments, v
     const urls = files.map((f) => `/uploads/${f.filename}`);
     return res.json({ urls });
   } catch (error) {
-    console.error("Upload documents error:", error);
+    logger.error("Upload documents error", { error });
     return res.status(500).json({ error: "Failed to upload documents" });
   }
-});
+}));
 
 // ============ SELLER RETURNS ============
 
 // GET /returns — List return requests for orders containing this seller's items
-router.get("/returns", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/returns", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1282,13 +1323,13 @@ router.get("/returns", authenticate, requireSeller, async (req: SellerRequest, r
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("List seller returns error:", error);
+    logger.error("List seller returns error", { error });
     return res.status(500).json({ error: "Failed to load returns" });
   }
-});
+}));
 
 // PUT /returns/:id — Seller adds notes to a return request
-router.put("/returns/:id", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.put("/returns/:id", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1327,15 +1368,15 @@ router.put("/returns/:id", authenticate, requireSeller, async (req: SellerReques
 
     return res.json({ returnRequest: updated });
   } catch (error) {
-    console.error("Update seller return error:", error);
+    logger.error("Update seller return error", { error });
     return res.status(500).json({ error: "Failed to update return request" });
   }
-});
+}));
 
 // ============ SELLER ANALYTICS ============
 
 // GET /analytics — Seller analytics dashboard data
-router.get("/analytics", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/analytics", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1501,15 +1542,15 @@ router.get("/analytics", authenticate, requireSeller, async (req: SellerRequest,
       comparison,
     });
   } catch (error) {
-    console.error("Analytics error:", error);
+    logger.error("Analytics error", { error });
     return res.status(500).json({ error: "Failed to load analytics" });
   }
-});
+}));
 
 // ============ SELLER REVIEWS ============
 
 // GET /product-reviews — List reviews for seller's products
-router.get("/product-reviews", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/product-reviews", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
@@ -1555,13 +1596,13 @@ router.get("/product-reviews", authenticate, requireSeller, async (req: SellerRe
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("List seller reviews error:", error);
+    logger.error("List seller reviews error", { error });
     return res.status(500).json({ error: "Failed to load reviews" });
   }
-});
+}));
 
 // POST /product-reviews/:id/reply — Seller replies to a review
-router.post("/product-reviews/:id/reply", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.post("/product-reviews/:id/reply", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const { reply } = req.body;
@@ -1590,57 +1631,15 @@ router.post("/product-reviews/:id/reply", authenticate, requireSeller, async (re
 
     return res.json({ review: updated });
   } catch (error) {
-    console.error("Reply to review error:", error);
+    logger.error("Reply to review error", { error });
     return res.status(500).json({ error: "Failed to reply to review" });
   }
-});
-
-// ============ SELLER BULK OPERATIONS ============
-
-// PUT /products/bulk — Bulk activate/deactivate/delete products
-router.put("/products/bulk", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
-  try {
-    const seller = req.seller!;
-    const { action, productIds } = req.body;
-
-    if (!action || !["activate", "deactivate", "delete"].includes(action)) {
-      return res.status(400).json({ error: "Invalid action. Use: activate, deactivate, delete" });
-    }
-    if (!Array.isArray(productIds) || productIds.length === 0) {
-      return res.status(400).json({ error: "Product IDs are required" });
-    }
-
-    // Verify all products belong to seller
-    const products = await prisma.product.findMany({
-      where: { id: { in: productIds }, sellerId: seller.id },
-      select: { id: true },
-    });
-    if (products.length !== productIds.length) {
-      return res.status(403).json({ error: "Some products do not belong to you" });
-    }
-
-    const statusMap: Record<string, "ACTIVE" | "DRAFT"> = {
-      activate: "ACTIVE",
-      deactivate: "DRAFT",
-      delete: "DRAFT",
-    };
-
-    await prisma.product.updateMany({
-      where: { id: { in: productIds }, sellerId: seller.id },
-      data: { status: statusMap[action] },
-    });
-
-    return res.json({ message: `${products.length} products ${action}d successfully` });
-  } catch (error) {
-    console.error("Bulk product operation error:", error);
-    return res.status(500).json({ error: "Failed to perform bulk operation" });
-  }
-});
+}));
 
 // ============ SELLER NOTIFICATIONS ============
 
 // GET /notifications — Virtual notifications from recent activity
-router.get("/notifications", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/notifications", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const since = new Date();
@@ -1747,15 +1746,15 @@ router.get("/notifications", authenticate, requireSeller, async (req: SellerRequ
 
     return res.json({ notifications: notifications.slice(0, 20) });
   } catch (error) {
-    console.error("Seller notifications error:", error);
+    logger.error("Seller notifications error", { error });
     return res.status(500).json({ error: "Failed to load notifications" });
   }
-});
+}));
 
 // ============ WARNINGS ============
 
 // GET /warnings — Seller's own warnings
-router.get("/warnings", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/warnings", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const warnings = await prisma.sellerWarning.findMany({
@@ -1764,13 +1763,13 @@ router.get("/warnings", authenticate, requireSeller, async (req: SellerRequest, 
     });
     return res.json({ warnings });
   } catch (error) {
-    console.error("List seller warnings error:", error);
+    logger.error("List seller warnings error", { error });
     return res.status(500).json({ error: "Failed to load warnings" });
   }
-});
+}));
 
 // PUT /warnings/:id/acknowledge — Acknowledge a warning
-router.put("/warnings/:id/acknowledge", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.put("/warnings/:id/acknowledge", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const warning = await prisma.sellerWarning.findUnique({
@@ -1788,15 +1787,15 @@ router.put("/warnings/:id/acknowledge", authenticate, requireSeller, async (req:
     });
     return res.json({ warning: updated });
   } catch (error) {
-    console.error("Acknowledge warning error:", error);
+    logger.error("Acknowledge warning error", { error });
     return res.status(500).json({ error: "Failed to acknowledge warning" });
   }
-});
+}));
 
 // ============ SCORECARD ============
 
 // GET /scorecard — Seller's own performance scorecard
-router.get("/scorecard", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/scorecard", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1815,7 +1814,7 @@ router.get("/scorecard", authenticate, requireSeller, async (req: SellerRequest,
 
     const fulfillmentRate = totalItems > 0 ? Math.round((shippedDelivered / totalItems) * 100) : 100;
     const returnRate = totalItems > 0 ? Math.round((returnCount / totalItems) * 100) : 0;
-    const customerRating = Number(seller.rating);
+    const customerRating = seller.rating ? Number(seller.rating) : 0;
 
     const flags: string[] = [];
     if (fulfillmentRate < 80) flags.push("Low fulfillment rate");
@@ -1832,15 +1831,15 @@ router.get("/scorecard", authenticate, requireSeller, async (req: SellerRequest,
       },
     });
   } catch (error) {
-    console.error("Seller scorecard error:", error);
+    logger.error("Seller scorecard error", { error });
     return res.status(500).json({ error: "Failed to load scorecard" });
   }
-});
+}));
 
 // ============ SELLER CHAT ============
 
 // GET /chat/conversations — List conversations for this seller
-router.get("/chat/conversations", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/chat/conversations", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1874,13 +1873,13 @@ router.get("/chat/conversations", authenticate, requireSeller, async (req: Selle
 
     return res.json({ conversations: result });
   } catch (error) {
-    console.error("List seller conversations error:", error);
+    logger.error("List seller conversations error", { error });
     return res.status(500).json({ error: "Failed to load conversations" });
   }
-});
+}));
 
 // GET /chat/:id/messages — Get messages for a conversation (seller side)
-router.get("/chat/:id/messages", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/chat/:id/messages", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1908,13 +1907,13 @@ router.get("/chat/:id/messages", authenticate, requireSeller, async (req: Seller
 
     return res.json({ conversation, messages });
   } catch (error) {
-    console.error("Get seller messages error:", error);
+    logger.error("Get seller messages error", { error });
     return res.status(500).json({ error: "Failed to load messages" });
   }
-});
+}));
 
 // POST /chat/:id/messages — Send message as seller
-router.post("/chat/:id/messages", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.post("/chat/:id/messages", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
 
@@ -1948,13 +1947,13 @@ router.post("/chat/:id/messages", authenticate, requireSeller, async (req: Selle
 
     return res.status(201).json({ message: chatMessage });
   } catch (error) {
-    console.error("Send seller message error:", error);
+    logger.error("Send seller message error", { error });
     return res.status(500).json({ error: "Failed to send message" });
   }
-});
+}));
 
 // GET /api/seller/onboarding-status
-router.get("/onboarding-status", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/onboarding-status", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller;
 
@@ -2007,15 +2006,15 @@ router.get("/onboarding-status", authenticate, requireSeller, async (req: Seller
 
     return res.json({ steps, progress, isComplete });
   } catch (error) {
-    console.error("Onboarding status error:", error);
+    logger.error("Onboarding status error", { error });
     return res.status(500).json({ error: "Failed to fetch onboarding status" });
   }
-});
+}));
 
 // ============ SELLER COUPONS ============
 
 // GET /coupons — List seller's coupons
-router.get("/coupons", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.get("/coupons", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const coupons = await prisma.coupon.findMany({
@@ -2024,13 +2023,13 @@ router.get("/coupons", authenticate, requireSeller, async (req: SellerRequest, r
     });
     return res.json({ coupons });
   } catch (error) {
-    console.error("List seller coupons error:", error);
+    logger.error("List seller coupons error", { error });
     return res.status(500).json({ error: "Failed to load coupons" });
   }
-});
+}));
 
 // POST /coupons — Create a coupon
-router.post("/coupons", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.post("/coupons", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const { code, description, type, value, minOrderAmount, maxDiscount, usageLimit, validFrom, validUntil } = req.body;
@@ -2068,13 +2067,13 @@ router.post("/coupons", authenticate, requireSeller, async (req: SellerRequest, 
 
     return res.status(201).json({ coupon });
   } catch (error) {
-    console.error("Create coupon error:", error);
+    logger.error("Create coupon error", { error });
     return res.status(500).json({ error: "Failed to create coupon" });
   }
-});
+}));
 
 // PUT /coupons/:id — Update a coupon (verify ownership)
-router.put("/coupons/:id", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.put("/coupons/:id", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const coupon = await prisma.coupon.findUnique({ where: { id: req.params.id } });
@@ -2097,13 +2096,13 @@ router.put("/coupons/:id", authenticate, requireSeller, async (req: SellerReques
     const updated = await prisma.coupon.update({ where: { id: req.params.id }, data });
     return res.json({ coupon: updated });
   } catch (error) {
-    console.error("Update coupon error:", error);
+    logger.error("Update coupon error", { error });
     return res.status(500).json({ error: "Failed to update coupon" });
   }
-});
+}));
 
 // DELETE /coupons/:id — Soft delete (set active: false)
-router.delete("/coupons/:id", authenticate, requireSeller, async (req: SellerRequest, res: Response) => {
+router.delete("/coupons/:id", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller!;
     const coupon = await prisma.coupon.findUnique({ where: { id: req.params.id } });
@@ -2114,9 +2113,9 @@ router.delete("/coupons/:id", authenticate, requireSeller, async (req: SellerReq
     await prisma.coupon.update({ where: { id: req.params.id }, data: { active: false } });
     return res.json({ success: true });
   } catch (error) {
-    console.error("Delete coupon error:", error);
+    logger.error("Delete coupon error", { error });
     return res.status(500).json({ error: "Failed to delete coupon" });
   }
-});
+}));
 
 export default router;

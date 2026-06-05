@@ -2,25 +2,27 @@ import { Router, Response } from "express";
 import crypto from "crypto";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 router.use(authenticate, requireAdmin);
 
 // GET /api/webhooks/endpoints — List all webhook endpoints
-router.get("/", async (_req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const endpoints = await prisma.webhookEndpoint.findMany({
       orderBy: { createdAt: "desc" },
     });
     return res.json({ endpoints });
   } catch (error) {
-    console.error("List webhook endpoints error:", error);
+    logger.error("List webhook endpoints error", { error });
     return res.status(500).json({ error: "Failed to fetch webhook endpoints" });
   }
-});
+}));
 
 // POST /api/webhooks/endpoints — Create endpoint
-router.post("/", async (req: AuthRequest, res: Response) => {
+router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { url, events } = req.body;
 
@@ -36,13 +38,13 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ endpoint });
   } catch (error) {
-    console.error("Create webhook endpoint error:", error);
+    logger.error("Create webhook endpoint error", { error });
     return res.status(500).json({ error: "Failed to create webhook endpoint" });
   }
-});
+}));
 
 // PUT /api/webhooks/endpoints/:id — Update endpoint
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { url, events, isActive } = req.body;
@@ -60,13 +62,13 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     const updated = await prisma.webhookEndpoint.update({ where: { id }, data });
     return res.json({ endpoint: updated });
   } catch (error) {
-    console.error("Update webhook endpoint error:", error);
+    logger.error("Update webhook endpoint error", { error });
     return res.status(500).json({ error: "Failed to update webhook endpoint" });
   }
-});
+}));
 
 // DELETE /api/webhooks/endpoints/:id — Delete endpoint
-router.delete("/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -78,13 +80,13 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
     await prisma.webhookEndpoint.delete({ where: { id } });
     return res.json({ message: "Webhook endpoint deleted" });
   } catch (error) {
-    console.error("Delete webhook endpoint error:", error);
+    logger.error("Delete webhook endpoint error", { error });
     return res.status(500).json({ error: "Failed to delete webhook endpoint" });
   }
-});
+}));
 
 // POST /api/webhooks/endpoints/:id/test — Send test webhook
-router.post("/:id/test", async (req: AuthRequest, res: Response) => {
+router.post("/:id/test", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -117,10 +119,10 @@ router.post("/:id/test", async (req: AuthRequest, res: Response) => {
       success: response.ok,
     });
   } catch (error: any) {
-    console.error("Test webhook error:", error);
+    logger.error("Test webhook error", { error });
     return res.status(500).json({ error: "Failed to send test webhook" });
   }
-});
+}));
 
 /**
  * Dispatch a webhook event to all active endpoints subscribed to this event.
@@ -169,7 +171,7 @@ export async function dispatchWebhook(event: string, payload: any): Promise<void
       }
     }
   } catch (error) {
-    console.error("Dispatch webhook error:", error);
+    logger.error("Dispatch webhook error", { error });
   }
 }
 

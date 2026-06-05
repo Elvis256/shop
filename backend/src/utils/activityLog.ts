@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import { Request } from "express";
+import { logger } from "../lib/logger";
 
 
 export type ActivityAction = 
@@ -48,7 +49,7 @@ export async function logActivity({
     });
   } catch (error) {
     // Don't let logging failures break the main operation
-    console.error("Failed to log activity:", error);
+    logger.error("Failed to log activity", { error });
   }
 }
 

@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
 
 async function getSetting(key: string): Promise<string | null> {
   const s = await prisma.setting.findUnique({ where: { key } });
@@ -22,7 +23,7 @@ export async function sendWhatsApp(msg: WhatsAppMessage): Promise<boolean> {
     const phoneNumberId = await getSetting("whatsapp_phone_number_id");
 
     if (!apiUrl || !token || !phoneNumberId) {
-      console.warn("WhatsApp not configured: missing API URL, token, or phone number ID");
+      logger.warn("WhatsApp not configured: missing API URL, token, or phone number ID");
       return false;
     }
 
@@ -60,14 +61,14 @@ export async function sendWhatsApp(msg: WhatsAppMessage): Promise<boolean> {
 
     if (!res.ok) {
       const err = await res.text();
-      console.error("WhatsApp API error:", res.status, err);
+      logger.error("WhatsApp API error", { status: res.status, body: err });
       return false;
     }
 
-    console.log("WhatsApp message sent to", phone);
+    logger.info("WhatsApp message sent to", { detail: phone });
     return true;
   } catch (e: any) {
-    console.error("WhatsApp send error:", e.message);
+    logger.error("WhatsApp send error", { error: e.message });
     return false;
   }
 }

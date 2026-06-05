@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -47,18 +49,18 @@ async function getFullCart(cartId: string) {
 }
 
 // POST /api/cart/create
-router.post("/create", async (_req: Request, res: Response) => {
+router.post("/create", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const cart = await prisma.cart.create({ data: {} });
     return res.json({ id: cart.id });
   } catch (error) {
-    console.error("Create cart error:", error);
+    logger.error("Create cart error", { error });
     return res.status(500).json({ error: "Failed to create cart" });
   }
-});
+}));
 
 // GET /api/cart/:id
-router.get("/:id", async (req: Request, res: Response) => {
+router.get("/:id", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const cart = await getFullCart(id);
@@ -67,10 +69,10 @@ router.get("/:id", async (req: Request, res: Response) => {
     }
     return res.json(cart);
   } catch (error) {
-    console.error("Get cart error:", error);
+    logger.error("Get cart error", { error });
     return res.status(500).json({ error: "Failed to fetch cart" });
   }
-});
+}));
 
 const AddItemSchema = z.object({
   productId: z.string(),
@@ -78,7 +80,7 @@ const AddItemSchema = z.object({
 });
 
 // POST /api/cart/:id/items
-router.post("/:id/items", async (req: Request, res: Response) => {
+router.post("/:id/items", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { productId, quantity } = AddItemSchema.parse(req.body);
@@ -125,16 +127,16 @@ router.post("/:id/items", async (req: Request, res: Response) => {
 
     return res.json(await getFullCart(id));
   } catch (error) {
-    console.error("Add to cart error:", error);
+    logger.error("Add to cart error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to add to cart" });
   }
-});
+}));
 
 // PUT /api/cart/:cartId/items/:itemId
-router.put("/:cartId/items/:itemId", async (req: Request, res: Response) => {
+router.put("/:cartId/items/:itemId", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { cartId, itemId } = req.params;
     const { quantity } = z.object({ quantity: z.number().int().min(0) }).parse(req.body);
@@ -169,16 +171,16 @@ router.put("/:cartId/items/:itemId", async (req: Request, res: Response) => {
 
     return res.json(await getFullCart(cartId));
   } catch (error) {
-    console.error("Update cart item error:", error);
+    logger.error("Update cart item error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid quantity", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to update cart item" });
   }
-});
+}));
 
 // DELETE /api/cart/:cartId/items/:itemId
-router.delete("/:cartId/items/:itemId", async (req: Request, res: Response) => {
+router.delete("/:cartId/items/:itemId", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { cartId, itemId } = req.params;
 
@@ -200,10 +202,10 @@ router.delete("/:cartId/items/:itemId", async (req: Request, res: Response) => {
 
     return res.json(await getFullCart(cartId));
   } catch (error) {
-    console.error("Delete cart item error:", error);
+    logger.error("Delete cart item error", { error });
     return res.status(500).json({ error: "Failed to delete cart item" });
   }
-});
+}));
 
 // Schema for cart sync
 const SyncCartSchema = z.object({
@@ -214,7 +216,7 @@ const SyncCartSchema = z.object({
 });
 
 // DELETE /api/cart/:cartId/items - Clear all items from cart
-router.delete("/:cartId/items", async (req: Request, res: Response) => {
+router.delete("/:cartId/items", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { cartId } = req.params;
 
@@ -227,13 +229,13 @@ router.delete("/:cartId/items", async (req: Request, res: Response) => {
     await prisma.cartItem.deleteMany({ where: { cartId } });
     return res.json({ success: true });
   } catch (error) {
-    console.error("Clear cart error:", error);
+    logger.error("Clear cart error", { error });
     return res.status(500).json({ error: "Failed to clear cart" });
   }
-});
+}));
 
 // POST /api/cart/sync - Sync localStorage cart items to a new/existing cart
-router.post("/sync", async (req: Request, res: Response) => {
+router.post("/sync", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { items } = SyncCartSchema.parse(req.body);
 
@@ -326,9 +328,9 @@ router.post("/sync", async (req: Request, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid cart data", details: error.errors });
     }
-    console.error("Sync cart error:", error);
+    logger.error("Sync cart error", { error });
     return res.status(500).json({ error: "Failed to sync cart" });
   }
-});
+}));
 
 export default router;

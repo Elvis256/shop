@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { logger } from "../lib/logger";
 
 /**
  * Verify Flutterwave webhook authenticity.
@@ -9,7 +10,7 @@ export function verifyFlutterwaveHash(hash: string | undefined): boolean {
 
   // If no webhook secret configured, reject the webhook
   if (!webhookSecret) {
-    console.warn("FLW_WEBHOOK_HASH not configured — rejecting webhook for security");
+    logger.warn("FLW_WEBHOOK_HASH not configured — rejecting webhook for security");
     return false;
   }
 

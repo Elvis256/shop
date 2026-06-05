@@ -6,11 +6,12 @@
 
 import prisma from "../lib/prisma";
 import { getOrderTracking, getProductDetail, calculateSellingPrice } from "./aliexpress";
+import { logger } from "../lib/logger";
 
 // ── Tracking Sync ──
 
 async function syncTracking(): Promise<void> {
-  console.log("[AE-Sync] Starting tracking sync...");
+  logger.info("[AE-Sync] Starting tracking sync...");
 
   const pendingOrders = await prisma.aliExpressOrder.findMany({
     where: {
@@ -25,7 +26,7 @@ async function syncTracking(): Promise<void> {
   });
 
   if (pendingOrders.length === 0) {
-    console.log("[AE-Sync] No orders to track");
+    logger.info("[AE-Sync] No orders to track");
     return;
   }
 
@@ -102,23 +103,23 @@ async function syncTracking(): Promise<void> {
         }
 
         updated++;
-        console.log(`[AE-Sync] Updated ${aeOrder.order.orderNumber} - ${aeOrder.product.name}: ${JSON.stringify(updates)}`);
+        logger.info(`[AE-Sync] Updated ${aeOrder.order.orderNumber} - ${aeOrder.product.name}: ${JSON.stringify(updates)}`);
       }
     } catch (error: any) {
-      console.error(`[AE-Sync] Tracking error for AE order ${aeOrder.aliexpressOrderId}:`, error.message);
+      logger.error(`[AE-Sync] Tracking error for AE order ${aeOrder.aliexpressOrderId}`, { error: error.message });
     }
 
     // Rate limit: small delay between API calls
     await new Promise((r) => setTimeout(r, 500));
   }
 
-  console.log(`[AE-Sync] Tracking sync done. Updated ${updated}/${pendingOrders.length} orders.`);
+  logger.info(`[AE-Sync] Tracking sync done. Updated ${updated}/${pendingOrders.length} orders.`);
 }
 
 // ── Price & Stock Sync ──
 
 async function syncPricesAndStock(): Promise<void> {
-  console.log("[AE-Sync] Starting price/stock sync...");
+  logger.info("[AE-Sync] Starting price/stock sync...");
 
   const products = await prisma.product.findMany({
     where: {
@@ -129,7 +130,7 @@ async function syncPricesAndStock(): Promise<void> {
   });
 
   if (products.length === 0) {
-    console.log("[AE-Sync] No products to sync");
+    logger.info("[AE-Sync] No products to sync");
     return;
   }
 
@@ -150,7 +151,7 @@ async function syncPricesAndStock(): Promise<void> {
           product.markupType as "PERCENTAGE" | "FIXED",
           Number(product.markupValue),
         );
-        console.log(`[AE-Sync] Price changed for "${product.name}": $${oldCost} → $${newCost}, selling: $${dataUpdate.price}`);
+        logger.info(`[AE-Sync] Price changed for "${product.name}": $${oldCost} → $${newCost}, selling: $${dataUpdate.price}`);
       }
 
       const newStock = detail.variants.reduce((sum, v) => sum + v.stock, 0);
@@ -166,14 +167,14 @@ async function syncPricesAndStock(): Promise<void> {
       if (Object.keys(dataUpdate).length > 1) updated++;
     } catch (error: any) {
       errors++;
-      console.error(`[AE-Sync] Price sync error for "${product.name}":`, error.message);
+      logger.error(`[AE-Sync] Price sync error for "${product.name}"`, { error: error.message });
     }
 
     // Rate limit
     await new Promise((r) => setTimeout(r, 1000));
   }
 
-  console.log(`[AE-Sync] Price/stock sync done. Updated ${updated}, errors ${errors}, total ${products.length}`);
+  logger.info(`[AE-Sync] Price/stock sync done. Updated ${updated}, errors ${errors}, total ${products.length}`);
 }
 
 // ── Job Schedulers ──
@@ -182,19 +183,19 @@ const SIX_HOURS = 6 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
 export function startTrackingSyncJob(): void {
-  console.log("📦 AliExpress tracking sync job started (every 6 hours)");
+  logger.info("AliExpress tracking sync job started (every 6 hours)");
   // Run once on startup after a brief delay, then every 6 hours
   setTimeout(() => {
-    syncTracking().catch(console.error);
-    setInterval(() => syncTracking().catch(console.error), SIX_HOURS);
+    syncTracking().catch(err => logger.error('ae_tracking_sync_failed', { error: err }));
+    setInterval(() => syncTracking().catch(err => logger.error('ae_tracking_sync_failed', { error: err })), SIX_HOURS);
   }, 30000);
 }
 
 export function startPriceSyncJob(): void {
-  console.log("💰 AliExpress price/stock sync job started (every 24 hours)");
+  logger.info("AliExpress price/stock sync job started (every 24 hours)");
   // Run once on startup after a brief delay, then daily
   setTimeout(() => {
-    syncPricesAndStock().catch(console.error);
-    setInterval(() => syncPricesAndStock().catch(console.error), TWENTY_FOUR_HOURS);
+    syncPricesAndStock().catch(err => logger.error('ae_price_sync_failed', { error: err }));
+    setInterval(() => syncPricesAndStock().catch(err => logger.error('ae_price_sync_failed', { error: err })), TWENTY_FOUR_HOURS);
   }, 60000);
 }

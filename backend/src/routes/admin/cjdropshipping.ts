@@ -8,6 +8,8 @@ import {
   getShippingInfo,
   calculateSellingPrice,
 } from "../../services/cjdropshipping";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 router.use(authenticate, requireAdmin);
@@ -43,7 +45,7 @@ async function autoDetectCategory(productName: string): Promise<string | null> {
 }
 
 // GET /api/admin/cj/search?q=keyword&page=1
-router.get("/search", async (req: AuthRequest, res: Response) => {
+router.get("/search", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const q = (req.query.q as string) || "";
     if (!q) return res.status(400).json({ error: "Search query is required" });
@@ -51,13 +53,13 @@ router.get("/search", async (req: AuthRequest, res: Response) => {
     const result = await searchProducts(q, page);
     return res.json(result);
   } catch (error: any) {
-    console.error("CJ search error:", error.message);
+    logger.error("CJ search error", { error: error.message });
     return res.status(500).json({ error: "Search failed" });
   }
-});
+}));
 
 // GET /api/admin/cj/product/:productId
-router.get("/product/:productId", async (req: AuthRequest, res: Response) => {
+router.get("/product/:productId", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = req.params;
     const [detail, shipping] = await Promise.all([
@@ -68,7 +70,7 @@ router.get("/product/:productId", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: "Failed to get product details" });
   }
-});
+}));
 
 // POST /api/admin/cj/import
 const ImportSchema = z.object({
@@ -81,7 +83,7 @@ const ImportSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-router.post("/import", async (req: AuthRequest, res: Response) => {
+router.post("/import", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = ImportSchema.parse(req.body);
     const detail = await getProductDetail(body.cjProductId);
@@ -170,7 +172,7 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
     }
     return res.status(500).json({ error: "Import failed" });
   }
-});
+}));
 
 // PUT /api/admin/cj/products/:id/markup
 const MarkupSchema = z.object({
@@ -178,7 +180,7 @@ const MarkupSchema = z.object({
   markupValue: z.number().positive(),
 });
 
-router.put("/products/:id/markup", async (req: AuthRequest, res: Response) => {
+router.put("/products/:id/markup", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const body = MarkupSchema.parse(req.body);
@@ -200,10 +202,10 @@ router.put("/products/:id/markup", async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
     return res.status(500).json({ error: "Update failed" });
   }
-});
+}));
 
 // GET /api/admin/cj/products
-router.get("/products", async (req: AuthRequest, res: Response) => {
+router.get("/products", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
@@ -224,10 +226,10 @@ router.get("/products", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: "Operation failed" });
   }
-});
+}));
 
 // POST /api/admin/cj/sync
-router.post("/sync", async (req: AuthRequest, res: Response) => {
+router.post("/sync", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const productId = req.body.productId;
     const where: any = { cjProductId: { not: null }, cjAutoSync: true };
@@ -292,10 +294,10 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: "Sync failed" });
   }
-});
+}));
 
 // GET /api/admin/cj/orders
-router.get("/orders", async (req: AuthRequest, res: Response) => {
+router.get("/orders", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
@@ -323,7 +325,7 @@ router.get("/orders", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: "Operation failed" });
   }
-});
+}));
 
 // PUT /api/admin/cj/settings
 const SettingsSchema = z.object({
@@ -331,7 +333,7 @@ const SettingsSchema = z.object({
   apiKey: z.string().min(1),
 });
 
-router.put("/settings", async (req: AuthRequest, res: Response) => {
+router.put("/settings", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = SettingsSchema.parse(req.body);
     const keys = [
@@ -350,10 +352,10 @@ router.put("/settings", async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
     return res.status(500).json({ error: "Operation failed" });
   }
-});
+}));
 
 // GET /api/admin/cj/settings
-router.get("/settings", async (req: AuthRequest, res: Response) => {
+router.get("/settings", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const settings = await prisma.setting.findMany({
       where: { key: { in: ["cj_email", "cj_api_key"] } },
@@ -370,6 +372,6 @@ router.get("/settings", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: "Operation failed" });
   }
-});
+}));
 
 export default router;

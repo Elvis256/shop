@@ -6,6 +6,7 @@
 
 import axios from "axios";
 import { withRetryAndCircuitBreaker } from "../utils/retry";
+import { logger } from "../lib/logger";
 
 const CJ_BASE_URL = "https://developers.cjdropshipping.com/api2.0/v1";
 
@@ -64,7 +65,7 @@ async function getAccessToken(): Promise<string> {
     // Token typically lasts ~30 days, cache for 24h to be safe
     tokenExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
-    console.log("[CJ] Access token refreshed successfully");
+    logger.info("[CJ] Access token refreshed successfully");
     return cachedAccessToken!;
   } catch (error: any) {
     const msg = error.response?.data?.message || error.message;
@@ -311,7 +312,7 @@ export async function getOrderTracking(cjOrderId: string): Promise<CJTrackingInf
       })),
     };
   } catch (error) {
-    console.error(`Failed to get tracking for CJ order ${cjOrderId}:`, error);
+    logger.error(`Failed to get tracking for CJ order ${cjOrderId}`, { error });
     return null;
   }
 }
@@ -339,7 +340,7 @@ export async function getShippingInfo(productId: string, countryCode = "UG"): Pr
       estimatedDays: f.logisticAging || "10-25 days",
     }));
   } catch (error) {
-    console.error(`Failed to get CJ shipping for product ${productId}:`, error);
+    logger.error(`Failed to get CJ shipping for product ${productId}`, { error });
     return [];
   }
 }

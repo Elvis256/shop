@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from "uuid";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 import { sendEmail } from "../services/email";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -19,8 +21,24 @@ function generateGiftCardCode(): string {
   return code;
 }
 
+// GET /api/gift-cards — List available denominations
+router.get("/", asyncHandler(async (_req: Request, res: Response) => {
+  try {
+    const denominations = [
+      { value: 50000, label: "UGX 50,000", currency: "UGX" },
+      { value: 100000, label: "UGX 100,000", currency: "UGX" },
+      { value: 200000, label: "UGX 200,000", currency: "UGX" },
+      { value: 500000, label: "UGX 500,000", currency: "UGX" },
+      { value: 1000000, label: "UGX 1,000,000", currency: "UGX" },
+    ];
+    return res.json({ denominations });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to fetch gift cards" });
+  }
+}));
+
 // GET /api/gift-cards/check/:code - Check gift card balance
-router.get("/check/:code", async (req: Request, res: Response) => {
+router.get("/check/:code", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { code } = req.params;
 
@@ -47,13 +65,13 @@ router.get("/check/:code", async (req: Request, res: Response) => {
       expiresAt: giftCard.expiresAt,
     });
   } catch (error) {
-    console.error("Check gift card error:", error);
+    logger.error("Check gift card error", { error });
     return res.status(500).json({ error: "Failed to check gift card" });
   }
-});
+}));
 
-// POST /api/gift-cards/purchase - Purchase a gift card (admin only)
-router.post("/purchase", authenticate, requireAdmin, async (req: Request, res: Response) => {
+// POST /api/gift-cards/purchase - Purchase a gift card
+router.post("/purchase", authenticate, asyncHandler(async (req: Request, res: Response) => {
   try {
     const {
       amount,
@@ -115,13 +133,13 @@ router.post("/purchase", authenticate, requireAdmin, async (req: Request, res: R
       },
     });
   } catch (error) {
-    console.error("Purchase gift card error:", error);
+    logger.error("Purchase gift card error", { error });
     return res.status(500).json({ error: "Failed to create gift card" });
   }
-});
+}));
 
 // POST /api/gift-cards/redeem - Redeem gift card (apply to order)
-router.post("/redeem", authenticate, async (req: Request, res: Response) => {
+router.post("/redeem", authenticate, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { code, amount, orderId } = req.body;
 
@@ -191,10 +209,10 @@ router.post("/redeem", authenticate, async (req: Request, res: Response) => {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ error: error.message });
     }
-    console.error("Redeem gift card error:", error);
+    logger.error("Redeem gift card error", { error });
     return res.status(500).json({ error: "Failed to redeem gift card" });
   }
-});
+}));
 
 // Send gift card email to recipient
 async function sendGiftCardEmail(giftCard: any): Promise<void> {

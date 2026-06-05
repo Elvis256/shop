@@ -2,11 +2,13 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { sendNewsletterWelcome } from "../services/email";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /api/newsletter/subscribe
-router.post("/subscribe", async (req: Request, res: Response) => {
+router.post("/subscribe", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { email, name, source } = req.body;
 
@@ -41,19 +43,19 @@ router.post("/subscribe", async (req: Request, res: Response) => {
     });
 
     // Send welcome email (async, don't wait)
-    sendNewsletterWelcome(email.toLowerCase()).catch(console.error);
+    sendNewsletterWelcome(email.toLowerCase()).catch(err => logger.error('send_newsletter_welcome_failed', { error: err }));
 
     return res.status(201).json({
       message: "Successfully subscribed! Check your email for a welcome gift.",
     });
   } catch (error) {
-    console.error("Newsletter subscribe error:", error);
+    logger.error("Newsletter subscribe error", { error });
     return res.status(500).json({ error: "Failed to subscribe" });
   }
-});
+}));
 
 // POST /api/newsletter/unsubscribe
-router.post("/unsubscribe", async (req: Request, res: Response) => {
+router.post("/unsubscribe", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
 
@@ -76,13 +78,13 @@ router.post("/unsubscribe", async (req: Request, res: Response) => {
 
     return res.json({ message: "Successfully unsubscribed" });
   } catch (error) {
-    console.error("Newsletter unsubscribe error:", error);
+    logger.error("Newsletter unsubscribe error", { error });
     return res.status(500).json({ error: "Failed to unsubscribe" });
   }
-});
+}));
 
 // GET /api/newsletter/status
-router.get("/status", async (req: Request, res: Response) => {
+router.get("/status", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { email } = req.query;
 
@@ -98,13 +100,13 @@ router.get("/status", async (req: Request, res: Response) => {
       subscribed: subscriber?.isSubscribed || false,
     });
   } catch (error) {
-    console.error("Newsletter status error:", error);
+    logger.error("Newsletter status error", { error });
     return res.status(500).json({ error: "Failed to check status" });
   }
-});
+}));
 
 // GET /api/newsletter/admin/subscribers - Admin list of subscribers
-router.get("/admin/subscribers", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.get("/admin/subscribers", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 50;
@@ -121,9 +123,9 @@ router.get("/admin/subscribers", authenticate, requireAdmin, async (req: AuthReq
 
     return res.json({ subscribers, total, page, limit });
   } catch (error) {
-    console.error("Newsletter admin list error:", error);
+    logger.error("Newsletter admin list error", { error });
     return res.status(500).json({ error: "Failed to fetch subscribers" });
   }
-});
+}));
 
 export default router;

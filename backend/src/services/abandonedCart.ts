@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import nodemailer from "nodemailer";
+import { logger } from "../lib/logger";
 
 
 // Email transporter (configure with your SMTP settings)
@@ -143,7 +144,7 @@ export const trackAbandonedCart = async (
       },
     });
   } catch (error) {
-    console.error("Track abandoned cart error:", error);
+    logger.error("Track abandoned cart error", { error });
   }
 };
 
@@ -160,7 +161,7 @@ export const markCartRecovered = async (userId: string): Promise<void> => {
       },
     });
   } catch (error) {
-    console.error("Mark cart recovered error:", error);
+    logger.error("Mark cart recovered error", { error });
   }
 };
 
@@ -204,9 +205,9 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
           data: { email1SentAt: new Date() },
         });
 
-        console.log(`Sent reminder 1 to ${cart.email}`);
+        logger.info(`Sent reminder 1 to ${cart.email}`);
       } catch (err) {
-        console.error(`Failed to send reminder 1 to ${cart.email}:`, err);
+        logger.error(`Failed to send reminder 1 to ${cart.email}`, { error: err });
       }
     }
 
@@ -246,19 +247,19 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
           data: { email2SentAt: new Date() },
         });
 
-        console.log(`Sent reminder 2 to ${cart.email}`);
+        logger.info(`Sent reminder 2 to ${cart.email}`);
       } catch (err) {
-        console.error(`Failed to send reminder 2 to ${cart.email}:`, err);
+        logger.error(`Failed to send reminder 2 to ${cart.email}`, { error: err });
       }
     }
   } catch (error) {
-    console.error("Process abandoned cart emails error:", error);
+    logger.error("Process abandoned cart emails error", { error });
   }
 };
 
 // Start cron job for abandoned cart emails (every 15 minutes)
 export const startAbandonedCartJob = (): void => {
-  console.log("📧 Abandoned cart email job started");
+  logger.info("Abandoned cart email job started");
   setInterval(() => {
     processAbandonedCartEmails();
   }, 15 * 60 * 1000); // Every 15 minutes

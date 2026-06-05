@@ -10,6 +10,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -76,7 +77,7 @@ export const SUPPORTED_COUNTRIES = [
 ];
 
 // GET /api/country-config
-router.get("/", async (_req: Request, res: Response) => {
+router.get("/", asyncHandler(async (_req: Request, res: Response) => {
   // Enrich with live exchange rates
   const currencies = await prisma.currency.findMany({
     where: { code: { in: ["UGX", "KES", "TZS", "RWF"] }, isActive: true },
@@ -92,10 +93,10 @@ router.get("/", async (_req: Request, res: Response) => {
   }));
 
   return res.json({ countries: result });
-});
+}));
 
 // GET /api/country-config/:code
-router.get("/:code", async (req: Request, res: Response) => {
+router.get("/:code", asyncHandler(async (req: Request, res: Response) => {
   const { code } = req.params;
   const country = SUPPORTED_COUNTRIES.find(
     (c) => c.code.toLowerCase() === code.toLowerCase() || c.currency.toLowerCase() === code.toLowerCase()
@@ -114,11 +115,11 @@ router.get("/:code", async (req: Request, res: Response) => {
     ...country,
     exchangeRateToUgx: dbCurrency ? Number(dbCurrency.exchangeRate) : null,
   });
-});
+}));
 
 // POST /api/country-config/seed-currencies — admin only
 // Seeds KES, TZS, RWF into the Currency table with approximate rates
-router.post("/seed-currencies", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.post("/seed-currencies", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const seedData = [
     { code: "KES", name: "Kenyan Shilling", symbol: "KSh", exchangeRate: 28.5, decimalPlaces: 0 },
     { code: "TZS", name: "Tanzanian Shilling", symbol: "TSh", exchangeRate: 1.45, decimalPlaces: 0 },
@@ -147,6 +148,6 @@ router.post("/seed-currencies", authenticate, requireAdmin, async (_req: AuthReq
   );
 
   return res.json({ message: "Currencies seeded", results });
-});
+}));
 
 export default router;

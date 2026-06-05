@@ -1,11 +1,13 @@
 import { Router } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, requireAdmin } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // Get available mobile money providers
-router.get("/providers", async (req, res) => {
+router.get("/providers", asyncHandler(async (req, res) => {
   try {
     const providers = await prisma.paymentProvider.findMany({
       where: { 
@@ -24,13 +26,13 @@ router.get("/providers", async (req, res) => {
 
     res.json({ providers });
   } catch (error) {
-    console.error("Get providers error:", error);
+    logger.error("Get providers error", { error });
     res.status(500).json({ error: "Failed to fetch providers" });
   }
-});
+}));
 
 // Initiate mobile money payment
-router.post("/initiate", async (req, res) => {
+router.post("/initiate", asyncHandler(async (req, res) => {
   try {
     const { orderId, provider, phoneNumber, amount, currency = "UGX" } = req.body;
 
@@ -125,13 +127,13 @@ router.post("/initiate", async (req, res) => {
 
     res.json(paymentRequest);
   } catch (error) {
-    console.error("Mobile money initiate error:", error);
+    logger.error("Mobile money initiate error", { error });
     res.status(500).json({ error: "Failed to initiate payment" });
   }
-});
+}));
 
 // Check payment status
-router.get("/status/:transactionId", authenticate, async (req, res) => {
+router.get("/status/:transactionId", authenticate, asyncHandler(async (req, res) => {
   try {
     const { transactionId } = req.params;
 
@@ -161,13 +163,13 @@ router.get("/status/:transactionId", authenticate, async (req, res) => {
       completedAt: transaction.completedAt,
     });
   } catch (error) {
-    console.error("Check status error:", error);
+    logger.error("Check status error", { error });
     res.status(500).json({ error: "Failed to check payment status" });
   }
-});
+}));
 
 // Callback endpoint for mobile money providers
-router.post("/callback/:provider", async (req, res) => {
+router.post("/callback/:provider", asyncHandler(async (req, res) => {
   try {
     const { provider } = req.params;
     const payload = req.body;
@@ -177,13 +179,13 @@ router.post("/callback/:provider", async (req, res) => {
       const signature = req.headers["x-callback-signature"] as string | undefined;
       const secret = process.env.MTN_WEBHOOK_SECRET;
       if (!secret || !signature) {
-        console.warn("[MTN Callback] Missing webhook secret or signature — request rejected");
+        logger.warn("[MTN Callback] Missing webhook secret or signature — request rejected");
         return res.status(401).json({ error: "Missing signature — authentication required" });
       }
       const crypto = await import("crypto");
       const expected = crypto.createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex");
       if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-        console.warn("[MTN Callback] Invalid signature — request rejected");
+        logger.warn("[MTN Callback] Invalid signature — request rejected");
         return res.status(401).json({ error: "Invalid signature" });
       }
     } else if (provider === "airtel_ug") {
@@ -191,16 +193,16 @@ router.post("/callback/:provider", async (req, res) => {
       const authHeader = req.headers["authorization"] as string | undefined;
       const expectedToken = process.env.AIRTEL_CALLBACK_TOKEN;
       if (!expectedToken || !authHeader) {
-        console.warn("[Airtel Callback] Missing token — request rejected");
+        logger.warn("[Airtel Callback] Missing token — request rejected");
         return res.status(401).json({ error: "Missing authentication — token required" });
       }
       if (authHeader !== `Bearer ${expectedToken}`) {
-        console.warn("[Airtel Callback] Invalid token — request rejected");
+        logger.warn("[Airtel Callback] Invalid token — request rejected");
         return res.status(401).json({ error: "Invalid token" });
       }
     }
 
-    console.log(`Mobile money callback from ${provider}:`, payload);
+    logger.info(`Mobile money callback from ${provider}`, { payload });
 
     // Extract reference and status based on provider format
     let externalRef: string | undefined;
@@ -236,7 +238,7 @@ router.post("/callback/:provider", async (req, res) => {
     });
 
     if (!transaction) {
-      console.error(`Transaction not found for ref: ${externalRef}`);
+      logger.error(`Transaction not found for ref: ${externalRef}`);
       return res.status(404).json({ error: "Transaction not found" });
     }
 
@@ -257,11 +259,11 @@ router.post("/callback/:provider", async (req, res) => {
       // Verify payment amount matches order total
       const order = await prisma.order.findUnique({ where: { id: orderId } });
       if (!order) {
-        console.error(`Order not found for transaction ${transaction.id}`);
+        logger.error(`Order not found for transaction ${transaction.id}`);
         return res.status(404).json({ error: "Order not found" });
       }
       if (Math.abs(Number(order.totalAmount) - Number(transaction.amount)) > 1) {
-        console.error(`Amount mismatch for order ${orderId}: expected ${order.totalAmount}, got ${transaction.amount}`);
+        logger.error(`Amount mismatch for order ${orderId}: expected ${order.totalAmount}, got ${transaction.amount}`);
         return res.status(400).json({ error: "Amount mismatch" });
       }
       // Guard: don't overwrite terminal payment status
@@ -309,13 +311,13 @@ router.post("/callback/:provider", async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Mobile money callback error:", error);
+    logger.error("Mobile money callback error", { error });
     res.status(500).json({ error: "Callback processing failed" });
   }
-});
+}));
 
 // Simulate payment completion (DEV/STAGING ONLY — blocked in production)
-router.post("/simulate-complete/:transactionId", authenticate, requireAdmin, async (req, res) => {
+router.post("/simulate-complete/:transactionId", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     return res.status(403).json({ error: "Simulation endpoint disabled in production" });
   }
@@ -382,9 +384,9 @@ router.post("/simulate-complete/:transactionId", authenticate, requireAdmin, asy
 
     res.json({ success: true, status });
   } catch (error) {
-    console.error("Simulate complete error:", error);
+    logger.error("Simulate complete error", { error });
     res.status(500).json({ error: "Failed to simulate payment" });
   }
-});
+}));
 
 export default router;

@@ -4,13 +4,15 @@ import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { createFlutterwaveTransfer } from "../../services/flutterwave";
 import { sendEmail } from "../../lib/email";
 import { logActivity } from "../../lib/activityLogger";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // GET / — List all sellers
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
@@ -62,13 +64,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("List sellers error:", error);
+    logger.error("List sellers error", { error });
     return res.status(500).json({ error: "Failed to load sellers" });
   }
-});
+}));
 
 // GET /stats — Marketplace overview stats
-router.get("/stats", async (req: AuthRequest, res: Response) => {
+router.get("/stats", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const [
       totalSellers,
@@ -101,26 +103,26 @@ router.get("/stats", async (req: AuthRequest, res: Response) => {
       pendingPayouts: Number(pendingPayouts._sum.amount || 0),
     });
   } catch (error) {
-    console.error("Marketplace stats error:", error);
+    logger.error("Marketplace stats error", { error });
     return res.status(500).json({ error: "Failed to load marketplace stats" });
   }
-});
+}));
 
 // GET /commissions — List all commission rules
-router.get("/commissions", async (req: AuthRequest, res: Response) => {
+router.get("/commissions", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const rules = await prisma.commissionRule.findMany({
       orderBy: { createdAt: "desc" },
     });
     return res.json({ rules });
   } catch (error) {
-    console.error("List commissions error:", error);
+    logger.error("List commissions error", { error });
     return res.status(500).json({ error: "Failed to load commission rules" });
   }
-});
+}));
 
 // POST /commissions — Create/upsert commission rule
-router.post("/commissions", async (req: AuthRequest, res: Response) => {
+router.post("/commissions", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { categoryId, categoryName, rate } = req.body;
 
@@ -155,13 +157,13 @@ router.post("/commissions", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ rule });
   } catch (error) {
-    console.error("Create commission rule error:", error);
+    logger.error("Create commission rule error", { error });
     return res.status(500).json({ error: "Failed to create commission rule" });
   }
-});
+}));
 
 // PUT /commissions/:id — Update a commission rule
-router.put("/commissions/:id", async (req: AuthRequest, res: Response) => {
+router.put("/commissions/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { rate, categoryName, isActive } = req.body;
 
@@ -189,13 +191,13 @@ router.put("/commissions/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ rule });
   } catch (error) {
-    console.error("Update commission rule error:", error);
+    logger.error("Update commission rule error", { error });
     return res.status(500).json({ error: "Failed to update commission rule" });
   }
-});
+}));
 
 // DELETE /commissions/:id — Delete a commission rule
-router.delete("/commissions/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/commissions/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const existing = await prisma.commissionRule.findUnique({
       where: { id: req.params.id },
@@ -208,13 +210,13 @@ router.delete("/commissions/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Commission rule deleted" });
   } catch (error) {
-    console.error("Delete commission rule error:", error);
+    logger.error("Delete commission rule error", { error });
     return res.status(500).json({ error: "Failed to delete commission rule" });
   }
-});
+}));
 
 // GET /payouts — List all payout requests
-router.get("/payouts", async (req: AuthRequest, res: Response) => {
+router.get("/payouts", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
@@ -250,13 +252,13 @@ router.get("/payouts", async (req: AuthRequest, res: Response) => {
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("List payouts error:", error);
+    logger.error("List payouts error", { error });
     return res.status(500).json({ error: "Failed to load payouts" });
   }
-});
+}));
 
 // PUT /payouts/:id — Process a payout
-router.put("/payouts/:id", async (req: AuthRequest, res: Response) => {
+router.put("/payouts/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { status, reference, notes, autoDisburse } = req.body;
 
@@ -345,13 +347,13 @@ router.put("/payouts/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ payout: updated });
   } catch (error) {
-    console.error("Process payout error:", error);
+    logger.error("Process payout error", { error });
     return res.status(500).json({ error: "Failed to process payout" });
   }
-});
+}));
 
 // GET /:id — Single seller detail
-router.get("/:id", async (req: AuthRequest, res: Response) => {
+router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const seller = await prisma.seller.findUnique({
       where: { id: req.params.id },
@@ -395,13 +397,13 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       activityLog,
     });
   } catch (error) {
-    console.error("Get seller error:", error);
+    logger.error("Get seller error", { error });
     return res.status(500).json({ error: "Failed to load seller" });
   }
-});
+}));
 
 // PUT /:id/status — Approve/suspend/reject seller
-router.put("/:id/status", async (req: AuthRequest, res: Response) => {
+router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { status, rejectionNote } = req.body;
 
@@ -468,13 +470,13 @@ router.put("/:id/status", async (req: AuthRequest, res: Response) => {
 
     return res.json({ seller: updated });
   } catch (error) {
-    console.error("Update seller status error:", error);
+    logger.error("Update seller status error", { error });
     return res.status(500).json({ error: "Failed to update seller status" });
   }
-});
+}));
 
 // PUT /:id — Update seller settings
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const seller = await prisma.seller.findUnique({
       where: { id: req.params.id },
@@ -512,15 +514,15 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ seller: updated });
   } catch (error) {
-    console.error("Update seller settings error:", error);
+    logger.error("Update seller settings error", { error });
     return res.status(500).json({ error: "Failed to update seller settings" });
   }
-});
+}));
 
 // ============ WARNINGS ============
 
 // GET /:sellerId/warnings — List seller warnings
-router.get("/:sellerId/warnings", async (req: AuthRequest, res: Response) => {
+router.get("/:sellerId/warnings", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const warnings = await prisma.sellerWarning.findMany({
       where: { sellerId: req.params.sellerId },
@@ -528,13 +530,13 @@ router.get("/:sellerId/warnings", async (req: AuthRequest, res: Response) => {
     });
     return res.json({ warnings });
   } catch (error) {
-    console.error("List warnings error:", error);
+    logger.error("List warnings error", { error });
     return res.status(500).json({ error: "Failed to load warnings" });
   }
-});
+}));
 
 // POST /:sellerId/warnings — Issue warning
-router.post("/:sellerId/warnings", async (req: AuthRequest, res: Response) => {
+router.post("/:sellerId/warnings", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { reason } = req.body;
     if (!reason || typeof reason !== "string" || !reason.trim()) {
@@ -610,13 +612,13 @@ router.post("/:sellerId/warnings", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ warning, autoSuspended: activeWarnings >= 3 });
   } catch (error) {
-    console.error("Issue warning error:", error);
+    logger.error("Issue warning error", { error });
     return res.status(500).json({ error: "Failed to issue warning" });
   }
-});
+}));
 
 // DELETE /:sellerId/warnings/:id — Expire a warning
-router.delete("/:sellerId/warnings/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/:sellerId/warnings/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const warning = await prisma.sellerWarning.findUnique({
       where: { id: req.params.id },
@@ -632,15 +634,15 @@ router.delete("/:sellerId/warnings/:id", async (req: AuthRequest, res: Response)
 
     return res.json({ warning: updated });
   } catch (error) {
-    console.error("Expire warning error:", error);
+    logger.error("Expire warning error", { error });
     return res.status(500).json({ error: "Failed to expire warning" });
   }
-});
+}));
 
 // ============ SCORECARD ============
 
 // GET /:id/scorecard — Performance scorecard
-router.get("/:id/scorecard", async (req: AuthRequest, res: Response) => {
+router.get("/:id/scorecard", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const seller = await prisma.seller.findUnique({
       where: { id: req.params.id },
@@ -702,9 +704,9 @@ router.get("/:id/scorecard", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Scorecard error:", error);
+    logger.error("Scorecard error", { error });
     return res.status(500).json({ error: "Failed to load scorecard" });
   }
-});
+}));
 
 export default router;

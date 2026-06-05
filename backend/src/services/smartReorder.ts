@@ -1,6 +1,7 @@
 import prisma from "../lib/prisma";
 import { sendWhatsApp } from "../services/whatsapp";
 import { sendSMS } from "../services/sms";
+import { logger } from "../lib/logger";
 
 const BASE_URL = process.env.FRONTEND_URL || "https://ugsex.com";
 
@@ -80,7 +81,7 @@ export async function processSmartReorderReminders(): Promise<number> {
       }
     }
   } catch (error) {
-    console.error("Smart reorder reminders error:", error);
+    logger.error("Smart reorder reminders error", { error });
   }
 
   return sent;
@@ -91,7 +92,7 @@ export function startSmartReorderJob(): void {
   const runJob = async () => {
     const count = await processSmartReorderReminders();
     if (count > 0) {
-      console.log(`[SmartReorder] Sent ${count} reorder reminders`);
+      logger.info(`[SmartReorder] Sent ${count} reorder reminders`);
     }
   };
 

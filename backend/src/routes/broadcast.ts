@@ -4,11 +4,13 @@ import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 import { sendWhatsApp } from "../services/whatsapp";
 import { sendSMS } from "../services/sms";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /api/broadcast/whatsapp — Admin sends bulk WhatsApp/SMS to opted-in customers
-router.post("/whatsapp", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post("/whatsapp", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const data = z.object({
       message: z.string().min(5).max(1000),
@@ -85,13 +87,13 @@ router.post("/whatsapp", authenticate, requireAdmin, async (req: AuthRequest, re
     });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
-    console.error("Broadcast error:", error);
+    logger.error("Broadcast error", { error });
     return res.status(500).json({ error: "Failed to send broadcast" });
   }
-});
+}));
 
 // GET /api/broadcast/audience — Preview how many will receive a broadcast
-router.get("/audience", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/audience", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const total = await prisma.user.count({
       where: { smsOptIn: true, phone: { not: null }, role: "CUSTOMER" },
@@ -101,6 +103,6 @@ router.get("/audience", authenticate, requireAdmin, async (_req: AuthRequest, re
   } catch (error) {
     return res.status(500).json({ error: "Failed to count audience" });
   }
-});
+}));
 
 export default router;

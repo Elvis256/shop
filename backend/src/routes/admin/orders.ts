@@ -6,13 +6,15 @@ import { sendShippingNotification, sendProcessingNotification, sendDeliveredNoti
 import { refundFlutterwaveTransaction } from "../../services/flutterwave";
 import { sendOrderConfirmationWhatsApp, sendShippingUpdateWhatsApp, sendDeliveryConfirmationWhatsApp } from "../../services/whatsapp";
 import { sendOrderConfirmationSMS, sendShippingUpdateSMS } from "../../services/sms";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/orders
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const {
       search,
@@ -107,13 +109,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Admin get orders error:", error);
+    logger.error("Admin get orders error", { error });
     return res.status(500).json({ error: "Failed to fetch orders" });
   }
-});
+}));
 
 // GET /api/admin/orders/:id
-router.get("/:id", async (req: AuthRequest, res: Response) => {
+router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -189,13 +191,13 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       coupon: order.coupon,
     });
   } catch (error) {
-    console.error("Admin get order error:", error);
+    logger.error("Admin get order error", { error });
     return res.status(500).json({ error: "Failed to fetch order" });
   }
-});
+}));
 
 // PUT /api/admin/orders/:id/status
-router.put("/:id/status", async (req: AuthRequest, res: Response) => {
+router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { status, note, trackingNumber } = z
@@ -283,12 +285,12 @@ router.put("/:id/status", async (req: AuthRequest, res: Response) => {
 
     // Send processing notification
     if (status === "PROCESSING") {
-      sendProcessingNotification(order).catch(console.error);
+      sendProcessingNotification(order).catch(err => logger.error('send_processing_notification_failed', { error: err }));
     }
 
     // Send delivered notification
     if (status === "DELIVERED") {
-      sendDeliveredNotification(order).catch(console.error);
+      sendDeliveredNotification(order).catch(err => logger.error('send_delivered_notification_failed', { error: err }));
     }
 
     // WhatsApp & SMS notifications (fire-and-forget)
@@ -341,18 +343,18 @@ router.put("/:id/status", async (req: AuthRequest, res: Response) => {
           });
         }
       });
-      sendCancelledNotification(order, note).catch(console.error);
+      sendCancelledNotification(order, note).catch(err => logger.error('send_cancelled_notification_failed', { error: err }));
     }
 
     return res.json({ message: "Order status updated" });
   } catch (error) {
-    console.error("Admin update order status error:", error);
+    logger.error("Admin update order status error", { error });
     return res.status(500).json({ error: "Failed to update order status" });
   }
-});
+}));
 
 // POST /api/admin/orders/:id/mark-paid - Mark COD order as paid
-router.post("/:id/mark-paid", async (req: AuthRequest, res: Response) => {
+router.post("/:id/mark-paid", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -389,13 +391,13 @@ router.post("/:id/mark-paid", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Payment marked as successful" });
   } catch (error) {
-    console.error("Admin mark paid error:", error);
+    logger.error("Admin mark paid error", { error });
     return res.status(500).json({ error: "Failed to mark payment" });
   }
-});
+}));
 
 // POST /api/admin/orders/:id/note
-router.post("/:id/note", async (req: AuthRequest, res: Response) => {
+router.post("/:id/note", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { note } = z.object({ note: z.string() }).parse(req.body);
@@ -415,13 +417,13 @@ router.post("/:id/note", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Note added" });
   } catch (error) {
-    console.error("Admin add note error:", error);
+    logger.error("Admin add note error", { error });
     return res.status(500).json({ error: "Failed to add note" });
   }
-});
+}));
 
 // POST /api/admin/orders/:id/refund
-router.post("/:id/refund", async (req: AuthRequest, res: Response) => {
+router.post("/:id/refund", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { amount, reason } = z.object({
@@ -495,9 +497,9 @@ router.post("/:id/refund", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Refund processed successfully", data: refundResult });
   } catch (error: any) {
-    console.error("Admin refund error:", error);
+    logger.error("Admin refund error", { error });
     return res.status(500).json({ error: "Refund failed" });
   }
-});
+}));
 
 export default router;

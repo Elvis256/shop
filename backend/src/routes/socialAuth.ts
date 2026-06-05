@@ -9,6 +9,8 @@ import {
   REFRESH_COOKIE_OPTIONS,
   createRefreshToken,
 } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -17,7 +19,7 @@ const GoogleAuthSchema = z.object({
 });
 
 // POST /api/auth/google
-router.post("/google", async (req, res: Response) => {
+router.post("/google", asyncHandler(async (req, res: Response) => {
   try {
     const { credential } = GoogleAuthSchema.parse(req.body);
 
@@ -87,12 +89,12 @@ router.post("/google", async (req, res: Response) => {
       refreshToken,
     });
   } catch (error) {
-    console.error("Google auth error:", error);
+    logger.error("Google auth error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Google authentication failed" });
   }
-});
+}));
 
 export default router;

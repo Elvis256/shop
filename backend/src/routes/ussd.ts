@@ -1,13 +1,15 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // Africa's Talking USSD callback
 // Dial *XXX# → routes here
 // Sessions stored in Redis with 5-minute TTL
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", asyncHandler(async (req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/plain");
 
   try {
@@ -150,9 +152,9 @@ router.post("/", async (req: Request, res: Response) => {
 
     return res.send("END Invalid option. Dial again to restart.");
   } catch (error) {
-    console.error("USSD error:", error);
+    logger.error("USSD error", { error });
     return res.send("END Service temporarily unavailable. Try again shortly.");
   }
-});
+}));
 
 export default router;

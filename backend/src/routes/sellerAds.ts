@@ -1,6 +1,8 @@
 import { Router, Response, NextFunction } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -39,7 +41,7 @@ router.get("/pricing", (_req: SellerRequest, res: Response) => {
 });
 
 // GET /api/seller/ads/balance
-router.get("/balance", async (req: SellerRequest, res: Response) => {
+router.get("/balance", asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const seller = req.seller;
     const transactions = await prisma.adTransaction.findMany({
@@ -59,13 +61,13 @@ router.get("/balance", async (req: SellerRequest, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("Get ad balance error:", error);
+    logger.error("Get ad balance error", { error });
     return res.status(500).json({ error: "Failed to fetch balance" });
   }
-});
+}));
 
 // POST /api/seller/ads/fund — transfer from earnings balance to ad balance
-router.post("/fund", async (req: SellerRequest, res: Response) => {
+router.post("/fund", asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const { amount } = req.body;
     const transferAmount = parseFloat(amount);
@@ -112,13 +114,13 @@ router.post("/fund", async (req: SellerRequest, res: Response) => {
     if (error.message === "Insufficient earnings balance") {
       return res.status(400).json({ error: error.message });
     }
-    console.error("Fund ad balance error:", error);
+    logger.error("Fund ad balance error", { error });
     return res.status(500).json({ error: "Failed to fund ad balance" });
   }
-});
+}));
 
 // GET /api/seller/ads/promotions
-router.get("/promotions", async (req: SellerRequest, res: Response) => {
+router.get("/promotions", asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const { status } = req.query;
     const where: any = { sellerId: req.seller.id };
@@ -150,13 +152,13 @@ router.get("/promotions", async (req: SellerRequest, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("Get promotions error:", error);
+    logger.error("Get promotions error", { error });
     return res.status(500).json({ error: "Failed to fetch promotions" });
   }
-});
+}));
 
 // POST /api/seller/ads/promotions — create a new promotion
-router.post("/promotions", async (req: SellerRequest, res: Response) => {
+router.post("/promotions", asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const { productId, tier, days } = req.body;
 
@@ -252,13 +254,13 @@ router.post("/promotions", async (req: SellerRequest, res: Response) => {
     if (error.message === "Insufficient ad balance") {
       return res.status(400).json({ error: error.message });
     }
-    console.error("Create promotion error:", error);
+    logger.error("Create promotion error", { error });
     return res.status(500).json({ error: "Failed to create promotion" });
   }
-});
+}));
 
 // PUT /api/seller/ads/promotions/:id/pause
-router.put("/promotions/:id/pause", async (req: SellerRequest, res: Response) => {
+router.put("/promotions/:id/pause", asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const promo = await prisma.productPromotion.findFirst({
       where: { id: req.params.id, sellerId: req.seller.id, status: "ACTIVE" },
@@ -272,13 +274,13 @@ router.put("/promotions/:id/pause", async (req: SellerRequest, res: Response) =>
 
     return res.json({ message: "Promotion paused" });
   } catch (error) {
-    console.error("Pause promotion error:", error);
+    logger.error("Pause promotion error", { error });
     return res.status(500).json({ error: "Failed to pause promotion" });
   }
-});
+}));
 
 // PUT /api/seller/ads/promotions/:id/resume
-router.put("/promotions/:id/resume", async (req: SellerRequest, res: Response) => {
+router.put("/promotions/:id/resume", asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const promo = await prisma.productPromotion.findFirst({
       where: { id: req.params.id, sellerId: req.seller.id, status: "PAUSED" },
@@ -296,13 +298,13 @@ router.put("/promotions/:id/resume", async (req: SellerRequest, res: Response) =
 
     return res.json({ message: "Promotion resumed" });
   } catch (error) {
-    console.error("Resume promotion error:", error);
+    logger.error("Resume promotion error", { error });
     return res.status(500).json({ error: "Failed to resume promotion" });
   }
-});
+}));
 
 // DELETE /api/seller/ads/promotions/:id — cancel and refund remaining
-router.delete("/promotions/:id", async (req: SellerRequest, res: Response) => {
+router.delete("/promotions/:id", asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
     const promo = await prisma.productPromotion.findFirst({
       where: { id: req.params.id, sellerId: req.seller.id, status: { in: ["ACTIVE", "PAUSED"] } },
@@ -345,9 +347,9 @@ router.delete("/promotions/:id", async (req: SellerRequest, res: Response) => {
 
     return res.json({ message: "Promotion cancelled", refunded: refundAmount });
   } catch (error) {
-    console.error("Cancel promotion error:", error);
+    logger.error("Cancel promotion error", { error });
     return res.status(500).json({ error: "Failed to cancel promotion" });
   }
-});
+}));
 
 export default router;

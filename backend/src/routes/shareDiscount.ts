@@ -2,11 +2,13 @@ import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authenticate } from "../middleware/auth";
 import crypto from "crypto";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /api/social/share - Create share link for a product
-router.post("/share", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/share", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { productId, platform } = req.body;
@@ -37,13 +39,13 @@ router.post("/share", authenticate, async (req: AuthRequest, res: Response) => {
 
     res.json({ share });
   } catch (err) {
-    console.error("Share discount error:", err);
+    logger.error("Share discount error", { error: err });
     res.status(500).json({ error: "Failed to create share link" });
   }
-});
+}));
 
 // GET /api/social/share/:code/click - Track a click on shared link
-router.get("/share/:code/click", async (req, res) => {
+router.get("/share/:code/click", asyncHandler(async (req, res) => {
   try {
     const { code } = req.params;
     const share = await prisma.shareDiscount.findUnique({
@@ -73,10 +75,10 @@ router.get("/share/:code/click", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to track click" });
   }
-});
+}));
 
 // GET /api/social/share/my - Get user's share discounts
-router.get("/share/my", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/share/my", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const shares = await prisma.shareDiscount.findMany({
       where: { userId: req.user!.id },
@@ -88,6 +90,6 @@ router.get("/share/my", authenticate, async (req: AuthRequest, res: Response) =>
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch shares" });
   }
-});
+}));
 
 export default router;

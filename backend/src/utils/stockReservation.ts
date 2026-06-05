@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
 
 /**
  * Release expired stock reservations with batching to prevent event loop blocking
@@ -74,7 +75,7 @@ export async function releaseExpiredReservations(): Promise<number> {
   }
 
   if (totalReleased > 0) {
-    console.log(`Released ${totalReleased} expired stock reservations in ${batchCount} batches`);
+    logger.info(`Released ${totalReleased} expired stock reservations in ${batchCount} batches`);
   }
   return totalReleased;
 }
@@ -86,14 +87,14 @@ export function startReservationCleanup() {
   if (cleanupInterval) return;
   
   // Run immediately on startup
-  releaseExpiredReservations().catch(console.error);
+  releaseExpiredReservations().catch(err => logger.error('release_expired_reservations_failed', { error: err }));
   
   // Then run every 5 minutes
   cleanupInterval = setInterval(() => {
-    releaseExpiredReservations().catch(console.error);
+    releaseExpiredReservations().catch(err => logger.error('release_expired_reservations_failed', { error: err }));
   }, 5 * 60 * 1000);
   
-  console.log("Stock reservation cleanup job started");
+  logger.info("Stock reservation cleanup job started");
 }
 
 export function stopReservationCleanup() {

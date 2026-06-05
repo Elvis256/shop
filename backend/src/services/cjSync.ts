@@ -6,11 +6,12 @@
 
 import prisma from "../lib/prisma";
 import { getOrderTracking, getProductDetail, calculateSellingPrice } from "./cjdropshipping";
+import { logger } from "../lib/logger";
 
 // ── Tracking Sync ──
 
 async function syncCJTracking(): Promise<void> {
-  console.log("[CJ-Sync] Starting tracking sync...");
+  logger.info("[CJ-Sync] Starting tracking sync...");
 
   const pendingOrders = await prisma.cJOrder.findMany({
     where: {
@@ -25,7 +26,7 @@ async function syncCJTracking(): Promise<void> {
   });
 
   if (pendingOrders.length === 0) {
-    console.log("[CJ-Sync] No orders to track");
+    logger.info("[CJ-Sync] No orders to track");
     return;
   }
 
@@ -83,18 +84,18 @@ async function syncCJTracking(): Promise<void> {
         updated++;
       }
     } catch (error: any) {
-      console.error(`[CJ-Sync] Tracking error for CJ order ${cjOrder.cjOrderId}:`, error.message);
+      logger.error(`[CJ-Sync] Tracking error for CJ order ${cjOrder.cjOrderId}`, { error: error.message });
     }
     await new Promise((r) => setTimeout(r, 500));
   }
 
-  console.log(`[CJ-Sync] Tracking done. Updated ${updated}/${pendingOrders.length}`);
+  logger.info(`[CJ-Sync] Tracking done. Updated ${updated}/${pendingOrders.length}`);
 }
 
 // ── Price & Stock Sync ──
 
 async function syncCJPricesAndStock(): Promise<void> {
-  console.log("[CJ-Sync] Starting price/stock sync...");
+  logger.info("[CJ-Sync] Starting price/stock sync...");
 
   const products = await prisma.product.findMany({
     where: { cjProductId: { not: null }, cjAutoSync: true },
@@ -102,7 +103,7 @@ async function syncCJPricesAndStock(): Promise<void> {
   });
 
   if (products.length === 0) {
-    console.log("[CJ-Sync] No products to sync");
+    logger.info("[CJ-Sync] No products to sync");
     return;
   }
 
@@ -130,7 +131,7 @@ async function syncCJPricesAndStock(): Promise<void> {
           product.markupType as "PERCENTAGE" | "FIXED",
           Number(product.markupValue),
         ));
-        console.log(`[CJ-Sync] Price changed for "${product.name}": UGX ${oldCost} → UGX ${newCostUgx}`);
+        logger.info(`[CJ-Sync] Price changed for "${product.name}": UGX ${oldCost} → UGX ${newCostUgx}`);
       }
 
       const newStock = detail.variants.reduce((sum, v) => sum + v.variantStock, 0);
@@ -144,20 +145,20 @@ async function syncCJPricesAndStock(): Promise<void> {
       const msg = error.message || "";
       // Product removed from CJ shelves — disable auto-sync to stop retries
       if (msg.includes("1602002") || msg.includes("removed from shelves") || msg.includes("Product not found")) {
-        console.warn(`[CJ-Sync] Product "${product.name}" removed from CJ. Disabling auto-sync.`);
+        logger.warn(`[CJ-Sync] Product "${product.name}" removed from CJ. Disabling auto-sync.`);
         await prisma.product.update({
           where: { id: product.id },
           data: { cjAutoSync: false, status: "ARCHIVED" },
         }).catch(() => {});
       } else {
         errors++;
-        console.error(`[CJ-Sync] Error for "${product.name}":`, msg);
+        logger.error(`[CJ-Sync] Error for "${product.name}"`, { error: msg });
       }
     }
     await new Promise((r) => setTimeout(r, 1000));
   }
 
-  console.log(`[CJ-Sync] Price sync done. Updated ${updated}, errors ${errors}, total ${products.length}`);
+  logger.info(`[CJ-Sync] Price sync done. Updated ${updated}, errors ${errors}, total ${products.length}`);
 }
 
 // ── Job Schedulers ──
@@ -166,17 +167,17 @@ const SIX_HOURS = 6 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
 export function startCJTrackingSyncJob(): void {
-  console.log("📦 CJ Dropshipping tracking sync started (every 6 hours)");
+  logger.info("CJ Dropshipping tracking sync started (every 6 hours)");
   setTimeout(() => {
-    syncCJTracking().catch(console.error);
-    setInterval(() => syncCJTracking().catch(console.error), SIX_HOURS);
+    syncCJTracking().catch(err => logger.error('cj_tracking_sync_failed', { error: err }));
+    setInterval(() => syncCJTracking().catch(err => logger.error('cj_tracking_sync_failed', { error: err })), SIX_HOURS);
   }, 35000);
 }
 
 export function startCJPriceSyncJob(): void {
-  console.log("💰 CJ Dropshipping price/stock sync started (every 24 hours)");
+  logger.info("CJ Dropshipping price/stock sync started (every 24 hours)");
   setTimeout(() => {
-    syncCJPricesAndStock().catch(console.error);
-    setInterval(() => syncCJPricesAndStock().catch(console.error), TWENTY_FOUR_HOURS);
+    syncCJPricesAndStock().catch(err => logger.error('cj_price_sync_failed', { error: err }));
+    setInterval(() => syncCJPricesAndStock().catch(err => logger.error('cj_price_sync_failed', { error: err })), TWENTY_FOUR_HOURS);
   }, 65000);
 }

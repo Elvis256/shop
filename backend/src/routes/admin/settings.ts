@@ -2,13 +2,15 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/settings
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const settings = await prisma.setting.findMany();
     
@@ -19,13 +21,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 
     return res.json({ settings: settingsMap });
   } catch (error) {
-    console.error("Admin get settings error:", error);
+    logger.error("Admin get settings error", { error });
     return res.status(500).json({ error: "Failed to fetch settings" });
   }
-});
+}));
 
 // PUT /api/admin/settings
-router.put("/", async (req: AuthRequest, res: Response) => {
+router.put("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const settings = z.record(z.string()).parse(req.body);
 
@@ -40,14 +42,14 @@ router.put("/", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Settings updated" });
   } catch (error) {
-    console.error("Admin update settings error:", error);
+    logger.error("Admin update settings error", { error });
     return res.status(500).json({ error: "Failed to update settings" });
   }
-});
+}));
 
 // POST /api/admin/settings/apply-processing-fee
 // Adjusts all product prices from oldFee% to newFee%
-router.post("/apply-processing-fee", async (req: AuthRequest, res: Response) => {
+router.post("/apply-processing-fee", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { oldFee, newFee } = z.object({
       oldFee: z.number().min(0).max(50),
@@ -75,13 +77,13 @@ router.post("/apply-processing-fee", async (req: AuthRequest, res: Response) => 
       updated: { products, comparePrices, flashPrices, variants },
     });
   } catch (error) {
-    console.error("Apply processing fee error:", error);
+    logger.error("Apply processing fee error", { error });
     return res.status(500).json({ error: "Failed to apply processing fee" });
   }
-});
+}));
 
 // GET /api/admin/inventory
-router.get("/inventory", async (req: AuthRequest, res: Response) => {
+router.get("/inventory", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const lowStockProducts = await prisma.product.findMany({
       where: {
@@ -115,13 +117,13 @@ router.get("/inventory", async (req: AuthRequest, res: Response) => {
       totalItems: inventoryValue._sum.stock || 0,
     });
   } catch (error) {
-    console.error("Admin inventory error:", error);
+    logger.error("Admin inventory error", { error });
     return res.status(500).json({ error: "Failed to fetch inventory" });
   }
-});
+}));
 
 // PUT /api/admin/inventory/:productId
-router.put("/inventory/:productId", async (req: AuthRequest, res: Response) => {
+router.put("/inventory/:productId", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = req.params;
     const { stock, adjustment, reason } = z
@@ -160,9 +162,9 @@ router.put("/inventory/:productId", async (req: AuthRequest, res: Response) => {
       newStock,
     });
   } catch (error) {
-    console.error("Admin update inventory error:", error);
+    logger.error("Admin update inventory error", { error });
     return res.status(500).json({ error: "Failed to update inventory" });
   }
-});
+}));
 
 export default router;

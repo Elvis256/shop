@@ -3,13 +3,15 @@ import { z } from "zod";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { cacheGetOrSet, SHORT_TTL, LONG_TTL } from "../lib/cache";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // ─── Public: Browse Affiliate Products ───────────────────────────────────────
 
 // GET /api/affiliate/products - Browse all affiliate products + imported dropship products
-router.get("/products", async (req: Request, res: Response) => {
+router.get("/products", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { source, category, search, featured, sort, page = "1", limit = "20" } = req.query;
     const take = Math.min(parseInt(limit as string) || 20, 50);
@@ -76,13 +78,13 @@ router.get("/products", async (req: Request, res: Response) => {
       pagination: { total, page: Math.floor(skip / take) + 1, limit: take, totalPages: Math.ceil(total / take) },
     });
   } catch (error) {
-    console.error("Browse affiliate products error:", error);
+    logger.error("Browse affiliate products error", { error });
     return res.status(500).json({ error: "Failed to load products" });
   }
-});
+}));
 
 // GET /api/affiliate/products/:slug
-router.get("/products/:slug", async (req: Request, res: Response) => {
+router.get("/products/:slug", asyncHandler(async (req: Request, res: Response) => {
   try {
     const product = await prisma.affiliateProduct.findUnique({
       where: { slug: req.params.slug },
@@ -101,10 +103,10 @@ router.get("/products/:slug", async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({ error: "Failed to load product" });
   }
-});
+}));
 
 // POST /api/affiliate/products/:id/click - Track an affiliate link click
-router.post("/products/:id/click", async (req: Request, res: Response) => {
+router.post("/products/:id/click", asyncHandler(async (req: Request, res: Response) => {
   try {
     const product = await prisma.affiliateProduct.findUnique({ where: { id: req.params.id } });
     if (!product) return res.status(404).json({ error: "Product not found" });
@@ -124,10 +126,10 @@ router.post("/products/:id/click", async (req: Request, res: Response) => {
   } catch (error) {
     return res.json({ affiliateUrl: null });
   }
-});
+}));
 
 // GET /api/affiliate/featured - Featured imported products
-router.get("/featured", async (_req: Request, res: Response) => {
+router.get("/featured", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const data = await cacheGetOrSet("affiliate:featured", async () => {
       const products = await prisma.product.findMany({
@@ -165,12 +167,12 @@ router.get("/featured", async (_req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({ error: "Failed to load featured products" });
   }
-});
+}));
 
 // ─── Our Affiliate Program: Public Signup & Dashboard ────────────────────────
 
 // POST /api/affiliate/signup - Apply to become an affiliate
-router.post("/signup", async (req: Request, res: Response) => {
+router.post("/signup", asyncHandler(async (req: Request, res: Response) => {
   try {
     const data = z.object({
       name: z.string().min(2),
@@ -204,13 +206,13 @@ router.post("/signup", async (req: Request, res: Response) => {
     });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
-    console.error("Affiliate signup error:", error);
+    logger.error("Affiliate signup error", { error });
     return res.status(500).json({ error: "Failed to submit application" });
   }
-});
+}));
 
 // GET /api/affiliate/dashboard - Affiliate's own dashboard (authenticated)
-router.get("/dashboard/:code", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/dashboard/:code", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const affiliate = await prisma.affiliate.findUnique({
       where: { code: req.params.code },
@@ -255,15 +257,15 @@ router.get("/dashboard/:code", authenticate, async (req: AuthRequest, res: Respo
       })),
     });
   } catch (error) {
-    console.error("Affiliate dashboard error:", error);
+    logger.error("Affiliate dashboard error", { error });
     return res.status(500).json({ error: "Failed to load dashboard" });
   }
-});
+}));
 
 // ─── Track affiliate referrals on checkout (middleware helper) ────────────────
 
 // POST /api/affiliate/track-referral - Called during checkout if ?ref= param exists
-router.post("/track-referral", async (req: Request, res: Response) => {
+router.post("/track-referral", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { code, orderId, orderAmount } = z.object({
       code: z.string(),
@@ -300,9 +302,9 @@ router.post("/track-referral", async (req: Request, res: Response) => {
 
     return res.json({ tracked: true, commission });
   } catch (error) {
-    console.error("Track referral error:", error);
+    logger.error("Track referral error", { error });
     return res.json({ tracked: false });
   }
-});
+}));
 
 export default router;

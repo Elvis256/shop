@@ -3,11 +3,13 @@ import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, optionalAuth } from "../middleware/auth";
 import { sendCancelledNotification } from "../lib/email";
 import { Decimal } from "@prisma/client/runtime/library";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/orders/track/:orderNumber - Public order tracking
-router.get("/track/:orderNumber", async (req: Request, res: Response) => {
+router.get("/track/:orderNumber", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { orderNumber } = req.params;
 
@@ -98,13 +100,13 @@ router.get("/track/:orderNumber", async (req: Request, res: Response) => {
       createdAt: order.createdAt,
     });
   } catch (error) {
-    console.error("Track order error:", error);
+    logger.error("Track order error", { error });
     return res.status(500).json({ error: "Failed to fetch order" });
   }
-});
+}));
 
 // GET /api/orders/:id/payment-status — Public endpoint for polling payment status
-router.get("/:id/payment-status", async (req: Request, res: Response) => {
+router.get("/:id/payment-status", asyncHandler(async (req: Request, res: Response) => {
   try {
     const order = await prisma.order.findUnique({
       where: { id: req.params.id },
@@ -121,10 +123,10 @@ router.get("/:id/payment-status", async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({ error: "Failed to check status" });
   }
-});
+}));
 
 // GET /api/orders/:id — requires authentication + ownership check
-router.get("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.get("/:id", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -207,13 +209,13 @@ router.get("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
       updatedAt: order.updatedAt,
     });
   } catch (error) {
-    console.error("Get order error:", error);
+    logger.error("Get order error", { error });
     return res.status(500).json({ error: "Failed to fetch order" });
   }
-});
+}));
 
 // GET /api/orders (list orders for authenticated user)
-router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userEmail = req.user!.email;
 
@@ -243,13 +245,13 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       }))
     );
   } catch (error) {
-    console.error("List orders error:", error);
+    logger.error("List orders error", { error });
     return res.status(500).json({ error: "Failed to fetch orders" });
   }
-});
+}));
 
 // POST /api/orders/:id/reorder - Re-add order items to cart
-router.post("/:id/reorder", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/:id/reorder", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -320,13 +322,13 @@ router.post("/:id/reorder", authenticate, async (req: AuthRequest, res: Response
       },
     });
   } catch (error) {
-    console.error("Reorder error:", error);
+    logger.error("Reorder error", { error });
     return res.status(500).json({ error: "Failed to reorder" });
   }
-});
+}));
 
 // POST /api/orders/:id/cancel - Customer cancels their own order
-router.post("/:id/cancel", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/:id/cancel", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -400,17 +402,17 @@ router.post("/:id/cancel", authenticate, async (req: AuthRequest, res: Response)
     });
 
     // Send cancellation email
-    sendCancelledNotification(order, "Cancelled by customer").catch(console.error);
+    sendCancelledNotification(order, "Cancelled by customer").catch(err => logger.error('send_cancelled_notification_failed', { error: err }));
 
     return res.json({ message: "Order cancelled successfully" });
   } catch (error) {
-    console.error("Cancel order error:", error);
+    logger.error("Cancel order error", { error });
     return res.status(500).json({ error: "Failed to cancel order" });
   }
-});
+}));
 
 // PUT /api/orders/:id/modify — Modify order before processing
-router.put("/:id/modify", authenticate, async (req: AuthRequest, res: Response) => {
+router.put("/:id/modify", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
@@ -557,13 +559,13 @@ router.put("/:id/modify", authenticate, async (req: AuthRequest, res: Response) 
 
     return res.json({ message: "Order modified", order: updated });
   } catch (error) {
-    console.error("Modify order error:", error);
+    logger.error("Modify order error", { error });
     return res.status(500).json({ error: "Failed to modify order" });
   }
-});
+}));
 
 // POST /api/orders/:id/confirm-delivery — Buyer confirms delivery (releases escrow)
-router.post("/:id/confirm-delivery", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/:id/confirm-delivery", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
@@ -644,13 +646,13 @@ router.post("/:id/confirm-delivery", authenticate, async (req: AuthRequest, res:
 
     return res.json({ message: "Delivery confirmed. Payment has been released to the seller." });
   } catch (error) {
-    console.error("Confirm delivery error:", error);
+    logger.error("Confirm delivery error", { error });
     return res.status(500).json({ error: "Failed to confirm delivery" });
   }
-});
+}));
 
 // GET /api/orders/:id/escrow — Get escrow status for an order
-router.get("/:id/escrow", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/:id/escrow", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const order = await prisma.order.findUnique({
       where: { id: req.params.id },
@@ -678,6 +680,6 @@ router.get("/:id/escrow", authenticate, async (req: AuthRequest, res: Response) 
   } catch (error) {
     return res.status(500).json({ error: "Failed to fetch escrow status" });
   }
-});
+}));
 
 export default router;

@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import { sendEmail } from "../lib/email";
+import { logger } from "../lib/logger";
 
 /**
  * Auto Review Request Job
@@ -71,7 +72,7 @@ export async function checkAndSendReviewRequests(): Promise<void> {
           },
         });
       } catch (emailErr) {
-        console.error(`Failed to send review request email for order ${order.orderNumber}:`, emailErr);
+        logger.error(`Failed to send review request email for order ${order.orderNumber}`, { error: emailErr });
       }
 
       // Track that we sent the request
@@ -80,7 +81,7 @@ export async function checkAndSendReviewRequests(): Promise<void> {
       });
     }
   } catch (error) {
-    console.error("Review request job error:", error);
+    logger.error("Review request job error", { error });
   }
 }
 
@@ -92,11 +93,11 @@ export function startReviewRequestJob(): void {
 
   // Run after a 2 minute initial delay
   setTimeout(() => {
-    checkAndSendReviewRequests().catch(console.error);
+    checkAndSendReviewRequests().catch(err => logger.error('review_requests_failed', { error: err }));
     setInterval(() => {
-      checkAndSendReviewRequests().catch(console.error);
+      checkAndSendReviewRequests().catch(err => logger.error('review_requests_failed', { error: err }));
     }, SIX_HOURS);
   }, 2 * 60 * 1000);
 
-  console.log("📧 Review request job scheduled (every 6 hours)");
+  logger.info("Review request job scheduled (every 6 hours)");
 }

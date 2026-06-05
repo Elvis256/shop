@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import { logger } from "./logger";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 
@@ -21,14 +22,14 @@ export const redis = new Redis(REDIS_URL, {
 redis.on("error", (err) => {
   const now = Date.now();
   if (now - lastErrorLog > ERROR_LOG_INTERVAL) {
-    console.warn("[Redis] Connection unavailable:", err.message, "— app continues without cache");
+    logger.warn("redis_connection_unavailable", { error: err.message });
     lastErrorLog = now;
   }
 });
 
 // Eagerly connect since lazyConnect is true
 redis.connect().catch((err) => {
-  console.warn("[Redis] Initial connection failed:", err.message, "— app continues without cache");
+  logger.warn("redis_initial_connection_failed", { error: err.message });
 });
 
 export default redis;

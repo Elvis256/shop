@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
 
 /**
  * Ad billing job: runs hourly.
@@ -18,7 +19,7 @@ export async function processAdBilling() {
   });
 
   if (expired.count > 0) {
-    console.log(`[AdBilling] Expired ${expired.count} promotions`);
+    logger.info(`[AdBilling] Expired ${expired.count} promotions`);
   }
 
   // 2. Update spent for active promotions
@@ -52,16 +53,16 @@ export function startAdBillingJob() {
   // Run once after 60s
   setTimeout(() => {
     processAdBilling().catch((err) =>
-      console.error("[AdBilling] Processing failed:", err)
+      logger.error("[AdBilling] Processing failed", { error: err })
     );
   }, 60_000);
 
   // Then every hour
   setInterval(() => {
     processAdBilling().catch((err) =>
-      console.error("[AdBilling] Processing failed:", err)
+      logger.error("[AdBilling] Processing failed", { error: err })
     );
   }, INTERVAL);
 
-  console.log("[AdBilling] Job scheduled (every 1h)");
+  logger.info("[AdBilling] Job scheduled (every 1h)");
 }

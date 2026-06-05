@@ -2,11 +2,13 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/store-credit — Get current user's balance + transaction history
-router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const credit = await prisma.storeCredit.findUnique({
       where: { userId: req.user!.id },
@@ -33,16 +35,16 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("Get store credit error:", error);
+    logger.error("Get store credit error", { error });
     return res.status(500).json({ error: "Failed to fetch store credit" });
   }
-});
+}));
 
 // POST /api/store-credit/apply — Apply store credit to an order
 router.post(
   "/apply",
   authenticate,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const schema = z.object({
         amount: z.number().positive(),
@@ -116,7 +118,7 @@ router.post(
       if (error.message === "INSUFFICIENT_BALANCE") {
         return res.status(400).json({ error: "Insufficient store credit balance" });
       }
-      console.error("Apply store credit error:", error);
+      logger.error("Apply store credit error", { error });
       if (error instanceof z.ZodError) {
         return res
           .status(400)
@@ -125,7 +127,7 @@ router.post(
       return res.status(500).json({ error: "Failed to apply store credit" });
     }
   }
-);
+));
 
 // ─── Admin Routes ────────────────────────────────────────────────────────────
 
@@ -134,7 +136,7 @@ router.get(
   "/admin/search",
   authenticate,
   requireAdmin,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const { email } = req.query;
       if (!email || typeof email !== "string") {
@@ -165,18 +167,18 @@ router.get(
         })),
       });
     } catch (error) {
-      console.error("Search users for store credit error:", error);
+      logger.error("Search users for store credit error", { error });
       return res.status(500).json({ error: "Failed to search users" });
     }
   }
-);
+));
 
 // POST /api/store-credit/admin/add — Add credit to user
 router.post(
   "/admin/add",
   authenticate,
   requireAdmin,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const schema = z.object({
         userId: z.string(),
@@ -226,7 +228,7 @@ router.post(
         transaction: result.transaction,
       });
     } catch (error) {
-      console.error("Admin add store credit error:", error);
+      logger.error("Admin add store credit error", { error });
       if (error instanceof z.ZodError) {
         return res
           .status(400)
@@ -235,14 +237,14 @@ router.post(
       return res.status(500).json({ error: "Failed to add store credit" });
     }
   }
-);
+));
 
 // GET /api/store-credit/admin/:userId — View user's credit details
 router.get(
   "/admin/:userId",
   authenticate,
   requireAdmin,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const { userId } = req.params;
 
@@ -273,10 +275,10 @@ router.get(
         })),
       });
     } catch (error) {
-      console.error("Admin get store credit error:", error);
+      logger.error("Admin get store credit error", { error });
       return res.status(500).json({ error: "Failed to fetch store credit" });
     }
   }
-);
+));
 
 export default router;

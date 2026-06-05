@@ -1,11 +1,13 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /conversations — Create or find a conversation
-router.post("/conversations", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/conversations", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Authentication required" });
 
@@ -49,13 +51,13 @@ router.post("/conversations", authenticate, async (req: AuthRequest, res: Respon
 
     return res.status(201).json({ conversation });
   } catch (error) {
-    console.error("Create conversation error:", error);
+    logger.error("Create conversation error", { error });
     return res.status(500).json({ error: "Failed to create conversation" });
   }
-});
+}));
 
 // GET /conversations — List buyer's conversations
-router.get("/conversations", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/conversations", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Authentication required" });
 
@@ -88,13 +90,13 @@ router.get("/conversations", authenticate, async (req: AuthRequest, res: Respons
 
     return res.json({ conversations: result });
   } catch (error) {
-    console.error("List conversations error:", error);
+    logger.error("List conversations error", { error });
     return res.status(500).json({ error: "Failed to load conversations" });
   }
-});
+}));
 
 // GET /conversations/:id/messages — Get messages, mark as read
-router.get("/conversations/:id/messages", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/conversations/:id/messages", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Authentication required" });
 
@@ -122,13 +124,13 @@ router.get("/conversations/:id/messages", authenticate, async (req: AuthRequest,
 
     return res.json({ conversation, messages });
   } catch (error) {
-    console.error("Get messages error:", error);
+    logger.error("Get messages error", { error });
     return res.status(500).json({ error: "Failed to load messages" });
   }
-});
+}));
 
 // POST /conversations/:id/messages — Send message as buyer
-router.post("/conversations/:id/messages", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/conversations/:id/messages", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Authentication required" });
 
@@ -161,9 +163,9 @@ router.post("/conversations/:id/messages", authenticate, async (req: AuthRequest
 
     return res.status(201).json({ message: chatMessage });
   } catch (error) {
-    console.error("Send message error:", error);
+    logger.error("Send message error", { error });
     return res.status(500).json({ error: "Failed to send message" });
   }
-});
+}));
 
 export default router;

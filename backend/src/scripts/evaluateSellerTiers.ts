@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
 
 /**
  * Evaluate and update seller tiers based on performance.
@@ -34,12 +35,12 @@ export async function evaluateSellerTiers() {
         where: { id: seller.id },
         data: { tier: newTier },
       });
-      console.log(`Seller ${seller.id}: ${seller.tier} → ${newTier}`);
+      logger.info(`Seller ${seller.id}: ${seller.tier} → ${newTier}`);
       updated++;
     }
   }
 
-  console.log(`[SellerTiers] Evaluation complete. ${updated}/${sellers.length} sellers updated.`);
+  logger.info(`[SellerTiers] Evaluation complete. ${updated}/${sellers.length} sellers updated.`);
 }
 
 /**
@@ -51,18 +52,18 @@ export function startSellerTierJob() {
   // Run once on startup after a short delay
   setTimeout(() => {
     evaluateSellerTiers().catch((err) =>
-      console.error("[SellerTiers] Evaluation failed:", err)
+      logger.error("[SellerTiers] Evaluation failed", { error: err })
     );
   }, 30_000); // 30s after boot
 
   // Then run every 24 hours
   setInterval(() => {
     evaluateSellerTiers().catch((err) =>
-      console.error("[SellerTiers] Evaluation failed:", err)
+      logger.error("[SellerTiers] Evaluation failed", { error: err })
     );
   }, INTERVAL);
 
-  console.log("[SellerTiers] Job scheduled (every 24h)");
+  logger.info("[SellerTiers] Job scheduled (every 24h)");
 }
 
 // Allow direct execution: npx ts-node src/scripts/evaluateSellerTiers.ts
@@ -70,7 +71,7 @@ if (require.main === module) {
   evaluateSellerTiers()
     .then(() => prisma.$disconnect())
     .catch((err) => {
-      console.error("Tier evaluation failed:", err);
+      logger.error("Tier evaluation failed", { error: err });
       prisma.$disconnect();
       process.exit(1);
     });

@@ -1,5 +1,6 @@
 import axios from "axios";
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
 
 const PAYPAL_NVP_LIVE = "https://api-3t.paypal.com/nvp";
 const PAYPAL_NVP_SANDBOX = "https://api-3t.sandbox.paypal.com/nvp";
@@ -98,7 +99,7 @@ export async function createPayPalCheckout(input: {
 
   if (response.ACK !== "Success" && response.ACK !== "SuccessWithWarning") {
     const errorMsg = response.L_LONGMESSAGE0 || response.L_SHORTMESSAGE0 || "PayPal checkout failed";
-    console.error("PayPal SetExpressCheckout error:", response);
+    logger.error("PayPal SetExpressCheckout error", { error: response });
     throw new Error(errorMsg);
   }
 
@@ -120,7 +121,7 @@ export async function getPayPalCheckoutDetails(token: string) {
 
   if (response.ACK !== "Success" && response.ACK !== "SuccessWithWarning") {
     const errorMsg = response.L_LONGMESSAGE0 || "Failed to get checkout details";
-    console.error("PayPal GetExpressCheckoutDetails error:", response);
+    logger.error("PayPal GetExpressCheckoutDetails error", { error: response });
     throw new Error(errorMsg);
   }
 
@@ -150,7 +151,7 @@ export async function executePayPalPayment(token: string, payerId: string, amoun
 
   if (response.ACK !== "Success" && response.ACK !== "SuccessWithWarning") {
     const errorMsg = response.L_LONGMESSAGE0 || "PayPal payment failed";
-    console.error("PayPal DoExpressCheckoutPayment error:", response);
+    logger.error("PayPal DoExpressCheckoutPayment error", { error: response });
     throw new Error(errorMsg);
   }
 

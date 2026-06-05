@@ -2,13 +2,15 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/coupons
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { active, page = "1", limit = "20" } = req.query;
 
@@ -43,10 +45,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Admin get coupons error:", error);
+    logger.error("Admin get coupons error", { error });
     return res.status(500).json({ error: "Failed to fetch coupons" });
   }
-});
+}));
 
 const CouponSchema = z.object({
   code: z.string().min(3).max(20),
@@ -62,7 +64,7 @@ const CouponSchema = z.object({
 });
 
 // POST /api/admin/coupons
-router.post("/", async (req: AuthRequest, res: Response) => {
+router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = CouponSchema.parse(req.body);
 
@@ -83,16 +85,16 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ message: "Coupon created", coupon });
   } catch (error) {
-    console.error("Admin create coupon error:", error);
+    logger.error("Admin create coupon error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to create coupon" });
   }
-});
+}));
 
 // PUT /api/admin/coupons/:id
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const body = CouponSchema.partial().parse(req.body);
@@ -122,13 +124,13 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Coupon updated", coupon: updated });
   } catch (error) {
-    console.error("Admin update coupon error:", error);
+    logger.error("Admin update coupon error", { error });
     return res.status(500).json({ error: "Failed to update coupon" });
   }
-});
+}));
 
 // DELETE /api/admin/coupons/:id
-router.delete("/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -151,9 +153,9 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
     await prisma.coupon.delete({ where: { id } });
     return res.json({ message: "Coupon deleted" });
   } catch (error) {
-    console.error("Admin delete coupon error:", error);
+    logger.error("Admin delete coupon error", { error });
     return res.status(500).json({ error: "Failed to delete coupon" });
   }
-});
+}));
 
 export default router;

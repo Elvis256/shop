@@ -1,12 +1,14 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { cacheGetOrSet, SHORT_TTL } from "../lib/cache";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/smart-bundles/:productId/frequently-bought-together
 // Returns top products frequently ordered alongside this product
-router.get("/:productId/frequently-bought-together", async (req: Request, res: Response) => {
+router.get("/:productId/frequently-bought-together", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
     const limit = Math.min(parseInt(req.query.limit as string) || 3, 6);
@@ -78,13 +80,13 @@ router.get("/:productId/frequently-bought-together", async (req: Request, res: R
         : null,
     });
   } catch (error) {
-    console.error("Frequently bought together error:", error);
+    logger.error("Frequently bought together error", { error });
     return res.status(500).json({ error: "Failed to load recommendations" });
   }
-});
+}));
 
 // GET /api/smart-bundles/trending — Most co-purchased product pairs overall
-router.get("/trending", async (_req: Request, res: Response) => {
+router.get("/trending", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const data = await cacheGetOrSet("fbt:trending", async () => {
       const topProducts = await prisma.orderItem.groupBy({
@@ -118,6 +120,6 @@ router.get("/trending", async (_req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({ error: "Failed to load trending products" });
   }
-});
+}));
 
 export default router;

@@ -2,13 +2,15 @@ import { Router, Response } from "express";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { refundFlutterwaveTransaction } from "../../services/flutterwave";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/disputes — List all disputes
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const {
       search,
@@ -92,13 +94,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("List disputes error:", error);
+    logger.error("List disputes error", { error });
     return res.status(500).json({ error: "Failed to fetch disputes" });
   }
-});
+}));
 
 // GET /api/admin/disputes/:id — Get dispute details
-router.get("/:id", async (req: AuthRequest, res: Response) => {
+router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const dispute = await prisma.dispute.findUnique({
       where: { id: req.params.id },
@@ -134,13 +136,13 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json(dispute);
   } catch (error) {
-    console.error("Get dispute error:", error);
+    logger.error("Get dispute error", { error });
     return res.status(500).json({ error: "Failed to fetch dispute" });
   }
-});
+}));
 
 // PUT /api/admin/disputes/:id — Update dispute status / resolve
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.id;
     const { status, resolution, resolutionNote, refundAmount, priority } = req.body;
@@ -206,7 +208,7 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
           try {
             await refundFlutterwaveTransaction(payment.flwRef, parseFloat(refundAmount));
           } catch (refundErr) {
-            console.error("Auto-refund failed, needs manual processing:", refundErr);
+            logger.error("Auto-refund failed, needs manual processing", { error: refundErr });
           }
         }
 
@@ -262,13 +264,13 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json(updated);
   } catch (error) {
-    console.error("Update dispute error:", error);
+    logger.error("Update dispute error", { error });
     return res.status(500).json({ error: "Failed to update dispute" });
   }
-});
+}));
 
 // POST /api/admin/disputes/:id/messages — Admin message on dispute
-router.post("/:id/messages", async (req: AuthRequest, res: Response) => {
+router.post("/:id/messages", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { message, isInternal } = req.body;
 
@@ -302,9 +304,9 @@ router.post("/:id/messages", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json(msg);
   } catch (error) {
-    console.error("Admin dispute message error:", error);
+    logger.error("Admin dispute message error", { error });
     return res.status(500).json({ error: "Failed to add message" });
   }
-});
+}));
 
 export default router;

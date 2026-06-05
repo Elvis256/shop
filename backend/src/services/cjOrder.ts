@@ -5,6 +5,7 @@
 
 import prisma from "../lib/prisma";
 import { placeOrder } from "./cjdropshipping";
+import { logger } from "../lib/logger";
 
 function parseShippingAddress(addressStr: string, customerName: string, phone?: string | null) {
   const parts = addressStr.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
@@ -43,7 +44,7 @@ export async function placeCJOrdersForOrder(orderId: string): Promise<void> {
   });
 
   if (!order) {
-    console.error(`[CJ-Order] Order ${orderId} not found`);
+    logger.error(`[CJ-Order] Order ${orderId} not found`);
     return;
   }
 
@@ -88,9 +89,9 @@ export async function placeCJOrdersForOrder(orderId: string): Promise<void> {
         },
       });
 
-      console.log(`✅ [CJ-Order] Placed CJ order ${result.cjOrderId} for ${item.product.name}`);
+      logger.info(`[CJ-Order] Placed CJ order ${result.cjOrderId} for ${item.product.name}`);
     } catch (error: any) {
-      console.error(`❌ [CJ-Order] Failed for ${item.product.name}:`, error.message);
+      logger.error(`[CJ-Order] Failed for ${item.product.name}`, { error: error.message });
 
       await prisma.cJOrder.updateMany({
         where: { orderId: order.id, productId: item.product.id, status: "PENDING" },

@@ -6,13 +6,23 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 const LOG_LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 const MIN_LEVEL = LOG_LEVELS[(process.env.LOG_LEVEL as LogLevel) || "info"] ?? 1;
 
+function serializeValue(v: unknown): unknown {
+  if (v instanceof Error) return { message: v.message, stack: v.stack };
+  return v;
+}
+
 function write(level: LogLevel, message: string, data?: Record<string, any>) {
   if (LOG_LEVELS[level] < MIN_LEVEL) return;
+  let safe: Record<string, any> | undefined;
+  if (data) {
+    safe = {};
+    for (const k of Object.keys(data)) safe[k] = serializeValue(data[k]);
+  }
   const entry = {
     level,
     timestamp: new Date().toISOString(),
     message,
-    ...data,
+    ...safe,
   };
   const out = level === "error" || level === "warn" ? process.stderr : process.stdout;
   out.write(JSON.stringify(entry) + "\n");

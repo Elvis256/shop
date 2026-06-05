@@ -2,11 +2,13 @@ import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authenticate } from "../middleware/auth";
 import crypto from "crypto";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /api/social/price-slash - Start a price slash for a product
-router.post("/price-slash", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/price-slash", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { productId } = req.body;
@@ -55,13 +57,13 @@ router.post("/price-slash", authenticate, async (req: AuthRequest, res: Response
 
     res.json({ priceSlash });
   } catch (err) {
-    console.error("Price slash error:", err);
+    logger.error("Price slash error", { error: err });
     res.status(500).json({ error: "Failed to create price slash" });
   }
-});
+}));
 
 // POST /api/social/price-slash/:code/slash - A friend slashes the price
-router.post("/price-slash/:code/slash", async (req, res) => {
+router.post("/price-slash/:code/slash", asyncHandler(async (req, res) => {
   try {
     const { code } = req.params;
     const visitorIp = req.headers["x-forwarded-for"]?.toString().split(",")[0] || req.ip || "unknown";
@@ -119,10 +121,37 @@ router.post("/price-slash/:code/slash", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to slash price" });
   }
-});
+}));
+
+// GET /api/social/price-slash/my - Get user's active price slashes (must be before /:code)
+router.get("/price-slash/my", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const slashes = await prisma.priceSlash.findMany({
+      where: { initiatorId: req.user!.id },
+      include: {
+        product: { select: { name: true, slug: true, images: { select: { url: true }, take: 1 }, price: true } },
+        slashers: { select: { slashedAt: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
+
+    res.json({
+      slashes: slashes.map((s) => ({
+        ...s,
+        savings: Number(s.originalPrice) - Number(s.currentPrice),
+        savingsPercent: Math.round((1 - Number(s.currentPrice) / Number(s.originalPrice)) * 100),
+        slashesRemaining: s.maxSlashes - s.currentSlashes,
+        isExpired: s.expiresAt < new Date(),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch price slashes" });
+  }
+}));
 
 // GET /api/social/price-slash/:code - Get price slash details
-router.get("/price-slash/:code", async (req, res) => {
+router.get("/price-slash/:code", asyncHandler(async (req, res) => {
   try {
     const priceSlash = await prisma.priceSlash.findUnique({
       where: { slashCode: req.params.code },
@@ -148,24 +177,6 @@ router.get("/price-slash/:code", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch price slash" });
   }
-});
-
-// GET /api/social/price-slash/my - Get user's active price slashes
-router.get("/price-slash/my", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const slashes = await prisma.priceSlash.findMany({
-      where: { initiatorId: req.user!.id },
-      include: {
-        product: { select: { name: true, slug: true, images: { select: { url: true }, take: 1 }, price: true } },
-        slashers: { select: { slashedAt: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
-    res.json({ slashes });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch price slashes" });
-  }
-});
+}));
 
 export default router;

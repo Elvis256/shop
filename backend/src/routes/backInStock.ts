@@ -2,6 +2,8 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { authenticate, optionalAuth, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -9,7 +11,7 @@ const router = Router();
 router.post(
   "/back-in-stock",
   optionalAuth,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const schema = z.object({
         productId: z.string(),
@@ -53,7 +55,7 @@ router.post(
         .status(201)
         .json({ message: "Subscribed for back-in-stock notification", id: sub.id });
     } catch (error) {
-      console.error("Back-in-stock subscribe error:", error);
+      logger.error("Back-in-stock subscribe error", { error });
       if (error instanceof z.ZodError) {
         return res
           .status(400)
@@ -62,13 +64,34 @@ router.post(
       return res.status(500).json({ error: "Failed to subscribe" });
     }
   }
-);
+));
+
+// GET /api/notify/back-in-stock/count — Count waiting subscribers for a product
+// Must be before :productId to avoid "count" being matched as productId
+router.get(
+  "/back-in-stock/count",
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const productId = req.query.productId as string;
+      if (!productId) {
+        return res.status(400).json({ error: "productId query param required" });
+      }
+      const count = await prisma.backInStockSub.count({
+        where: { productId, notified: false },
+      });
+      return res.json({ count });
+    } catch (error) {
+      logger.error("Back-in-stock count error", { error });
+      return res.status(500).json({ error: "Failed to get count" });
+    }
+  }
+));
 
 // GET /api/notify/back-in-stock/:productId — Check if current user/email is subscribed
 router.get(
   "/back-in-stock/:productId",
   optionalAuth,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const { productId } = req.params;
       const email = req.query.email as string | undefined;
@@ -90,11 +113,11 @@ router.get(
 
       return res.json({ subscribed: !!sub });
     } catch (error) {
-      console.error("Check back-in-stock sub error:", error);
+      logger.error("Check back-in-stock sub error", { error });
       return res.status(500).json({ error: "Failed to check subscription" });
     }
   }
-);
+));
 
 /**
  * Notify all unnotified subscribers for a product that is back in stock.
@@ -110,7 +133,7 @@ export async function notifyBackInStock(productId: string): Promise<number> {
 
   for (const sub of subscribers) {
     // Log instead of sending email since SMTP may not work
-    console.log(
+    logger.info(
       `[BackInStock] Would email ${sub.email}: "${sub.product.name}" is back in stock`
     );
   }

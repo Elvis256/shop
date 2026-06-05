@@ -1,11 +1,12 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authenticate } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/social/group-buy - List active group buys
-router.get("/group-buy", async (_req, res) => {
+router.get("/group-buy", asyncHandler(async (_req, res) => {
   try {
     const groupBuys = await prisma.groupBuy.findMany({
       where: { 
@@ -34,10 +35,10 @@ router.get("/group-buy", async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch group buys" });
   }
-});
+}));
 
 // GET /api/social/group-buy/:id - Get single group buy details
-router.get("/group-buy/:id", async (req, res) => {
+router.get("/group-buy/:id", asyncHandler(async (req, res) => {
   try {
     const groupBuy = await prisma.groupBuy.findUnique({
       where: { id: req.params.id },
@@ -65,10 +66,10 @@ router.get("/group-buy/:id", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch group buy" });
   }
-});
+}));
 
 // POST /api/social/group-buy/:id/join - Join a group buy
-router.post("/group-buy/:id/join", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/group-buy/:id/join", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const groupBuy = await prisma.groupBuy.findUnique({
@@ -106,10 +107,10 @@ router.post("/group-buy/:id/join", authenticate, async (req: AuthRequest, res: R
   } catch (err) {
     res.status(500).json({ error: "Failed to join group buy" });
   }
-});
+}));
 
 // GET /api/social/group-buy/product/:productId - Get active group buy for a product
-router.get("/group-buy/product/:productId", async (req, res) => {
+router.get("/group-buy/product/:productId", asyncHandler(async (req, res) => {
   try {
     const groupBuy = await prisma.groupBuy.findFirst({
       where: {
@@ -139,6 +140,6 @@ router.get("/group-buy/product/:productId", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch group buy" });
   }
-});
+}));
 
 export default router;

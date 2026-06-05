@@ -5,6 +5,8 @@ import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { cacheDel } from "../../lib/cache";
 import { uploadMultiple, validateUploadedFiles } from "../../middleware/upload";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -13,7 +15,7 @@ const router = Router();
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/products
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const {
       search,
@@ -114,13 +116,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Admin get products error:", error);
+    logger.error("Admin get products error", { error });
     return res.status(500).json({ error: "Failed to fetch products" });
   }
-});
+}));
 
 // GET /api/admin/products/low-stock
-router.get("/low-stock", async (req: AuthRequest, res: Response) => {
+router.get("/low-stock", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
 
@@ -154,13 +156,13 @@ router.get("/low-stock", async (req: AuthRequest, res: Response) => {
       total: lowStockProducts.length,
     });
   } catch (error) {
-    console.error("Admin low-stock products error:", error);
+    logger.error("Admin low-stock products error", { error });
     return res.status(500).json({ error: "Failed to fetch low stock products" });
   }
-});
+}));
 
 // GET /api/admin/products/next-sku?categoryId=xxx
-router.get("/next-sku", async (req: AuthRequest, res: Response) => {
+router.get("/next-sku", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { categoryId } = req.query;
     if (!categoryId || typeof categoryId !== "string") {
@@ -198,13 +200,13 @@ router.get("/next-sku", async (req: AuthRequest, res: Response) => {
     const sku = `${prefix}-${String(nextNum).padStart(3, "0")}`;
     return res.json({ sku, prefix });
   } catch (error) {
-    console.error("Next SKU error:", error);
+    logger.error("Next SKU error", { error });
     return res.status(500).json({ error: "Failed to generate SKU" });
   }
-});
+}));
 
 // GET /api/admin/products/:id
-router.get("/:id", async (req: AuthRequest, res: Response) => {
+router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -223,10 +225,10 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json(product);
   } catch (error) {
-    console.error("Admin get product error:", error);
+    logger.error("Admin get product error", { error });
     return res.status(500).json({ error: "Failed to fetch product" });
   }
-});
+}));
 
 const optStr = (schema = z.string()) =>
   z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), schema.optional());
@@ -261,7 +263,7 @@ const ProductSchema = z.object({
 });
 
 // POST /api/admin/products
-router.post("/", async (req: AuthRequest, res: Response) => {
+router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = ProductSchema.parse(req.body);
 
@@ -291,7 +293,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json(product);
   } catch (error) {
-    console.error("Admin create product error:", error);
+    logger.error("Admin create product error", { error });
     if (error instanceof z.ZodError) {
       const summary = error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
       return res.status(400).json({ error: `Validation failed: ${summary}`, details: error.errors });
@@ -302,10 +304,10 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
     return res.status(500).json({ error: "Failed to create product" });
   }
-});
+}));
 
 // PUT /api/admin/products/:id
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { updatedAt, ...bodyWithoutVersion } = req.body;
@@ -361,16 +363,16 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Product updated", product: updated });
   } catch (error) {
-    console.error("Admin update product error:", error);
+    logger.error("Admin update product error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to update product" });
   }
-});
+}));
 
 // DELETE /api/admin/products/:id
-router.delete("/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -390,10 +392,10 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Product archived" });
   } catch (error) {
-    console.error("Admin delete product error:", error);
+    logger.error("Admin delete product error", { error });
     return res.status(500).json({ error: "Failed to delete product" });
   }
-});
+}));
 
 // POST /api/admin/products/:id/images
 router.post("/:id/images", (req, res, next) => {
@@ -442,13 +444,13 @@ router.post("/:id/images", (req, res, next) => {
 
     return res.status(201).json({ message: "Images uploaded", images });
   } catch (error) {
-    console.error("Admin upload images error:", error);
+    logger.error("Admin upload images error", { error });
     return res.status(500).json({ error: "Failed to upload images" });
   }
 });
 
 // DELETE /api/admin/products/:id/images/:imageId
-router.delete("/:id/images/:imageId", async (req: AuthRequest, res: Response) => {
+router.delete("/:id/images/:imageId", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id, imageId } = req.params;
 
@@ -464,10 +466,10 @@ router.delete("/:id/images/:imageId", async (req: AuthRequest, res: Response) =>
 
     return res.json({ message: "Image deleted" });
   } catch (error) {
-    console.error("Admin delete image error:", error);
+    logger.error("Admin delete image error", { error });
     return res.status(500).json({ error: "Failed to delete image" });
   }
-});
+}));
 
 // ─── Variant CRUD ────────────────────────────────────────────────────────────
 
@@ -486,7 +488,7 @@ const VariantSchema = z.object({
 });
 
 // PUT /api/admin/products/:id/variants — Replace all variants at once
-router.put("/:id/variants", async (req: AuthRequest, res: Response) => {
+router.put("/:id/variants", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const product = await prisma.product.findUnique({ where: { id } });
@@ -540,13 +542,13 @@ router.put("/:id/variants", async (req: AuthRequest, res: Response) => {
       const summary = error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
       return res.status(400).json({ error: `Variant validation failed: ${summary}`, details: error.errors });
     }
-    console.error("Admin update variants error:", error);
+    logger.error("Admin update variants error", { error });
     return res.status(500).json({ error: "Failed to update variants" });
   }
-});
+}));
 
 // DELETE /api/admin/products/:id/variants/:variantId
-router.delete("/:id/variants/:variantId", async (req: AuthRequest, res: Response) => {
+router.delete("/:id/variants/:variantId", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id, variantId } = req.params;
 
@@ -565,13 +567,13 @@ router.delete("/:id/variants/:variantId", async (req: AuthRequest, res: Response
 
     return res.json({ message: "Variant deleted" });
   } catch (error) {
-    console.error("Admin delete variant error:", error);
+    logger.error("Admin delete variant error", { error });
     return res.status(500).json({ error: "Failed to delete variant" });
   }
-});
+}));
 
 // POST /api/admin/products/bulk
-router.post("/bulk", async (req: AuthRequest, res: Response) => {
+router.post("/bulk", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { action, ids } = z
       .object({
@@ -615,13 +617,13 @@ router.post("/bulk", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: `Bulk ${action} completed`, affected: result.count });
   } catch (error) {
-    console.error("Admin bulk action error:", error);
+    logger.error("Admin bulk action error", { error });
     return res.status(500).json({ error: "Bulk action failed" });
   }
-});
+}));
 
 // PATCH /api/admin/products/bulk-stock
-router.patch("/bulk-stock", async (req: AuthRequest, res: Response) => {
+router.patch("/bulk-stock", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { updates } = z
       .object({
@@ -637,16 +639,16 @@ router.patch("/bulk-stock", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Stock updated", count: updates.length });
   } catch (error) {
-    console.error("Bulk stock update error:", error);
+    logger.error("Bulk stock update error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to update stock" });
   }
-});
+}));
 
 // POST /api/admin/products/import-csv
-router.post("/import-csv", csvUpload.single("file"), async (req: AuthRequest, res: Response) => {
+router.post("/import-csv", csvUpload.single("file"), asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No CSV file uploaded" });
@@ -745,9 +747,9 @@ router.post("/import-csv", csvUpload.single("file"), async (req: AuthRequest, re
 
     return res.json({ imported, failed, errors: errors.slice(0, 20) });
   } catch (error) {
-    console.error("CSV import error:", error);
+    logger.error("CSV import error", { error });
     return res.status(500).json({ error: "Failed to import CSV" });
   }
-});
+}));
 
 export default router;

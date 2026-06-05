@@ -5,12 +5,14 @@ import prisma from "../lib/prisma";
 import { optionalAuth, AuthRequest } from "../middleware/auth";
 import { sendWhatsApp } from "../services/whatsapp";
 import { sendSMS } from "../services/sms";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // ─── Initiate a gift order ────────────────────────────────────────────────────
 // Sender pays, recipient gets a WhatsApp/SMS link to choose delivery address.
-router.post("/initiate", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.post("/initiate", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const data = z.object({
       items: z.array(z.object({
@@ -101,13 +103,13 @@ router.post("/initiate", optionalAuth, async (req: AuthRequest, res: Response) =
     });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
-    console.error("Gift initiate error:", error);
+    logger.error("Gift initiate error", { error });
     return res.status(500).json({ error: "Failed to initiate gift" });
   }
-});
+}));
 
 // ─── Recipient sets their delivery address ────────────────────────────────────
-router.post("/set-address/:token", async (req: Request, res: Response) => {
+router.post("/set-address/:token", asyncHandler(async (req: Request, res: Response) => {
   try {
     const data = z.object({
       name: z.string().min(1),
@@ -139,10 +141,10 @@ router.post("/set-address/:token", async (req: Request, res: Response) => {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
     return res.status(500).json({ error: "Failed to set address" });
   }
-});
+}));
 
 // ─── Get gift order details by token (for recipient page) ────────────────────
-router.get("/view/:token", async (req: Request, res: Response) => {
+router.get("/view/:token", asyncHandler(async (req: Request, res: Response) => {
   try {
     const order = await prisma.order.findUnique({
       where: { giftToken: req.params.token },
@@ -165,6 +167,6 @@ router.get("/view/:token", async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({ error: "Failed to load gift" });
   }
-});
+}));
 
 export default router;

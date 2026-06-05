@@ -11,6 +11,8 @@ import { sendMetaConversionEvent } from "../services/metaConversions";
 import { optionalAuth, AuthRequest } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 const router = Router();
 
 // Stock reservation timeout (15 minutes)
@@ -45,7 +47,11 @@ const CheckoutSchema = z.object({
   shippingAddress: z.any().optional(),
   affiliateCode: z.string().optional(),
   storeCreditAmount: z.number().min(0).optional(),
+  loyaltyPointsRedeem: z.number().int().min(0).optional(),
+  giftCardCode: z.string().optional(),
+  giftCardAmount: z.number().min(0).optional(),
   installments: z.number().int().min(2).max(4).optional(),
+  whatsappOptIn: z.boolean().optional(),
 });
 
 // Helper: Check and reserve stock for cart items
@@ -108,7 +114,7 @@ async function reserveStock(
 }
 
 // POST /api/checkout/create
-router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
   let checkoutAttemptId: string | undefined;
   const redisKey = idempotencyKey ? `idempotency:checkout:${idempotencyKey}` : undefined;
@@ -288,6 +294,21 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
       }
     }
 
+    // Validate gift card if provided
+    let giftCardDiscount = 0;
+    let giftCardId: string | undefined;
+    if (body.giftCardCode && body.giftCardAmount && body.giftCardAmount > 0) {
+      const giftCard = await prisma.giftCard.findUnique({
+        where: { code: body.giftCardCode.toUpperCase() },
+      });
+      if (giftCard && giftCard.isActive && Number(giftCard.currentValue) > 0) {
+        if (!giftCard.expiresAt || giftCard.expiresAt > new Date()) {
+          giftCardDiscount = Math.min(body.giftCardAmount, Number(giftCard.currentValue));
+          giftCardId = giftCard.id;
+        }
+      }
+    }
+
     // Move coupon increment inside transaction to prevent race condition
     const txResult = await prisma.$transaction(async (tx) => {
       // Atomically increment coupon usage inside the transaction
@@ -298,15 +319,31 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
         });
       }
 
+      // Redeem gift card inside transaction
+      if (giftCardId && giftCardDiscount > 0) {
+        const gc = await tx.giftCard.update({
+          where: { id: giftCardId },
+          data: {
+            currentValue: { decrement: giftCardDiscount },
+            isActive: undefined, // will set below
+          },
+        });
+        // Deactivate if fully used
+        if (Number(gc.currentValue) <= 0) {
+          await tx.giftCard.update({ where: { id: giftCardId }, data: { isActive: false } });
+        }
+      }
+
       // Create order
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       const subtotal = calculatedTotal;
+      const totalDiscount = couponDiscount + giftCardDiscount;
       const order = await tx.order.create({
         data: {
           orderNumber,
           subtotal,
-          discount: couponDiscount,
-          totalAmount: subtotal - couponDiscount + shippingAmount,
+          discount: totalDiscount,
+          totalAmount: Math.max(0, subtotal - totalDiscount + shippingAmount),
           shippingCost: shippingAmount,
           currency: body.currency,
           status: "PENDING",
@@ -566,7 +603,7 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
     });
     if (orderWithItems) {
       sendOrderReceivedEmail(orderWithItems).catch((err) =>
-        console.error("Order received email failed:", err.message)
+        logger.error("Order received email failed", { error: err.message })
       );
 
       // WhatsApp & SMS order confirmation (fire-and-forget)
@@ -625,7 +662,7 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
           });
         }
       } catch (e) {
-        console.error("Affiliate tracking error:", e);
+        logger.error("Affiliate tracking error", { error: e });
       }
     }
 
@@ -656,14 +693,14 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
 
     return res.json(responseBody);
   } catch (error) {
-    console.error("Checkout error:", error);
+    logger.error("Checkout error", { error });
     
     // Mark checkout attempt as failed
     if (checkoutAttemptId) {
       await prisma.checkoutAttempt.update({
         where: { id: checkoutAttemptId },
         data: { status: "FAILED" },
-      }).catch(err => console.error("Failed to update checkout attempt:", err));
+      }).catch(err => logger.error("Failed to update checkout attempt", { error: err }));
     }
     
     // Delete the idempotency Redis key to allow retry
@@ -679,10 +716,10 @@ router.post("/create", optionalAuth, async (req: AuthRequest, res: Response) => 
     }
     return res.status(500).json({ error: "Checkout failed" });
   }
-});
+}));
 
 // GET /api/checkout/paypal-return — called after user approves on PayPal
-router.get("/paypal-return", async (req: Request, res: Response) => {
+router.get("/paypal-return", asyncHandler(async (req: Request, res: Response) => {
   try {
     const token = req.query.token as string;
     const payerId = req.query.PayerID as string;
@@ -727,7 +764,7 @@ router.get("/paypal-return", async (req: Request, res: Response) => {
       const expectedUsd = await convertUgxToUsd(Number(order.totalAmount));
       const paidUsd = parseFloat(result.amount);
       if (Math.abs(paidUsd - expectedUsd) > 0.50) {
-        console.error(`PayPal amount mismatch for order ${orderId}: expected $${expectedUsd}, got $${paidUsd}`);
+        logger.error(`PayPal amount mismatch for order ${orderId}: expected $${expectedUsd}, got $${paidUsd}`);
         return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=amount_mismatch`);
       }
 
@@ -767,10 +804,10 @@ router.get("/paypal-return", async (req: Request, res: Response) => {
 
       // Auto-place dropshipping orders
       placeAliExpressOrdersForOrder(orderId).catch((err) =>
-        console.error(`AliExpress auto-order failed for ${orderId}:`, err.message)
+        logger.error(`AliExpress auto-order failed for ${orderId}`, { error: err.message })
       );
       placeCJOrdersForOrder(orderId).catch((err) =>
-        console.error(`CJ auto-order failed for ${orderId}:`, err.message)
+        logger.error(`CJ auto-order failed for ${orderId}`, { error: err.message })
       );
 
       // Clear cart after payment confirmation
@@ -793,14 +830,14 @@ router.get("/paypal-return", async (req: Request, res: Response) => {
       return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=payment_failed`);
     }
   } catch (error: any) {
-    console.error("PayPal return error:", error.message);
+    logger.error("PayPal return error", { error: error.message });
     const orderId = req.query.orderId as string;
     return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=paypal_error`);
   }
-});
+}));
 
 // GET /api/checkout/paypal-cancel — user cancelled on PayPal
-router.get("/paypal-cancel", async (req: Request, res: Response) => {
+router.get("/paypal-cancel", asyncHandler(async (req: Request, res: Response) => {
   const orderId = req.query.orderId as string;
 
   if (orderId) {
@@ -832,11 +869,11 @@ router.get("/paypal-cancel", async (req: Request, res: Response) => {
         });
       });
     } catch (e) {
-      console.error("PayPal cancel cleanup error:", e);
+      logger.error("PayPal cancel cleanup error", { error: e });
     }
   }
 
   return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=payment_cancelled`);
-});
+}));
 
 export default router;

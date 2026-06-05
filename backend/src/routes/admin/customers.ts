@@ -2,13 +2,15 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/customers — Combined registered users + guest order customers
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const {
       search,
@@ -187,14 +189,14 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Admin get customers error:", error);
+    logger.error("Admin get customers error", { error });
     return res.status(500).json({ error: "Failed to fetch customers" });
   }
-});
+}));
 
 // GET /api/admin/customers/segments — Get all unique segment tags with user counts
 // Must be defined before /:id to avoid route conflict
-router.get("/segments", async (_req: AuthRequest, res: Response) => {
+router.get("/segments", asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const users = await prisma.user.findMany({
       where: { segmentTags: { isEmpty: false } },
@@ -214,13 +216,13 @@ router.get("/segments", async (_req: AuthRequest, res: Response) => {
 
     return res.json({ segments });
   } catch (error) {
-    console.error("Get segments error:", error);
+    logger.error("Get segments error", { error });
     return res.status(500).json({ error: "Failed to fetch segments" });
   }
-});
+}));
 
 // GET /api/admin/customers/:id
-router.get("/:id", async (req: AuthRequest, res: Response) => {
+router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -273,13 +275,13 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       totalSpent: Number(totalSpent._sum?.totalAmount) || 0,
     });
   } catch (error) {
-    console.error("Admin get customer error:", error);
+    logger.error("Admin get customer error", { error });
     return res.status(500).json({ error: "Failed to fetch customer" });
   }
-});
+}));
 
 // PUT /api/admin/customers/:id
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const body = z
@@ -304,13 +306,13 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Customer updated", customer: updated });
   } catch (error) {
-    console.error("Admin update customer error:", error);
+    logger.error("Admin update customer error", { error });
     return res.status(500).json({ error: "Failed to update customer" });
   }
-});
+}));
 
 // POST /api/admin/customers/:id/segment — Set segment tags
-router.post("/:id/segment", async (req: AuthRequest, res: Response) => {
+router.post("/:id/segment", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { tags } = req.body;
@@ -332,10 +334,10 @@ router.post("/:id/segment", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Segment tags updated", customer: updated });
   } catch (error) {
-    console.error("Set segment tags error:", error);
+    logger.error("Set segment tags error", { error });
     return res.status(500).json({ error: "Failed to set segment tags" });
   }
-});
+}));
 
 /**
  * Auto-segment users based on behavior:
@@ -406,13 +408,13 @@ export async function autoSegmentUsers(): Promise<number> {
       }
     }
   } catch (error) {
-    console.error("Auto-segment users error:", error);
+    logger.error("Auto-segment users error", { error });
   }
   return updated;
 }
 
 // PUT /api/admin/customers/:id/role - Change a user's role
-router.put("/:id/role", async (req: AuthRequest, res: Response) => {
+router.put("/:id/role", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { role } = z.object({
@@ -478,6 +480,6 @@ router.put("/:id/role", async (req: AuthRequest, res: Response) => {
     }
     return res.status(500).json({ error: "Failed to change role" });
   }
-});
+}));
 
 export default router;

@@ -2,11 +2,13 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/coupons/validate
-router.get("/validate", async (req: Request, res: Response) => {
+router.get("/validate", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { code, amount } = req.query;
 
@@ -66,13 +68,13 @@ router.get("/validate", async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Validate coupon error:", error);
+    logger.error("Validate coupon error", { error });
     return res.status(500).json({ error: "Validation failed" });
   }
-});
+}));
 
 // POST /api/coupons/apply (used during checkout)
-router.post("/apply", async (req: Request, res: Response) => {
+router.post("/apply", asyncHandler(async (req: Request, res: Response) => {
   try {
     const schema = z.object({
       code: z.string(),
@@ -125,9 +127,9 @@ router.post("/apply", async (req: Request, res: Response) => {
       newTotal: Math.round((body.amount - discount) * 100) / 100,
     });
   } catch (error) {
-    console.error("Apply coupon error:", error);
+    logger.error("Apply coupon error", { error });
     return res.status(500).json({ error: "Failed to apply coupon" });
   }
-});
+}));
 
 export default router;

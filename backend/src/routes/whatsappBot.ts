@@ -2,6 +2,8 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { sendWhatsApp } from "../services/whatsapp";
 import { createFlutterwavePayment } from "../services/flutterwave";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -81,7 +83,7 @@ router.get("/webhook", (req: Request, res: Response) => {
 });
 
 // ─── WhatsApp Webhook — Incoming Messages ────────────────────────────────────
-router.post("/webhook", async (req: Request, res: Response) => {
+router.post("/webhook", asyncHandler(async (req: Request, res: Response) => {
   try {
     res.sendStatus(200); // Acknowledge immediately
 
@@ -96,9 +98,9 @@ router.post("/webhook", async (req: Request, res: Response) => {
 
     await handleMessage(from, text);
   } catch (error) {
-    console.error("WhatsApp bot error:", error);
+    logger.error("WhatsApp bot error", { error });
   }
-});
+}));
 
 async function handleMessage(phone: string, text: string): Promise<void> {
   const session = getSession(phone);
@@ -543,7 +545,7 @@ async function placeWhatsAppOrder(phone: string, lang: string): Promise<void> {
       }
     }
   } catch (error) {
-    console.error("WhatsApp order error:", error);
+    logger.error("WhatsApp order error", { error });
     await sendWhatsApp({
       to: phone,
       text: "Sorry, something went wrong placing your order. Please try again or reply *support* for help.",

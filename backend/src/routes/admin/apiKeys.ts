@@ -3,6 +3,7 @@ import prisma from "../../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../../middleware/auth";
 import { hashApiKey } from "../../middleware/apiKeyAuth";
 import crypto from "crypto";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
@@ -27,7 +28,7 @@ function validatePermissions(perms: string[]): string[] | null {
 }
 
 // GET / — List all API keys (never returns key or hash)
-router.get("/", async (_req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const keys = await prisma.apiKey.findMany({
       select: {
@@ -42,10 +43,10 @@ router.get("/", async (_req: AuthRequest, res: Response) => {
   } catch {
     res.status(500).json({ error: "Failed to list API keys" });
   }
-});
+}));
 
 // POST / — Create API key
-router.post("/", async (req: AuthRequest, res: Response) => {
+router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { name, permissions, rateLimit, ipWhitelist, expiresAt } = req.body;
     if (!name || typeof name !== "string" || name.trim().length === 0) {
@@ -96,10 +97,10 @@ router.post("/", async (req: AuthRequest, res: Response) => {
   } catch {
     res.status(500).json({ error: "Failed to create API key" });
   }
-});
+}));
 
 // PUT /:id — Update API key metadata (never changes the key itself)
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { name, permissions, rateLimit, isActive, ipWhitelist, expiresAt } = req.body;
 
@@ -137,20 +138,20 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
   } catch {
     res.status(500).json({ error: "Failed to update API key" });
   }
-});
+}));
 
 // DELETE /:id — Revoke API key
-router.delete("/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     await prisma.apiKey.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: "Failed to delete API key" });
   }
-});
+}));
 
 // POST /:id/regenerate — Regenerate key (new hash, new prefix)
-router.post("/:id/regenerate", async (req: AuthRequest, res: Response) => {
+router.post("/:id/regenerate", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const key = generateApiKey();
     const keyHash = hashApiKey(key);
@@ -168,6 +169,6 @@ router.post("/:id/regenerate", async (req: AuthRequest, res: Response) => {
   } catch {
     res.status(500).json({ error: "Failed to regenerate API key" });
   }
-});
+}));
 
 export default router;

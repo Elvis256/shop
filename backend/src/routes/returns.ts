@@ -3,6 +3,8 @@ import { ReturnReason, ReturnStatus } from "@prisma/client";
 import { z } from "zod";
 import { authenticate, optionalAuth, AuthRequest, requireAdmin } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -20,7 +22,7 @@ const createReturnSchema = z.object({
 });
 
 // Create a return request
-router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const data = createReturnSchema.parse(req.body);
     const userId = req.user?.id;
@@ -83,13 +85,13 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    console.error("Create return error:", error);
+    logger.error("Create return error", { error });
     res.status(500).json({ error: "Failed to create return request" });
   }
-});
+}));
 
 // Get user's return requests
-router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     
@@ -110,13 +112,13 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
 
     res.json({ returns });
   } catch (error) {
-    console.error("Get returns error:", error);
+    logger.error("Get returns error", { error });
     res.status(500).json({ error: "Failed to fetch return requests" });
   }
-});
+}));
 
 // GET /api/returns/admin/all — List all return requests (admin)
-router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/all", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const returns = await prisma.returnRequest.findMany({
       include: {
@@ -130,10 +132,10 @@ router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, r
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // PUT /api/returns/:id/status — Update return status (admin)
-router.put("/:id/status", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.put("/:id/status", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { status, adminNotes, refundAmount, refundMethod } = req.body;
     const updated = await prisma.returnRequest.update({
@@ -154,10 +156,10 @@ router.put("/:id/status", authenticate, requireAdmin, async (req: AuthRequest, r
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // Get single return request
-router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { id } = req.params;
@@ -186,13 +188,13 @@ router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
 
     res.json({ returnRequest });
   } catch (error) {
-    console.error("Get return error:", error);
+    logger.error("Get return error", { error });
     res.status(500).json({ error: "Failed to fetch return request" });
   }
-});
+}));
 
 // Cancel return request (only if pending)
-router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
+router.delete("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { id } = req.params;
@@ -212,9 +214,9 @@ router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
 
     res.json({ message: "Return request cancelled" });
   } catch (error) {
-    console.error("Cancel return error:", error);
+    logger.error("Cancel return error", { error });
     res.status(500).json({ error: "Failed to cancel return request" });
   }
-});
+}));
 
 export default router;

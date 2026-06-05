@@ -2,12 +2,14 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { asyncHandler } from "../../middleware/errorHandler";
 import {
   searchProducts,
   getProductDetail,
   getShippingInfo,
   calculateSellingPrice,
 } from "../../services/aliexpress";
+import { logger } from "../../lib/logger";
 
 const router = Router();
 router.use(authenticate, requireAdmin);
@@ -42,7 +44,7 @@ async function autoDetectCategory(productName: string): Promise<string | null> {
 // ── Search AliExpress products ──
 
 // GET /api/admin/aliexpress/search?q=keyword&page=1
-router.get("/search", async (req: AuthRequest, res: Response) => {
+router.get("/search", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const q = (req.query.q as string) || "";
     const page = parseInt(req.query.page as string) || 1;
@@ -51,15 +53,15 @@ router.get("/search", async (req: AuthRequest, res: Response) => {
     const result = await searchProducts(q, page);
     return res.json(result);
   } catch (error: any) {
-    console.error("AliExpress search error:", error.message);
+    logger.error("AliExpress search error", { error: error.message });
     return res.status(500).json({ error: "Search failed" });
   }
-});
+}));
 
 // ── Get AliExpress product details ──
 
 // GET /api/admin/aliexpress/product/:productId
-router.get("/product/:productId", async (req: AuthRequest, res: Response) => {
+router.get("/product/:productId", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = req.params;
     const [detail, shipping] = await Promise.all([
@@ -68,10 +70,10 @@ router.get("/product/:productId", async (req: AuthRequest, res: Response) => {
     ]);
     return res.json({ ...detail, shippingOptions: shipping.length ? shipping : detail.shippingOptions });
   } catch (error: any) {
-    console.error("AliExpress product detail error:", error.message);
+    logger.error("AliExpress product detail error", { error: error.message });
     return res.status(500).json({ error: "Failed to get product details" });
   }
-});
+}));
 
 // ── Import AliExpress product into shop ──
 
@@ -86,7 +88,7 @@ const ImportSchema = z.object({
 });
 
 // POST /api/admin/aliexpress/import
-router.post("/import", async (req: AuthRequest, res: Response) => {
+router.post("/import", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = ImportSchema.parse(req.body);
     const detail = await getProductDetail(body.aliexpressProductId);
@@ -172,16 +174,16 @@ router.post("/import", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Product imported successfully", product });
   } catch (error: any) {
-    console.error("AliExpress import error:", error.message);
+    logger.error("AliExpress import error", { error: error.message });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Import failed" });
   }
-});
+}));
 
 // POST /api/admin/aliexpress/import-from-url - Import by AliExpress URL
-router.post("/import-from-url", async (req: AuthRequest, res: Response) => {
+router.post("/import-from-url", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { url, markupType = "PERCENTAGE", markupValue = 80, categoryId, name, tags } = req.body;
     if (!url) return res.status(400).json({ error: "URL is required" });
@@ -267,10 +269,10 @@ router.post("/import-from-url", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Product imported from URL successfully", product });
   } catch (error: any) {
-    console.error("AliExpress URL import error:", error.message);
+    logger.error("AliExpress URL import error", { error: error.message });
     return res.status(500).json({ error: "URL import failed" });
   }
-});
+}));
 
 // ── Update markup for a product ──
 
@@ -280,7 +282,7 @@ const MarkupSchema = z.object({
 });
 
 // PUT /api/admin/aliexpress/products/:id/markup
-router.put("/products/:id/markup", async (req: AuthRequest, res: Response) => {
+router.put("/products/:id/markup", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const body = MarkupSchema.parse(req.body);
@@ -308,12 +310,12 @@ router.put("/products/:id/markup", async (req: AuthRequest, res: Response) => {
     }
     return res.status(500).json({ error: "Update failed" });
   }
-});
+}));
 
 // ── List all AliExpress-sourced products ──
 
 // GET /api/admin/aliexpress/products
-router.get("/products", async (req: AuthRequest, res: Response) => {
+router.get("/products", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
@@ -334,12 +336,12 @@ router.get("/products", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: "Failed to list products" });
   }
-});
+}));
 
 // ── Manual sync prices and stock for AliExpress products ──
 
 // POST /api/admin/aliexpress/sync
-router.post("/sync", async (req: AuthRequest, res: Response) => {
+router.post("/sync", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const productId = req.body.productId; // optional: sync single product
     const where: any = { aliexpressProductId: { not: null }, aliexpressAutoSync: true };
@@ -388,12 +390,12 @@ router.post("/sync", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: "Sync failed" });
   }
-});
+}));
 
 // ── List AliExpress order statuses ──
 
 // GET /api/admin/aliexpress/orders
-router.get("/orders", async (req: AuthRequest, res: Response) => {
+router.get("/orders", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
@@ -421,7 +423,7 @@ router.get("/orders", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: "Failed to list orders" });
   }
-});
+}));
 
 // ── Save AliExpress API settings ──
 
@@ -432,7 +434,7 @@ const SettingsSchema = z.object({
 });
 
 // PUT /api/admin/aliexpress/settings
-router.put("/settings", async (req: AuthRequest, res: Response) => {
+router.put("/settings", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = SettingsSchema.parse(req.body);
 
@@ -457,10 +459,10 @@ router.put("/settings", async (req: AuthRequest, res: Response) => {
     }
     return res.status(500).json({ error: "Failed to save settings" });
   }
-});
+}));
 
 // GET /api/admin/aliexpress/settings
-router.get("/settings", async (req: AuthRequest, res: Response) => {
+router.get("/settings", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const settings = await prisma.setting.findMany({
       where: { key: { in: ["ae_app_key", "ae_app_secret", "ae_access_token"] } },
@@ -480,6 +482,6 @@ router.get("/settings", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: "Failed to get settings" });
   }
-});
+}));
 
 export default router;

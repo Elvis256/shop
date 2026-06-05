@@ -1,11 +1,13 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { cacheGetOrSet, LONG_TTL } from "../lib/cache";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/categories
-router.get("/", async (_req: Request, res: Response) => {
+router.get("/", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const data = await cacheGetOrSet("categories:all", async () => {
       const categories = await prisma.category.findMany({
@@ -24,13 +26,13 @@ router.get("/", async (_req: Request, res: Response) => {
 
     return res.json({ categories: data });
   } catch (error) {
-    console.error("Get categories error:", error);
+    logger.error("Get categories error", { error });
     return res.status(500).json({ error: "Failed to fetch categories" });
   }
-});
+}));
 
 // GET /api/categories/:slug
-router.get("/:slug", async (req: Request, res: Response) => {
+router.get("/:slug", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -54,9 +56,9 @@ router.get("/:slug", async (req: Request, res: Response) => {
       productCount: category._count.products,
     });
   } catch (error) {
-    console.error("Get category error:", error);
+    logger.error("Get category error", { error });
     return res.status(500).json({ error: "Failed to fetch category" });
   }
-});
+}));
 
 export default router;

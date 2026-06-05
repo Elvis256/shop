@@ -1,13 +1,15 @@
 import { Router, Response } from "express";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // POST /api/admin/sellers/:id/recalculate-badges — Recalculate seller badges and trust score
-router.post("/:id/recalculate-badges", async (req: AuthRequest, res: Response) => {
+router.post("/:id/recalculate-badges", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const sellerId = req.params.id;
 
@@ -134,13 +136,13 @@ router.post("/:id/recalculate-badges", async (req: AuthRequest, res: Response) =
       },
     });
   } catch (error) {
-    console.error("Recalculate badges error:", error);
+    logger.error("Recalculate badges error", { error });
     return res.status(500).json({ error: "Failed to recalculate badges" });
   }
-});
+}));
 
 // POST /api/admin/sellers/recalculate-all-badges — Batch recalculate all seller badges
-router.post("/recalculate-all-badges", async (req: AuthRequest, res: Response) => {
+router.post("/recalculate-all-badges", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const sellers = await prisma.seller.findMany({
       where: { status: "APPROVED" },
@@ -189,9 +191,9 @@ router.post("/recalculate-all-badges", async (req: AuthRequest, res: Response) =
 
     return res.json({ message: `Recalculated badges for ${processed} sellers` });
   } catch (error) {
-    console.error("Batch recalculate error:", error);
+    logger.error("Batch recalculate error", { error });
     return res.status(500).json({ error: "Failed to batch recalculate" });
   }
-});
+}));
 
 export default router;

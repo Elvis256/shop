@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
+import { asyncHandler } from "../middleware/errorHandler";
 import {
   generateToken,
   createRefreshToken,
@@ -60,7 +61,7 @@ async function clearLoginAttempts(email: string): Promise<void> {
 }
 
 // POST /api/seller/auth/login
-router.post("/login", async (req, res: Response) => {
+router.post("/login", asyncHandler(async (req, res: Response) => {
   try {
     const body = SellerLoginSchema.parse(req.body);
 
@@ -130,6 +131,6 @@ router.post("/login", async (req, res: Response) => {
     }
     return res.status(500).json({ error: "Login failed" });
   }
-});
+}));
 
 export default router;

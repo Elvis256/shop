@@ -2,6 +2,8 @@ import { Router, Response } from "express";
 import { LoyaltyTxType } from "@prisma/client";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -53,7 +55,7 @@ const calculateTier = (lifetimePoints: number) => {
 };
 
 // Get loyalty account
-router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -85,13 +87,29 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       tiers: TIER_THRESHOLDS,
     });
   } catch (error) {
-    console.error("Get loyalty error:", error);
+    logger.error("Get loyalty error", { error });
     res.status(500).json({ error: "Failed to fetch loyalty account" });
   }
-});
+}));
+
+// Alias: /balance — used by checkout page
+router.get("/balance", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    const account = await getOrCreateAccount(userId);
+    const pointsValue = Math.floor(account.points / 100);
+    res.json({
+      account: { ...account, pointsValue },
+    });
+  } catch (error) {
+    logger.error("Get loyalty balance error", { error });
+    res.status(500).json({ error: "Failed to fetch loyalty balance" });
+  }
+}));
 
 // Get points history
-router.get("/transactions", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/transactions", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -132,13 +150,13 @@ router.get("/transactions", authenticate, async (req: AuthRequest, res: Response
       },
     });
   } catch (error) {
-    console.error("Get transactions error:", error);
+    logger.error("Get transactions error", { error });
     res.status(500).json({ error: "Failed to fetch transactions" });
   }
-});
+}));
 
 // Redeem points
-router.post("/redeem", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -203,10 +221,10 @@ router.post("/redeem", authenticate, async (req: AuthRequest, res: Response) => 
       remainingPoints: updatedAccount.points,
     });
   } catch (error) {
-    console.error("Redeem points error:", error);
+    logger.error("Redeem points error", { error });
     res.status(500).json({ error: "Failed to redeem points" });
   }
-});
+}));
 
 // Award points for purchase (called internally)
 export const awardPurchasePoints = async (userId: string, orderTotal: number, orderId: string) => {
@@ -238,13 +256,13 @@ export const awardPurchasePoints = async (userId: string, orderTotal: number, or
 
     return pointsEarned;
   } catch (error) {
-    console.error("Award points error:", error);
+    logger.error("Award points error", { error });
     return 0;
   }
 };
 
 // POST /api/loyalty/admin/multiplier — Set a global points multiplier event (admin)
-router.post("/admin/multiplier", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post("/admin/multiplier", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { multiplier, endsAt, description } = req.body;
 
@@ -266,13 +284,13 @@ router.post("/admin/multiplier", authenticate, requireAdmin, async (req: AuthReq
 
     return res.json({ message: "Points multiplier set", multiplier, endsAt, description });
   } catch (error) {
-    console.error("Set loyalty multiplier error:", error);
+    logger.error("Set loyalty multiplier error", { error });
     return res.status(500).json({ error: "Failed to set multiplier" });
   }
-});
+}));
 
 // GET /api/loyalty/admin/accounts — List all loyalty accounts (admin)
-router.get("/admin/accounts", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/accounts", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const accounts = await prisma.loyaltyAccount.findMany({
       include: {
@@ -285,10 +303,10 @@ router.get("/admin/accounts", authenticate, requireAdmin, async (_req: AuthReque
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // POST /api/loyalty/admin/adjust — Manually adjust points (admin)
-router.post("/admin/adjust", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post("/admin/adjust", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { userId, points, description } = req.body;
     if (!userId || points === undefined || !description) {
@@ -318,10 +336,10 @@ router.post("/admin/adjust", authenticate, requireAdmin, async (req: AuthRequest
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // GET /api/loyalty/admin/stats — Program stats (admin)
-router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/stats", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const totalMembers = await prisma.loyaltyAccount.count();
     const pointsCirculation = await prisma.loyaltyAccount.aggregate({ _sum: { points: true } });
@@ -342,10 +360,10 @@ router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest,
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // GET /api/loyalty/multiplier — Get current active multiplier
-router.get("/multiplier", async (_req: any, res: Response) => {
+router.get("/multiplier", asyncHandler(async (_req: any, res: Response) => {
   try {
     const setting = await prisma.setting.findUnique({ where: { key: "loyalty_multiplier" } });
 
@@ -363,9 +381,9 @@ router.get("/multiplier", async (_req: any, res: Response) => {
       description: isActive ? data.description : null,
     });
   } catch (error) {
-    console.error("Get loyalty multiplier error:", error);
+    logger.error("Get loyalty multiplier error", { error });
     return res.status(500).json({ error: "Failed to fetch multiplier" });
   }
-});
+}));
 
 export default router;

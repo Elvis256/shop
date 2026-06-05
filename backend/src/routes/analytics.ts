@@ -2,11 +2,13 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
 import geoip from "geoip-lite";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/analytics - Admin analytics (enhanced)
-router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.get("/", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { period = "30" } = req.query;
     const days = parseInt(period as string) || 30;
@@ -491,13 +493,13 @@ router.get("/", authenticate, requireAdmin, async (req: AuthRequest, res: Respon
       insights,
     });
   } catch (error) {
-    console.error("Analytics GET error:", error);
+    logger.error("Analytics GET error", { error });
     return res.status(500).json({ error: "Failed to load analytics" });
   }
-});
+}));
 
 // POST /api/analytics/track - record a page view
-router.post("/track", async (req: Request, res: Response) => {
+router.post("/track", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { path, referrer, sessionId } = req.body;
     if (!path) return res.status(400).json({ error: "path required" });
@@ -523,6 +525,6 @@ router.post("/track", async (req: Request, res: Response) => {
   } catch {
     return res.status(204).send();
   }
-});
+}));
 
 export default router;

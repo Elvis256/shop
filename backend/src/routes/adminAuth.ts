@@ -10,6 +10,8 @@ import {
   COOKIE_OPTIONS,
   REFRESH_COOKIE_OPTIONS,
 } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -70,7 +72,7 @@ async function recordAdminFailedLogin(email: string, ip: string): Promise<void> 
     await redis.set(key, JSON.stringify(attempts), "EX", LOCKOUT_SECONDS * 2);
 
     // Log suspicious activity
-    console.warn(`[ADMIN LOGIN] Failed attempt for ${email} from ${ip} (attempt #${attempts.count})`);
+    logger.warn(`[ADMIN LOGIN] Failed attempt for ${email} from ${ip} (attempt #${attempts.count})`);
   } catch {
     // Redis down — skip
   }
@@ -83,7 +85,7 @@ async function clearAdminLockout(email: string): Promise<void> {
 }
 
 // POST /api/admin/auth/login
-router.post("/login", async (req, res: Response) => {
+router.post("/login", asyncHandler(async (req, res: Response) => {
   const ip = req.ip || req.socket.remoteAddress || "unknown";
 
   try {
@@ -182,12 +184,12 @@ router.post("/login", async (req, res: Response) => {
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
   } catch (error) {
-    console.error("Admin login error:", error);
+    logger.error("Admin login error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Login failed" });
   }
-});
+}));
 
 export default router;

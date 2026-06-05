@@ -1,11 +1,13 @@
 import { Router } from "express";
 import prisma from "../lib/prisma";
 import { getLastUpdated } from "../services/exchangeRates";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // Get all active currencies
-router.get("/", async (req, res) => {
+router.get("/", asyncHandler(async (req, res) => {
   try {
     const currencies = await prisma.currency.findMany({
       where: { isActive: true },
@@ -14,13 +16,13 @@ router.get("/", async (req, res) => {
 
     res.json({ currencies, lastUpdated: getLastUpdated() });
   } catch (error) {
-    console.error("Get currencies error:", error);
+    logger.error("Get currencies error", { error });
     res.status(500).json({ error: "Failed to fetch currencies" });
   }
-});
+}));
 
 // Get exchange rates
-router.get("/rates", async (req, res) => {
+router.get("/rates", asyncHandler(async (req, res) => {
   try {
     const currencies = await prisma.currency.findMany({
       where: { isActive: true },
@@ -39,13 +41,13 @@ router.get("/rates", async (req, res) => {
 
     res.json({ base: "UGX", rates, currencies });
   } catch (error) {
-    console.error("Get exchange rates error:", error);
+    logger.error("Get exchange rates error", { error });
     res.status(500).json({ error: "Failed to fetch exchange rates" });
   }
-});
+}));
 
 // Convert amount between currencies
-router.get("/convert", async (req, res) => {
+router.get("/convert", asyncHandler(async (req, res) => {
   try {
     const { amount, from = "UGX", to = "USD" } = req.query;
 
@@ -78,9 +80,9 @@ router.get("/convert", async (req, res) => {
       rate: Number(toCurrency.exchangeRate) / Number(fromCurrency.exchangeRate),
     });
   } catch (error) {
-    console.error("Currency conversion error:", error);
+    logger.error("Currency conversion error", { error });
     res.status(500).json({ error: "Failed to convert currency" });
   }
-});
+}));
 
 export default router;

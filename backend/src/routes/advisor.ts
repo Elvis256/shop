@@ -2,12 +2,14 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { optionalAuth, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // ─── Private AI Wellness Advisor ──────────────────────────────────────────────
 // Powered by Claude API. No chat history stored. Fully private.
-router.post("/chat", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.post("/chat", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { message } = z.object({
       message: z.string().min(1).max(500),
@@ -70,7 +72,7 @@ When recommending products, include the product name and price. Keep it natural 
     });
 
     if (!response.ok) {
-      console.error("Claude API error:", response.status, await response.text());
+      logger.error("Claude API error", { status: response.status, body: await response.text() });
       return res.status(502).json({ error: "Advisor temporarily unavailable" });
     }
 
@@ -80,13 +82,13 @@ When recommending products, include the product name and price. Keep it natural 
     return res.json({ reply });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Message too long or empty" });
-    console.error("Advisor chat error:", error);
+    logger.error("Advisor chat error", { error });
     return res.status(500).json({ error: "Advisor temporarily unavailable" });
   }
-});
+}));
 
 // ─── AI Size Recommendation ───────────────────────────────────────────────────
-router.post("/size-recommendation", async (req: Request, res: Response) => {
+router.post("/size-recommendation", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { bust, waist, hips, height, productCategory } = z.object({
       bust: z.number().min(50).max(200),   // cm
@@ -143,6 +145,6 @@ router.post("/size-recommendation", async (req: Request, res: Response) => {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid measurements", details: (error as z.ZodError).errors });
     return res.status(500).json({ error: "Size recommendation failed" });
   }
-});
+}));
 
 export default router;

@@ -4,6 +4,8 @@ import { z } from "zod";
 import { authenticate, optionalAuth, AuthRequest, requireAdmin } from "../middleware/auth";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -25,7 +27,7 @@ const generateTicketNumber = () => {
 };
 
 // Create support ticket
-router.post("/", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.post("/", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const data = createTicketSchema.parse(req.body);
     const userId = req.user?.id;
@@ -61,13 +63,13 @@ router.post("/", optionalAuth, async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    console.error("Create ticket error:", error);
+    logger.error("Create ticket error", { error });
     res.status(500).json({ error: "Failed to create support ticket" });
   }
-});
+}));
 
 // Get user's tickets
-router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { status } = req.query;
@@ -93,13 +95,13 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
 
     res.json({ tickets });
   } catch (error) {
-    console.error("Get tickets error:", error);
+    logger.error("Get tickets error", { error });
     res.status(500).json({ error: "Failed to fetch tickets" });
   }
-});
+}));
 
 // Get ticket by number (for guests)
-router.get("/lookup/:ticketNumber", async (req, res) => {
+router.get("/lookup/:ticketNumber", asyncHandler(async (req, res) => {
   try {
     const { ticketNumber } = req.params;
     const { email } = req.query;
@@ -127,13 +129,13 @@ router.get("/lookup/:ticketNumber", async (req, res) => {
 
     res.json({ ticket });
   } catch (error) {
-    console.error("Lookup ticket error:", error);
+    logger.error("Lookup ticket error", { error });
     res.status(500).json({ error: "Failed to lookup ticket" });
   }
-});
+}));
 
 // PUT /api/tickets/:id — Update ticket (admin)
-router.put("/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { status, priority, assignedTo } = req.body;
     const updated = await prisma.supportTicket.update({
@@ -150,10 +152,10 @@ router.put("/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Res
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // Get single ticket
-router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { id } = req.params;
@@ -174,13 +176,13 @@ router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
 
     res.json({ ticket });
   } catch (error) {
-    console.error("Get ticket error:", error);
+    logger.error("Get ticket error", { error });
     res.status(500).json({ error: "Failed to fetch ticket" });
   }
-});
+}));
 
 // Add message to ticket
-router.post("/:id/messages", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/:id/messages", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { id } = req.params;
@@ -220,9 +222,9 @@ router.post("/:id/messages", authenticate, async (req: AuthRequest, res: Respons
 
     res.status(201).json({ message: newMessage });
   } catch (error) {
-    console.error("Add message error:", error);
+    logger.error("Add message error", { error });
     res.status(500).json({ error: "Failed to add message" });
   }
-});
+}));
 
 export default router;

@@ -2,11 +2,13 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/bundles — List active bundles with their products
-router.get("/", async (_req: Request, res: Response) => {
+router.get("/", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const bundles = await prisma.productBundle.findMany({
       where: { isActive: true },
@@ -47,15 +49,15 @@ router.get("/", async (_req: Request, res: Response) => {
       }))
     );
   } catch (error) {
-    console.error("List bundles error:", error);
+    logger.error("List bundles error", { error });
     return res.status(500).json({ error: "Failed to fetch bundles" });
   }
-});
+}));
 
 // GET /api/bundles/for-product/:productId — Get bundles containing this product
 router.get(
   "/for-product/:productId",
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { productId } = req.params;
 
@@ -112,14 +114,14 @@ router.get(
         })
       );
     } catch (error) {
-      console.error("Get bundles for product error:", error);
+      logger.error("Get bundles for product error", { error });
       return res.status(500).json({ error: "Failed to fetch bundles" });
     }
   }
-);
+));
 
 // GET /api/bundles/:slug — Get bundle detail with products and calculated prices
-router.get("/:slug", async (req: Request, res: Response) => {
+router.get("/:slug", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -177,13 +179,13 @@ router.get("/:slug", async (req: Request, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("Get bundle error:", error);
+    logger.error("Get bundle error", { error });
     return res.status(500).json({ error: "Failed to fetch bundle" });
   }
-});
+}));
 
 // POST /api/bundles/calculate-custom — Calculate custom bundle pricing with tier discounts
-router.post("/calculate-custom", async (req: Request, res: Response) => {
+router.post("/calculate-custom", asyncHandler(async (req: Request, res: Response) => {
   try {
     const schema = z.object({
       items: z.array(z.object({
@@ -251,13 +253,13 @@ router.post("/calculate-custom", async (req: Request, res: Response) => {
       totalItems,
     });
   } catch (error) {
-    console.error("Calculate custom bundle error:", error);
+    logger.error("Calculate custom bundle error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to calculate bundle" });
   }
-});
+}));
 
 // ─── Admin Routes ────────────────────────────────────────────────────────────
 
@@ -266,7 +268,7 @@ router.post(
   "/",
   authenticate,
   requireAdmin,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const schema = z.object({
         name: z.string().min(1).max(200),
@@ -303,7 +305,7 @@ router.post(
 
       return res.status(201).json({ message: "Bundle created", bundle });
     } catch (error) {
-      console.error("Create bundle error:", error);
+      logger.error("Create bundle error", { error });
       if (error instanceof z.ZodError) {
         return res
           .status(400)
@@ -312,14 +314,14 @@ router.post(
       return res.status(500).json({ error: "Failed to create bundle" });
     }
   }
-);
+));
 
 // PUT /api/bundles/:id — Update bundle
 router.put(
   "/:id",
   authenticate,
   requireAdmin,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -372,7 +374,7 @@ router.put(
 
       return res.json({ message: "Bundle updated", bundle });
     } catch (error) {
-      console.error("Update bundle error:", error);
+      logger.error("Update bundle error", { error });
       if (error instanceof z.ZodError) {
         return res
           .status(400)
@@ -381,14 +383,14 @@ router.put(
       return res.status(500).json({ error: "Failed to update bundle" });
     }
   }
-);
+));
 
 // DELETE /api/bundles/:id — Delete bundle
 router.delete(
   "/:id",
   authenticate,
   requireAdmin,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -403,10 +405,10 @@ router.delete(
 
       return res.json({ message: "Bundle deleted" });
     } catch (error) {
-      console.error("Delete bundle error:", error);
+      logger.error("Delete bundle error", { error });
       return res.status(500).json({ error: "Failed to delete bundle" });
     }
   }
-);
+));
 
 export default router;

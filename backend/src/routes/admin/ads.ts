@@ -1,12 +1,14 @@
 import { Router, Response } from "express";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/ads/stats
-router.get("/stats", async (_req: AuthRequest, res: Response) => {
+router.get("/stats", asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const [debitTxns, activeCampaigns, tierBreakdown] = await Promise.all([
       prisma.adTransaction.aggregate({
@@ -45,13 +47,13 @@ router.get("/stats", async (_req: AuthRequest, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("Admin ad stats error:", error);
+    logger.error("Admin ad stats error", { error });
     return res.status(500).json({ error: "Failed to fetch ad stats" });
   }
-});
+}));
 
 // GET /api/admin/ads/campaigns
-router.get("/campaigns", async (req: AuthRequest, res: Response) => {
+router.get("/campaigns", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { status, page = "1", limit = "20" } = req.query;
     const take = Math.min(parseInt(limit as string) || 20, 100);
@@ -98,9 +100,9 @@ router.get("/campaigns", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Admin ad campaigns error:", error);
+    logger.error("Admin ad campaigns error", { error });
     return res.status(500).json({ error: "Failed to fetch campaigns" });
   }
-});
+}));
 
 export default router;

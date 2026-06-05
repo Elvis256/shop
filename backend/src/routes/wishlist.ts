@@ -3,6 +3,8 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -10,7 +12,7 @@ const router = Router();
 router.use(authenticate);
 
 // GET /api/wishlist/pin-status - Check if user has a PIN set
-router.get("/pin-status", async (req: AuthRequest, res: Response) => {
+router.get("/pin-status", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
@@ -18,13 +20,13 @@ router.get("/pin-status", async (req: AuthRequest, res: Response) => {
     });
     return res.json({ hasPin: !!user?.wishlistPin });
   } catch (error) {
-    console.error("Get PIN status error:", error);
+    logger.error("Get PIN status error", { error });
     return res.status(500).json({ error: "Failed to check PIN status" });
   }
-});
+}));
 
 // POST /api/wishlist/set-pin - Set or update wishlist PIN
-router.post("/set-pin", async (req: AuthRequest, res: Response) => {
+router.post("/set-pin", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { pin, currentPin } = z.object({
       pin: z.string().min(4).max(6).regex(/^\d+$/, "PIN must be digits only"),
@@ -56,13 +58,13 @@ router.post("/set-pin", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Wishlist PIN set successfully" });
   } catch (error) {
-    console.error("Set PIN error:", error);
+    logger.error("Set PIN error", { error });
     return res.status(500).json({ error: "Failed to set PIN" });
   }
-});
+}));
 
 // POST /api/wishlist/verify-pin - Verify wishlist PIN
-router.post("/verify-pin", async (req: AuthRequest, res: Response) => {
+router.post("/verify-pin", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { pin } = z.object({
       pin: z.string().min(4).max(6),
@@ -84,13 +86,13 @@ router.post("/verify-pin", async (req: AuthRequest, res: Response) => {
 
     return res.json({ valid: true, message: "PIN verified" });
   } catch (error) {
-    console.error("Verify PIN error:", error);
+    logger.error("Verify PIN error", { error });
     return res.status(500).json({ error: "Failed to verify PIN" });
   }
-});
+}));
 
 // DELETE /api/wishlist/remove-pin - Remove wishlist PIN
-router.delete("/remove-pin", async (req: AuthRequest, res: Response) => {
+router.delete("/remove-pin", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { pin } = z.object({
       pin: z.string().min(4).max(6),
@@ -117,13 +119,13 @@ router.delete("/remove-pin", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "PIN removed successfully" });
   } catch (error) {
-    console.error("Remove PIN error:", error);
+    logger.error("Remove PIN error", { error });
     return res.status(500).json({ error: "Failed to remove PIN" });
   }
-});
+}));
 
 // GET /api/wishlist/collections — Get list of user's collection names
-router.get("/collections", async (req: AuthRequest, res: Response) => {
+router.get("/collections", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const items = await prisma.wishlistItem.findMany({
       where: { userId: req.user!.id },
@@ -136,13 +138,13 @@ router.get("/collections", async (req: AuthRequest, res: Response) => {
       collections: items.map((item) => item.collectionName),
     });
   } catch (error) {
-    console.error("Get wishlist collections error:", error);
+    logger.error("Get wishlist collections error", { error });
     return res.status(500).json({ error: "Failed to fetch collections" });
   }
-});
+}));
 
 // GET /api/wishlist
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const collection = req.query.collection as string | undefined;
     const where: any = { userId: req.user!.id };
@@ -184,13 +186,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       count: items.length,
     });
   } catch (error) {
-    console.error("Get wishlist error:", error);
+    logger.error("Get wishlist error", { error });
     return res.status(500).json({ error: "Failed to fetch wishlist" });
   }
-});
+}));
 
 // POST /api/wishlist
-router.post("/", async (req: AuthRequest, res: Response) => {
+router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = z.object({ productId: z.string() }).parse(req.body);
     const collectionName = (req.body.collectionName as string) || "Wishlist";
@@ -222,13 +224,13 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ message: "Added to wishlist", id: item.id });
   } catch (error) {
-    console.error("Add to wishlist error:", error);
+    logger.error("Add to wishlist error", { error });
     return res.status(500).json({ error: "Failed to add to wishlist" });
   }
-});
+}));
 
 // DELETE /api/wishlist/:productId
-router.delete("/:productId", async (req: AuthRequest, res: Response) => {
+router.delete("/:productId", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = req.params;
 
@@ -242,13 +244,13 @@ router.delete("/:productId", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Removed from wishlist" });
   } catch (error) {
-    console.error("Remove from wishlist error:", error);
+    logger.error("Remove from wishlist error", { error });
     return res.status(500).json({ error: "Failed to remove from wishlist" });
   }
-});
+}));
 
 // POST /api/wishlist/:productId/move-to-cart
-router.post("/:productId/move-to-cart", async (req: AuthRequest, res: Response) => {
+router.post("/:productId/move-to-cart", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = req.params;
 
@@ -286,9 +288,9 @@ router.post("/:productId/move-to-cart", async (req: AuthRequest, res: Response) 
 
     return res.json({ message: "Moved to cart" });
   } catch (error) {
-    console.error("Move to cart error:", error);
+    logger.error("Move to cart error", { error });
     return res.status(500).json({ error: "Failed to move to cart" });
   }
-});
+}));
 
 export default router;

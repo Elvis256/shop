@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -18,7 +20,7 @@ const requireStaff = (req: AuthRequest, res: Response, next: Function) => {
 router.use(requireStaff);
 
 // GET /api/admin/activity - List activity logs
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", asyncHandler(async (req: Request, res: Response) => {
   try {
     const {
       page = "1",
@@ -98,13 +100,13 @@ router.get("/", async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("List activity logs error:", error);
+    logger.error("List activity logs error", { error });
     return res.status(500).json({ error: "Failed to fetch activity logs" });
   }
-});
+}));
 
 // GET /api/admin/activity/stats - Get activity statistics
-router.get("/stats", async (_req: Request, res: Response) => {
+router.get("/stats", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -176,13 +178,13 @@ router.get("/stats", async (_req: Request, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("Activity stats error:", error);
+    logger.error("Activity stats error", { error });
     return res.status(500).json({ error: "Failed to fetch activity stats" });
   }
-});
+}));
 
 // GET /api/admin/activity/entity/:type/:id - Get activity for specific entity
-router.get("/entity/:type/:id", async (req: Request, res: Response) => {
+router.get("/entity/:type/:id", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { type, id } = req.params;
     const { limit = "20" } = req.query;
@@ -207,9 +209,9 @@ router.get("/entity/:type/:id", async (req: Request, res: Response) => {
 
     return res.json({ logs });
   } catch (error) {
-    console.error("Entity activity error:", error);
+    logger.error("Entity activity error", { error });
     return res.status(500).json({ error: "Failed to fetch entity activity" });
   }
-});
+}));
 
 export default router;

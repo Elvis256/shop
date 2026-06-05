@@ -1,11 +1,13 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, optionalAuth, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /api/browse/track — Track a product view
-router.post("/track", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.post("/track", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = req.body;
     if (!productId) {
@@ -26,13 +28,13 @@ router.post("/track", optionalAuth, async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ message: "Browse event tracked" });
   } catch (error) {
-    console.error("Track browse event error:", error);
+    logger.error("Track browse event error", { error });
     return res.status(500).json({ error: "Failed to track browse event" });
   }
-});
+}));
 
 // GET /api/browse/history — Get user's browse history (last 20)
-router.get("/history", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/history", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
 
@@ -67,13 +69,13 @@ router.get("/history", authenticate, async (req: AuthRequest, res: Response) => 
       })),
     });
   } catch (error) {
-    console.error("Get browse history error:", error);
+    logger.error("Get browse history error", { error });
     return res.status(500).json({ error: "Failed to fetch browse history" });
   }
-});
+}));
 
 // GET /api/browse/personalized — Personalized product recommendations
-router.get("/personalized", optionalAuth, async (req: AuthRequest, res: Response) => {
+router.get("/personalized", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
 
@@ -161,9 +163,9 @@ router.get("/personalized", optionalAuth, async (req: AuthRequest, res: Response
       source: "personalized",
     });
   } catch (error) {
-    console.error("Get personalized recommendations error:", error);
+    logger.error("Get personalized recommendations error", { error });
     return res.status(500).json({ error: "Failed to fetch recommendations" });
   }
-});
+}));
 
 export default router;

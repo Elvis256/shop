@@ -1,13 +1,15 @@
 import { Router, Response } from "express";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // GET /conversations — List admin conversations
-router.get("/conversations", async (req: AuthRequest, res: Response) => {
+router.get("/conversations", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const conversations = await prisma.conversation.findMany({
       where: { adminId: { not: null } },
@@ -37,13 +39,13 @@ router.get("/conversations", async (req: AuthRequest, res: Response) => {
 
     return res.json({ conversations: result });
   } catch (error) {
-    console.error("List admin conversations error:", error);
+    logger.error("List admin conversations error", { error });
     return res.status(500).json({ error: "Failed to load conversations" });
   }
-});
+}));
 
 // POST /conversations — Start conversation with seller
-router.post("/conversations", async (req: AuthRequest, res: Response) => {
+router.post("/conversations", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { sellerId, message } = req.body;
     if (!sellerId) {
@@ -113,13 +115,13 @@ router.post("/conversations", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ conversation });
   } catch (error) {
-    console.error("Create admin conversation error:", error);
+    logger.error("Create admin conversation error", { error });
     return res.status(500).json({ error: "Failed to create conversation" });
   }
-});
+}));
 
 // GET /conversations/:id/messages — Get messages
-router.get("/conversations/:id/messages", async (req: AuthRequest, res: Response) => {
+router.get("/conversations/:id/messages", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const conversation = await prisma.conversation.findUnique({
       where: { id: req.params.id },
@@ -144,13 +146,13 @@ router.get("/conversations/:id/messages", async (req: AuthRequest, res: Response
 
     return res.json({ conversation, messages });
   } catch (error) {
-    console.error("Get admin messages error:", error);
+    logger.error("Get admin messages error", { error });
     return res.status(500).json({ error: "Failed to load messages" });
   }
-});
+}));
 
 // POST /conversations/:id/messages — Send message as admin
-router.post("/conversations/:id/messages", async (req: AuthRequest, res: Response) => {
+router.post("/conversations/:id/messages", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const conversation = await prisma.conversation.findUnique({
       where: { id: req.params.id },
@@ -181,9 +183,9 @@ router.post("/conversations/:id/messages", async (req: AuthRequest, res: Respons
 
     return res.status(201).json({ message: chatMessage });
   } catch (error) {
-    console.error("Send admin message error:", error);
+    logger.error("Send admin message error", { error });
     return res.status(500).json({ error: "Failed to send message" });
   }
-});
+}));
 
 export default router;

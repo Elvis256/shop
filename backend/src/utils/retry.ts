@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger";
 /**
  * Retry utility with exponential backoff
  * Used for unreliable external API calls (payments, etc.)
@@ -69,7 +70,7 @@ export async function withRetry<T>(
 
       // Calculate delay and wait
       const delay = calculateDelay(attempt, opts.baseDelayMs, opts.maxDelayMs);
-      console.log(`Retry attempt ${attempt + 1}/${opts.maxRetries} after ${Math.round(delay)}ms`);
+      logger.info(`Retry attempt ${attempt + 1}/${opts.maxRetries} after ${Math.round(delay)}ms`);
       await sleep(delay);
     }
   }
@@ -127,7 +128,7 @@ export async function withCircuitBreaker<T>(
     
     if (state.failures >= CIRCUIT_THRESHOLD) {
       state.isOpen = true;
-      console.warn(`Circuit breaker opened for ${key} after ${state.failures} failures`);
+      logger.warn(`Circuit breaker opened for ${key} after ${state.failures} failures`);
     }
     
     throw error;

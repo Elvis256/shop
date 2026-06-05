@@ -3,6 +3,8 @@ import prisma from "../lib/prisma";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -20,7 +22,7 @@ const requireAdmin = (req: AuthRequest, res: Response, next: Function) => {
 router.use(requireAdmin);
 
 // GET /api/admin/staff - List all staff members (ADMIN, MANAGER roles)
-router.get("/", async (_req: Request, res: Response) => {
+router.get("/", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const staff = await prisma.user.findMany({
       where: {
@@ -52,10 +54,10 @@ router.get("/", async (_req: Request, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("List staff error:", error);
+    logger.error("List staff error", { error });
     return res.status(500).json({ error: "Failed to fetch staff" });
   }
-});
+}));
 
 // POST /api/admin/staff - Create new staff member
 const CreateStaffSchema = z.object({
@@ -66,7 +68,7 @@ const CreateStaffSchema = z.object({
   phone: z.string().optional(),
 });
 
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", asyncHandler(async (req: Request, res: Response) => {
   try {
     const data = CreateStaffSchema.parse(req.body);
 
@@ -106,13 +108,13 @@ router.post("/", async (req: Request, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Create staff error:", error);
+    logger.error("Create staff error", { error });
     return res.status(500).json({ error: "Failed to create staff member" });
   }
-});
+}));
 
 // GET /api/admin/staff/:id - Get staff member details
-router.get("/:id", async (req: Request, res: Response) => {
+router.get("/:id", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -150,10 +152,10 @@ router.get("/:id", async (req: Request, res: Response) => {
 
     return res.json(user);
   } catch (error) {
-    console.error("Get staff error:", error);
+    logger.error("Get staff error", { error });
     return res.status(500).json({ error: "Failed to fetch staff member" });
   }
-});
+}));
 
 // PUT /api/admin/staff/:id - Update staff member
 const UpdateStaffSchema = z.object({
@@ -163,7 +165,7 @@ const UpdateStaffSchema = z.object({
   password: z.string().min(8).optional(),
 });
 
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const data = UpdateStaffSchema.parse(req.body);
@@ -200,13 +202,13 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Update staff error:", error);
+    logger.error("Update staff error", { error });
     return res.status(500).json({ error: "Failed to update staff member" });
   }
-});
+}));
 
 // DELETE /api/admin/staff/:id - Remove staff member
-router.delete("/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -235,9 +237,9 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Staff member removed" });
   } catch (error) {
-    console.error("Delete staff error:", error);
+    logger.error("Delete staff error", { error });
     return res.status(500).json({ error: "Failed to remove staff member" });
   }
-});
+}));
 
 export default router;

@@ -18,6 +18,7 @@ import {
 import { sendWelcomeEmail, sendPasswordResetEmail } from "../lib/email";
 import { sendVerificationEmail, sendWelcomeEmail as sendVerifiedWelcome } from "../services/email";
 import { logSecurityEvent } from "../middleware/securityEvents";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -65,7 +66,7 @@ const ChangePasswordSchema = z.object({
 });
 
 // POST /api/auth/register
-router.post("/register", async (req, res: Response) => {
+router.post("/register", asyncHandler(async (req, res: Response) => {
   try {
     const body = RegisterSchema.parse(req.body);
     const normalizedEmail = body.email.toLowerCase().trim();
@@ -109,7 +110,7 @@ router.post("/register", async (req, res: Response) => {
     res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
 
     // Send verification email (async, don't wait)
-    sendVerificationEmail(user.email, verificationToken, user.name || undefined).catch(console.error);
+    sendVerificationEmail(user.email, verificationToken, user.name || undefined).catch(err => logger.error('send_verification_email_failed', { error: err }));
 
     // Also send legacy welcome email
     sendWelcomeEmail({ email: user.email, name: user.name || undefined });
@@ -119,13 +120,13 @@ router.post("/register", async (req, res: Response) => {
       user,
     });
   } catch (error) {
-    console.error("Register error:", error);
+    logger.error("Register error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Registration failed" });
   }
-});
+}));
 
 // Redis-backed login attempt tracking (falls back gracefully if Redis unavailable)
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -143,7 +144,7 @@ async function checkAccountLockout(email: string): Promise<{ locked: boolean; re
     return { locked: false };
   } catch {
     // Redis down — fail open to avoid blocking all logins; rate limiting still applies
-    console.error("Redis unavailable for lockout check — allowing login");
+    logger.error("Redis unavailable for lockout check — allowing login");
     return { locked: false };
   }
 }
@@ -205,7 +206,7 @@ async function clearIpAttempts(ip: string): Promise<void> {
 }
 
 // POST /api/auth/login
-router.post("/login", async (req, res: Response) => {
+router.post("/login", asyncHandler(async (req, res: Response) => {
   try {
     const body = LoginSchema.parse(req.body);
     const normalizedEmail = body.email.toLowerCase().trim();
@@ -320,16 +321,16 @@ router.post("/login", async (req, res: Response) => {
       user: { id: user.id, email: user.email, name: user.name, role: user.role, seller: seller || null },
     });
   } catch (error) {
-    console.error("Login error:", error);
+    logger.error("Login error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Login failed" });
   }
-});
+}));
 
 // POST /api/auth/forgot-password
-router.post("/forgot-password", async (req, res: Response) => {
+router.post("/forgot-password", asyncHandler(async (req, res: Response) => {
   try {
     const body = ForgotPasswordSchema.parse(req.body);
 
@@ -369,13 +370,13 @@ router.post("/forgot-password", async (req, res: Response) => {
 
     return res.json({ message: "If the email exists, a reset link has been sent" });
   } catch (error) {
-    console.error("Forgot password error:", error);
+    logger.error("Forgot password error", { error });
     return res.status(500).json({ error: "Request failed" });
   }
-});
+}));
 
 // POST /api/auth/reset-password
-router.post("/reset-password", async (req, res: Response) => {
+router.post("/reset-password", asyncHandler(async (req, res: Response) => {
   try {
     const body = ResetPasswordSchema.parse(req.body);
 
@@ -403,13 +404,13 @@ router.post("/reset-password", async (req, res: Response) => {
 
     return res.json({ message: "Password reset successful" });
   } catch (error) {
-    console.error("Reset password error:", error);
+    logger.error("Reset password error", { error });
     return res.status(500).json({ error: "Reset failed" });
   }
-});
+}));
 
 // GET /api/auth/me
-router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/me", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
@@ -448,13 +449,13 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
 
     return res.json({ ...user, seller: seller || null });
   } catch (error) {
-    console.error("Get profile error:", error);
+    logger.error("Get profile error", { error });
     return res.status(500).json({ error: "Failed to fetch profile" });
   }
-});
+}));
 
 // GET /api/auth/dashboard — rich customer dashboard data
-router.get("/dashboard", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/dashboard", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
 
@@ -539,13 +540,13 @@ router.get("/dashboard", authenticate, async (req: AuthRequest, res: Response) =
       storeCredit: Number(storeCredit?.balance || 0),
     });
   } catch (error) {
-    console.error("Dashboard error:", error);
+    logger.error("Dashboard error", { error });
     return res.status(500).json({ error: "Failed to load dashboard" });
   }
-});
+}));
 
 // PUT /api/auth/me
-router.put("/me", authenticate, async (req: AuthRequest, res: Response) => {
+router.put("/me", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = UpdateProfileSchema.parse(req.body);
 
@@ -557,13 +558,13 @@ router.put("/me", authenticate, async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Profile updated", user });
   } catch (error) {
-    console.error("Update profile error:", error);
+    logger.error("Update profile error", { error });
     return res.status(500).json({ error: "Update failed" });
   }
-});
+}));
 
 // POST /api/auth/change-password
-router.post("/change-password", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/change-password", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = ChangePasswordSchema.parse(req.body);
 
@@ -588,13 +589,13 @@ router.post("/change-password", authenticate, async (req: AuthRequest, res: Resp
 
     return res.json({ message: "Password changed successfully" });
   } catch (error) {
-    console.error("Change password error:", error);
+    logger.error("Change password error", { error });
     return res.status(500).json({ error: "Password change failed" });
   }
-});
+}));
 
 // POST /api/auth/verify-email
-router.post("/verify-email", async (req, res: Response) => {
+router.post("/verify-email", asyncHandler(async (req, res: Response) => {
   try {
     const { token } = req.body;
 
@@ -627,17 +628,17 @@ router.post("/verify-email", async (req, res: Response) => {
     ]);
 
     // Send welcome email
-    sendVerifiedWelcome(verification.user.email, verification.user.name || undefined).catch(console.error);
+    sendVerifiedWelcome(verification.user.email, verification.user.name || undefined).catch(err => logger.error('send_verified_welcome_failed', { error: err }));
 
     return res.json({ message: "Email verified successfully! Welcome to Pleasure Zone Uganda." });
   } catch (error) {
-    console.error("Verify email error:", error);
+    logger.error("Verify email error", { error });
     return res.status(500).json({ error: "Verification failed" });
   }
-});
+}));
 
 // POST /api/auth/resend-verification
-router.post("/resend-verification", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/resend-verification", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
     
@@ -669,13 +670,13 @@ router.post("/resend-verification", authenticate, async (req: AuthRequest, res: 
 
     return res.json({ message: "Verification email sent. Please check your inbox." });
   } catch (error) {
-    console.error("Resend verification error:", error);
+    logger.error("Resend verification error", { error });
     return res.status(500).json({ error: "Failed to resend verification email" });
   }
-});
+}));
 
 // POST /api/auth/logout
-router.post("/logout", async (req, res: Response) => {
+router.post("/logout", asyncHandler(async (req, res: Response) => {
   // Invalidate refresh token if present
   const refreshToken = req.cookies?.refresh_token;
   if (refreshToken) {
@@ -685,23 +686,23 @@ router.post("/logout", async (req, res: Response) => {
   res.clearCookie("auth_token", { path: "/" });
   res.clearCookie("refresh_token", { path: "/api/auth" });
   return res.json({ message: "Logged out successfully" });
-});
+}));
 
 // POST /api/auth/logout-all - Logout from all devices
-router.post("/logout-all", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/logout-all", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     await invalidateAllRefreshTokens(req.user!.id);
     res.clearCookie("auth_token", { path: "/" });
     res.clearCookie("refresh_token", { path: "/api/auth" });
     return res.json({ message: "Logged out from all devices" });
   } catch (error) {
-    console.error("Logout all error:", error);
+    logger.error("Logout all error", { error });
     return res.status(500).json({ error: "Logout failed" });
   }
-});
+}));
 
 // POST /api/auth/refresh - Refresh access token
-router.post("/refresh", async (req, res: Response) => {
+router.post("/refresh", asyncHandler(async (req, res: Response) => {
   try {
     const refreshToken = req.cookies?.refresh_token;
     
@@ -726,14 +727,14 @@ router.post("/refresh", async (req, res: Response) => {
       user: result.user,
     });
   } catch (error) {
-    console.error("Refresh token error:", error);
+    logger.error("Refresh token error", { error });
     return res.status(500).json({ error: "Token refresh failed" });
   }
-});
+}));
 
 // GET /api/auth/check - Check if user is authenticated (for frontend)
-router.get("/check", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/check", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   return res.json({ authenticated: true, user: req.user });
-});
+}));
 
 export default router;

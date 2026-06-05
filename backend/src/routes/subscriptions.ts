@@ -1,11 +1,13 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /api/subscriptions — Subscribe to a product
-router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { productId, quantity, intervalDays } = req.body;
@@ -46,13 +48,13 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ subscription });
   } catch (error) {
-    console.error("Create subscription error:", error);
+    logger.error("Create subscription error", { error });
     return res.status(500).json({ error: "Failed to create subscription" });
   }
-});
+}));
 
 // GET /api/subscriptions — List user's active subscriptions
-router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
 
@@ -68,13 +70,13 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
 
     return res.json({ subscriptions });
   } catch (error) {
-    console.error("Get subscriptions error:", error);
+    logger.error("Get subscriptions error", { error });
     return res.status(500).json({ error: "Failed to fetch subscriptions" });
   }
-});
+}));
 
 // GET /api/subscriptions/admin/stats — Subscription stats (admin)
-router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/stats", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const active = await prisma.subscription.count({ where: { status: "ACTIVE" } });
     const paused = await prisma.subscription.count({ where: { status: "PAUSED" } });
@@ -88,10 +90,10 @@ router.get("/admin/stats", authenticate, requireAdmin, async (_req: AuthRequest,
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // PUT /api/subscriptions/admin/:id — Admin update subscription
-router.put("/admin/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.put("/admin/:id", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { status, intervalDays, nextDelivery } = req.body;
     const updated = await prisma.subscription.update({
@@ -110,10 +112,10 @@ router.put("/admin/:id", authenticate, requireAdmin, async (req: AuthRequest, re
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // PUT /api/subscriptions/:id — Update subscription
-router.put("/:id", authenticate, async (req: AuthRequest, res: Response) => {
+router.put("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { id } = req.params;
@@ -145,13 +147,13 @@ router.put("/:id", authenticate, async (req: AuthRequest, res: Response) => {
 
     return res.json({ subscription: updated });
   } catch (error) {
-    console.error("Update subscription error:", error);
+    logger.error("Update subscription error", { error });
     return res.status(500).json({ error: "Failed to update subscription" });
   }
-});
+}));
 
 // DELETE /api/subscriptions/:id — Cancel subscription
-router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
+router.delete("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { id } = req.params;
@@ -171,13 +173,41 @@ router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Subscription cancelled" });
   } catch (error) {
-    console.error("Cancel subscription error:", error);
+    logger.error("Cancel subscription error", { error });
     return res.status(500).json({ error: "Failed to cancel subscription" });
   }
-});
+}));
+
+// POST /api/subscriptions/:id/skip — Skip next delivery
+router.post("/:id/skip", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { id } = req.params;
+
+    const subscription = await prisma.subscription.findUnique({ where: { id } });
+    if (!subscription) return res.status(404).json({ error: "Subscription not found" });
+    if (subscription.userId !== userId) return res.status(403).json({ error: "Not authorized" });
+    if (subscription.status !== "ACTIVE") return res.status(400).json({ error: "Subscription is not active" });
+
+    // Advance nextDelivery by intervalDays
+    const next = new Date(subscription.nextDelivery);
+    const days = subscription.intervalDays || 30;
+    next.setDate(next.getDate() + days);
+
+    await prisma.subscription.update({
+      where: { id },
+      data: { nextDelivery: next },
+    });
+
+    return res.json({ message: "Next delivery skipped", nextDelivery: next.toISOString() });
+  } catch (error) {
+    logger.error("Skip subscription error", { error });
+    return res.status(500).json({ error: "Failed to skip delivery" });
+  }
+}));
 
 // GET /api/subscriptions/admin — List all subscriptions (admin) — alias for /admin/all
-router.get("/admin", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.get("/admin", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { status, search, page = "1", limit = "50" } = req.query;
     const take = Math.min(parseInt(limit as string) || 50, 200);
@@ -209,13 +239,13 @@ router.get("/admin", authenticate, requireAdmin, async (req: AuthRequest, res: R
 
     return res.json({ subscriptions, total });
   } catch (error) {
-    console.error("Admin get subscriptions error:", error);
+    logger.error("Admin get subscriptions error", { error });
     return res.status(500).json({ error: "Failed to fetch subscriptions" });
   }
-});
+}));
 
 // DELETE /api/subscriptions/admin/:id — Admin cancel subscription
-router.delete("/admin/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.delete("/admin/:id", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     await prisma.subscription.update({
       where: { id: req.params.id },
@@ -225,10 +255,10 @@ router.delete("/admin/:id", authenticate, requireAdmin, async (req: AuthRequest,
   } catch (error) {
     return res.status(500).json({ error: "Failed to cancel subscription" });
   }
-});
+}));
 
 // GET /api/subscriptions/admin/all — List all subscriptions (admin)
-router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/all", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const subscriptions = await prisma.subscription.findMany({
       include: {
@@ -240,9 +270,9 @@ router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, r
 
     return res.json({ subscriptions });
   } catch (error) {
-    console.error("Admin get subscriptions error:", error);
+    logger.error("Admin get subscriptions error", { error });
     return res.status(500).json({ error: "Failed to fetch subscriptions" });
   }
-});
+}));
 
 export default router;

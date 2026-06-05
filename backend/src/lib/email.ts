@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { logger } from "./logger";
 
 function isSmtpConfigured(): boolean {
   const user = process.env.SMTP_USER || "";
@@ -10,7 +11,7 @@ function isSmtpConfigured(): boolean {
 
 const smtpReady = isSmtpConfigured();
 if (!smtpReady) {
-  console.warn("⚠️  Email sending disabled: SMTP credentials not configured (placeholder values detected)");
+  logger.warn("Email sending disabled: SMTP credentials not configured (placeholder values detected)");
 }
 
 const transporter = smtpReady
@@ -66,7 +67,7 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
         <ul>
           ${data.items.map((item: any) => `<li>${item.name} x ${item.quantity} - UGX ${Number(item.price).toLocaleString()}</li>`).join("")}
         </ul>
-        ${data.paymentMethod === "COD" ? '<p style="color: #2a2a2a; font-weight: bold;">💰 Please have the exact amount ready at delivery.</p>' : ""}
+        ${data.paymentMethod === "COD" ? '<p style="color: #2a2a2a; font-weight: bold;">Please have the exact amount ready at delivery.</p>' : ""}
         <p style="color: #666; font-size: 14px;"><em>Your order will be shipped in plain, unmarked packaging for your privacy.</em></p>
         <a href="${process.env.BASE_URL}/orders/${data.orderId}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Track Order</a>
       </div>
@@ -227,7 +228,7 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
 export async function sendEmail({ to, template, data }: SendEmailOptions): Promise<boolean> {
   try {
     if (!transporter) {
-      console.log(`📧 Email sending skipped (${template} to ${to}): SMTP not configured`);
+      logger.info(`Email sending skipped (${template} to ${to}): SMTP not configured`);
       return false;
     }
 
@@ -249,10 +250,10 @@ export async function sendEmail({ to, template, data }: SendEmailOptions): Promi
       html: emailTemplate.html(data),
     });
 
-    console.log(`📧 Email sent: ${template} to ${to}`);
+    logger.info(`Email sent: ${template} to ${to}`);
     return true;
   } catch (error) {
-    console.error("Email send error:", error);
+    logger.error("Email send error", { error });
     return false;
   }
 }

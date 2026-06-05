@@ -2,6 +2,8 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 router.use(authenticate, requireAdmin);
@@ -18,7 +20,7 @@ const zoneSchema = z.object({
 });
 
 // GET /api/admin/shipping-zones
-router.get("/", async (_req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const [zones, orderStats] = await Promise.all([
       prisma.shippingZone.findMany({ orderBy: { createdAt: "asc" } }),
@@ -41,13 +43,13 @@ router.get("/", async (_req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Get shipping zones error:", error);
+    logger.error("Get shipping zones error", { error });
     return res.status(500).json({ error: "Failed to fetch shipping zones" });
   }
-});
+}));
 
 // POST /api/admin/shipping-zones
-router.post("/", async (req: AuthRequest, res: Response) => {
+router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const data = zoneSchema.parse(req.body);
     const zone = await prisma.shippingZone.create({
@@ -67,13 +69,13 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error("Create shipping zone error:", error);
+    logger.error("Create shipping zone error", { error });
     return res.status(500).json({ error: "Failed to create shipping zone" });
   }
-});
+}));
 
 // PATCH /api/admin/shipping-zones/:id
-router.patch("/:id", async (req: AuthRequest, res: Response) => {
+router.patch("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const data = zoneSchema.partial().parse(req.body);
@@ -83,21 +85,21 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error("Update shipping zone error:", error);
+    logger.error("Update shipping zone error", { error });
     return res.status(500).json({ error: "Failed to update shipping zone" });
   }
-});
+}));
 
 // DELETE /api/admin/shipping-zones/:id
-router.delete("/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     await prisma.shippingZone.delete({ where: { id } });
     return res.json({ message: "Shipping zone deleted" });
   } catch (error) {
-    console.error("Delete shipping zone error:", error);
+    logger.error("Delete shipping zone error", { error });
     return res.status(500).json({ error: "Failed to delete shipping zone" });
   }
-});
+}));
 
 export default router;

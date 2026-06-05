@@ -7,12 +7,14 @@ import sharp from "sharp";
 import fs from "fs";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 const REVIEW_UPLOAD_DIR = process.env.UPLOAD_DIR || "uploads";
 
 // GET /api/reviews/product/:productId
-router.get("/product/:productId", async (req: Request, res: Response) => {
+router.get("/product/:productId", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
     const { page = "1", limit = "10", sort = "newest" } = req.query;
@@ -76,13 +78,13 @@ router.get("/product/:productId", async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Get reviews error:", error);
+    logger.error("Get reviews error", { error });
     return res.status(500).json({ error: "Failed to fetch reviews" });
   }
-});
+}));
 
 // POST /api/reviews
-router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const schema = z.object({
       productId: z.string(),
@@ -179,16 +181,16 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Create review error:", error);
+    logger.error("Create review error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to submit review" });
   }
-});
+}));
 
 // POST /api/reviews/upload-image — Upload review images (authenticated)
-router.post("/upload-image", authenticate, uploadMultiple, validateUploadedFiles, async (req: AuthRequest, res: Response) => {
+router.post("/upload-image", authenticate, uploadMultiple, validateUploadedFiles, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
@@ -219,13 +221,13 @@ router.post("/upload-image", authenticate, uploadMultiple, validateUploadedFiles
 
     return res.status(201).json({ urls });
   } catch (error) {
-    console.error("Review image upload error:", error);
+    logger.error("Review image upload error", { error });
     return res.status(500).json({ error: "Failed to upload images" });
   }
-});
+}));
 
 // GET /api/reviews/admin/all — List all reviews (admin)
-router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get("/admin/all", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
     const reviews = await prisma.review.findMany({
       include: {
@@ -239,10 +241,10 @@ router.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, r
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
-});
+}));
 
 // PUT /api/reviews/:id
-router.put("/:id", authenticate, async (req: AuthRequest, res: Response) => {
+router.put("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const schema = z.object({
@@ -281,13 +283,13 @@ router.put("/:id", authenticate, async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Review updated", review: updated });
   } catch (error) {
-    console.error("Update review error:", error);
+    logger.error("Update review error", { error });
     return res.status(500).json({ error: "Failed to update review" });
   }
-});
+}));
 
 // DELETE /api/reviews/:id
-router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
+router.delete("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -318,9 +320,9 @@ router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Review deleted" });
   } catch (error) {
-    console.error("Delete review error:", error);
+    logger.error("Delete review error", { error });
     return res.status(500).json({ error: "Failed to delete review" });
   }
-});
+}));
 
 export default router;

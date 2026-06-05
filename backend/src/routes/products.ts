@@ -1,11 +1,13 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { cacheGetOrSet, cacheGet, cacheDel, cacheSet, trackTrending, SHORT_TTL, LONG_TTL } from "../lib/cache";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/products
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { category, minPrice, maxPrice, sort, sortBy, sortOrder, status, limit = "20", page = "1", flashSale, search, subscribable, onSale, featured } = req.query;
 
@@ -218,13 +220,13 @@ router.get("/", async (req: Request, res: Response) => {
 
     return res.json(responseBody);
   } catch (error) {
-    console.error("Get products error:", error);
+    logger.error("Get products error", { error });
     return res.status(500).json({ error: "Failed to fetch products" });
   }
-});
+}));
 
 // GET /api/products/:slug
-router.get("/:slug", async (req: Request, res: Response) => {
+router.get("/:slug", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -281,13 +283,13 @@ router.get("/:slug", async (req: Request, res: Response) => {
 
     return res.json(product);
   } catch (error) {
-    console.error("Get product error:", error);
+    logger.error("Get product error", { error });
     return res.status(500).json({ error: "Failed to fetch product" });
   }
-});
+}));
 
 // GET /api/products/:slug/related
-router.get("/:slug/related", async (req: Request, res: Response) => {
+router.get("/:slug/related", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
     const { limit = "4" } = req.query;
@@ -338,13 +340,13 @@ router.get("/:slug/related", async (req: Request, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error("Get related products error:", error);
+    logger.error("Get related products error", { error });
     return res.status(500).json({ error: "Failed to fetch related products" });
   }
-});
+}));
 
 // GET /api/products/categories
-router.get("/categories/list", async (_req: Request, res: Response) => {
+router.get("/categories/list", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const categories = await cacheGetOrSet("categories:list", async () => {
       const cats = await prisma.category.findMany({
@@ -362,9 +364,9 @@ router.get("/categories/list", async (_req: Request, res: Response) => {
 
     return res.json(categories);
   } catch (error) {
-    console.error("Get categories error:", error);
+    logger.error("Get categories error", { error });
     return res.status(500).json({ error: "Failed to fetch categories" });
   }
-});
+}));
 
 export default router;

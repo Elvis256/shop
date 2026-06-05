@@ -1,11 +1,13 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { cacheGetOrSet, getTrendingIds, trackTrending, trackViewer, getViewerCount, LONG_TTL, SHORT_TTL } from "../lib/cache";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // GET /api/recommendations/trending - Hot products based on sales velocity
-router.get("/trending", async (_req: Request, res: Response) => {
+router.get("/trending", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const data = await cacheGetOrSet("reco:trending", async () => {
       // First try Redis trending scores (real-time)
@@ -43,13 +45,13 @@ router.get("/trending", async (_req: Request, res: Response) => {
 
     return res.json({ products: data });
   } catch (error) {
-    console.error("Trending error:", error);
+    logger.error("Trending error", { error });
     return res.status(500).json({ error: "Failed to load trending" });
   }
-});
+}));
 
 // GET /api/recommendations/bought-together/:productId
-router.get("/bought-together/:productId", async (req: Request, res: Response) => {
+router.get("/bought-together/:productId", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
     const data = await cacheGetOrSet(`reco:together:${productId}`, async () => {
@@ -85,13 +87,13 @@ router.get("/bought-together/:productId", async (req: Request, res: Response) =>
 
     return res.json({ products: data });
   } catch (error) {
-    console.error("Bought-together error:", error);
+    logger.error("Bought-together error", { error });
     return res.status(500).json({ error: "Failed to load recommendations" });
   }
-});
+}));
 
 // GET /api/recommendations/similar/:productId
-router.get("/similar/:productId", async (req: Request, res: Response) => {
+router.get("/similar/:productId", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
     const data = await cacheGetOrSet(`reco:similar:${productId}`, async () => {
@@ -119,13 +121,13 @@ router.get("/similar/:productId", async (req: Request, res: Response) => {
 
     return res.json({ products: data });
   } catch (error) {
-    console.error("Similar error:", error);
+    logger.error("Similar error", { error });
     return res.status(500).json({ error: "Failed to load similar products" });
   }
-});
+}));
 
 // GET /api/recommendations/new-arrivals
-router.get("/new-arrivals", async (_req: Request, res: Response) => {
+router.get("/new-arrivals", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const data = await cacheGetOrSet("reco:new-arrivals", async () => {
       const products = await prisma.product.findMany({
@@ -139,13 +141,13 @@ router.get("/new-arrivals", async (_req: Request, res: Response) => {
 
     return res.json({ products: data });
   } catch (error) {
-    console.error("New arrivals error:", error);
+    logger.error("New arrivals error", { error });
     return res.status(500).json({ error: "Failed to load new arrivals" });
   }
-});
+}));
 
 // GET /api/recommendations/top-rated
-router.get("/top-rated", async (_req: Request, res: Response) => {
+router.get("/top-rated", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const data = await cacheGetOrSet("reco:top-rated", async () => {
       const products = await prisma.product.findMany({
@@ -159,13 +161,13 @@ router.get("/top-rated", async (_req: Request, res: Response) => {
 
     return res.json({ products: data });
   } catch (error) {
-    console.error("Top rated error:", error);
+    logger.error("Top rated error", { error });
     return res.status(500).json({ error: "Failed to load top rated" });
   }
-});
+}));
 
 // POST /api/recommendations/track-view - Track product view for trending & viewer count
-router.post("/track-view", async (req: Request, res: Response) => {
+router.post("/track-view", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { productId, sessionId } = req.body;
     if (!productId) return res.status(400).json({ error: "productId required" });
@@ -180,20 +182,20 @@ router.post("/track-view", async (req: Request, res: Response) => {
   } catch {
     return res.json({ viewerCount: 0 });
   }
-});
+}));
 
 // GET /api/recommendations/viewers/:productId
-router.get("/viewers/:productId", async (req: Request, res: Response) => {
+router.get("/viewers/:productId", asyncHandler(async (req: Request, res: Response) => {
   try {
     const count = await getViewerCount(req.params.productId);
     return res.json({ viewerCount: count });
   } catch {
     return res.json({ viewerCount: 0 });
   }
-});
+}));
 
 // GET /api/recommendations/best-sellers - Top products by total order volume
-router.get("/best-sellers", async (_req: Request, res: Response) => {
+router.get("/best-sellers", asyncHandler(async (_req: Request, res: Response) => {
   try {
     const data = await cacheGetOrSet("reco:best-sellers", async () => {
       const topSold = await prisma.orderItem.groupBy({
@@ -228,13 +230,13 @@ router.get("/best-sellers", async (_req: Request, res: Response) => {
 
     return res.json({ products: data });
   } catch (error) {
-    console.error("Best-sellers error:", error);
+    logger.error("Best-sellers error", { error });
     return res.status(500).json({ error: "Failed to load best sellers" });
   }
-});
+}));
 
 // GET /api/recommendations/gift-finder — Curated gift suggestions
-router.get("/gift-finder", async (req: Request, res: Response) => {
+router.get("/gift-finder", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { category, budget, minRating } = req.query;
 
@@ -277,10 +279,10 @@ router.get("/gift-finder", async (req: Request, res: Response) => {
       products: products.map(formatProduct),
     });
   } catch (error) {
-    console.error("Gift finder error:", error);
+    logger.error("Gift finder error", { error });
     return res.status(500).json({ error: "Failed to load gift suggestions" });
   }
-});
+}));
 
 function formatProduct(p: any) {
   return {

@@ -16,6 +16,8 @@ import prisma from "../lib/prisma";
 import { sendWhatsApp } from "../services/whatsapp";
 import { sendSMS } from "../services/sms";
 import axios from "axios";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -161,7 +163,7 @@ router.get("/available", (_req: Request, res: Response) => {
 });
 
 // POST /api/courier/quote
-router.post("/quote", async (req: Request, res: Response) => {
+router.post("/quote", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { pickupArea, deliveryArea, orderValue } = QuoteSchema.parse(req.body);
 
@@ -204,10 +206,10 @@ router.post("/quote", async (req: Request, res: Response) => {
     if (err.name === "ZodError") return res.status(400).json({ error: err.errors[0]?.message });
     return res.status(500).json({ error: "Quote failed" });
   }
-});
+}));
 
 // POST /api/courier/book
-router.post("/book", async (req: Request, res: Response) => {
+router.post("/book", asyncHandler(async (req: Request, res: Response) => {
   try {
     const body = BookSchema.parse(req.body);
 
@@ -275,14 +277,14 @@ router.post("/book", async (req: Request, res: Response) => {
       orderNumber: order.orderNumber,
     });
   } catch (err: any) {
-    console.error("Courier booking error:", err.message);
+    logger.error("Courier booking error", { error: err.message });
     if (err.name === "ZodError") return res.status(400).json({ error: err.errors[0]?.message });
     return res.status(500).json({ error: "Booking failed" });
   }
-});
+}));
 
 // GET /api/courier/track/:ref
-router.get("/track/:ref", async (req: Request, res: Response) => {
+router.get("/track/:ref", asyncHandler(async (req: Request, res: Response) => {
   const { ref } = req.params;
 
   // Find order by tracking number
@@ -300,10 +302,10 @@ router.get("/track/:ref", async (req: Request, res: Response) => {
     courier: order.shippingMethod || "internal",
     lastUpdated: order.updatedAt,
   });
-});
+}));
 
 // POST /api/courier/webhook — receive updates from couriers
-router.post("/webhook", async (req: Request, res: Response) => {
+router.post("/webhook", asyncHandler(async (req: Request, res: Response) => {
   const { provider, ref, status, eta } = req.body;
 
   if (!ref || !status) return res.status(400).json({ error: "ref and status required" });
@@ -329,10 +331,10 @@ router.post("/webhook", async (req: Request, res: Response) => {
       }
     }
   } catch (err: any) {
-    console.error("Courier webhook error:", err.message);
+    logger.error("Courier webhook error", { error: err.message });
   }
 
   return res.json({ received: true });
-});
+}));
 
 export default router;

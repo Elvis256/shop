@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
 
 async function getSetting(key: string): Promise<string | null> {
   const s = await prisma.setting.findUnique({ where: { key } });
@@ -15,7 +16,7 @@ export async function sendSMS(to: string, message: string): Promise<boolean> {
     const senderId = await getSetting("sms_sender_id");
 
     if (!username || !apiKey) {
-      console.warn("SMS not configured: missing Africa's Talking credentials");
+      logger.warn("SMS not configured: missing Africa's Talking credentials");
       return false;
     }
 
@@ -48,7 +49,7 @@ export async function sendSMS(to: string, message: string): Promise<boolean> {
 
     if (!res.ok) {
       const err = await res.text();
-      console.error("SMS API error:", res.status, err);
+      logger.error("SMS API error", { status: res.status, body: err });
       return false;
     }
 
@@ -57,14 +58,14 @@ export async function sendSMS(to: string, message: string): Promise<boolean> {
     const success = recipients.some((r: any) => r.status === "Success");
 
     if (success) {
-      console.log("SMS sent to", phone);
+      logger.info("SMS sent to", { detail: phone });
     } else {
-      console.warn("SMS delivery issue:", JSON.stringify(recipients));
+      logger.warn("SMS delivery issue", { recipients: JSON.stringify(recipients) });
     }
 
     return success;
   } catch (e: any) {
-    console.error("SMS send error:", e.message);
+    logger.error("SMS send error", { error: e.message });
     return false;
   }
 }

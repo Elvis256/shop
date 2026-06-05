@@ -3,13 +3,15 @@ import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { uploadSingle, validateUploadedFiles } from "../../middleware/upload";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/categories
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const categories = await prisma.category.findMany({
       include: {
@@ -21,10 +23,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 
     return res.json({ categories });
   } catch (error) {
-    console.error("Admin get categories error:", error);
+    logger.error("Admin get categories error", { error });
     return res.status(500).json({ error: "Failed to fetch categories" });
   }
-});
+}));
 
 const CategorySchema = z.object({
   name: z.string().min(2),
@@ -35,7 +37,7 @@ const CategorySchema = z.object({
 });
 
 // POST /api/admin/categories
-router.post("/", async (req: AuthRequest, res: Response) => {
+router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const body = CategorySchema.parse(req.body);
 
@@ -57,16 +59,16 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ message: "Category created", category });
   } catch (error) {
-    console.error("Admin create category error:", error);
+    logger.error("Admin create category error", { error });
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
     return res.status(500).json({ error: "Failed to create category" });
   }
-});
+}));
 
 // PUT /api/admin/categories/:id
-router.put("/:id", async (req: AuthRequest, res: Response) => {
+router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const body = CategorySchema.partial().parse(req.body);
@@ -98,13 +100,13 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Category updated", category: updated });
   } catch (error) {
-    console.error("Admin update category error:", error);
+    logger.error("Admin update category error", { error });
     return res.status(500).json({ error: "Failed to update category" });
   }
-});
+}));
 
 // POST /api/admin/categories/:id/image - upload image file
-router.post("/:id/image", uploadSingle, validateUploadedFiles, async (req: AuthRequest, res: Response) => {
+router.post("/:id/image", uploadSingle, validateUploadedFiles, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const file = req.file as Express.Multer.File | undefined;
@@ -126,13 +128,13 @@ router.post("/:id/image", uploadSingle, validateUploadedFiles, async (req: AuthR
 
     return res.json({ message: "Image uploaded", imageUrl, category: updated });
   } catch (error) {
-    console.error("Admin category image upload error:", error);
+    logger.error("Admin category image upload error", { error });
     return res.status(500).json({ error: "Failed to upload image" });
   }
-});
+}));
 
 // DELETE /api/admin/categories/:id
-router.delete("/:id", async (req: AuthRequest, res: Response) => {
+router.delete("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -161,9 +163,9 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
 
     return res.json({ message: "Category deleted" });
   } catch (error) {
-    console.error("Admin delete category error:", error);
+    logger.error("Admin delete category error", { error });
     return res.status(500).json({ error: "Failed to delete category" });
   }
-});
+}));
 
 export default router;

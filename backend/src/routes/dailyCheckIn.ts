@@ -1,11 +1,13 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authenticate } from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
 // POST /api/social/check-in - Daily check-in
-router.post("/check-in", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/check-in", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const today = new Date();
@@ -69,13 +71,13 @@ router.post("/check-in", authenticate, async (req: AuthRequest, res: Response) =
         : `✅ +${basePoints} points! ${streak}-day streak`,
     });
   } catch (err) {
-    console.error("Check-in error:", err);
+    logger.error("Check-in error", { error: err });
     res.status(500).json({ error: "Failed to check in" });
   }
-});
+}));
 
 // GET /api/social/check-in/status - Get check-in status for today
-router.get("/check-in/status", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/check-in/status", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const today = new Date();
@@ -114,6 +116,6 @@ router.get("/check-in/status", authenticate, async (req: AuthRequest, res: Respo
   } catch (err) {
     res.status(500).json({ error: "Failed to get check-in status" });
   }
-});
+}));
 
 export default router;

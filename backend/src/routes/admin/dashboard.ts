@@ -1,6 +1,8 @@
 import { Router, Response } from "express";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { logger } from "../../lib/logger";
+import { asyncHandler } from "../../middleware/errorHandler";
 
 const router = Router();
 
@@ -8,7 +10,7 @@ const router = Router();
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/dashboard
-router.get("/", async (req: AuthRequest, res: Response) => {
+router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -277,13 +279,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Dashboard error:", error);
+    logger.error("Dashboard error", { error });
     return res.status(500).json({ error: "Failed to load dashboard" });
   }
-});
+}));
 
 // GET /api/admin/analytics
-router.get("/analytics", async (req: AuthRequest, res: Response) => {
+router.get("/analytics", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { period = "30" } = req.query;
     const days = parseInt(period as string) || 30;
@@ -795,9 +797,9 @@ router.get("/analytics", async (req: AuthRequest, res: Response) => {
       insights,
     });
   } catch (error) {
-    console.error("Analytics error:", error);
+    logger.error("Analytics error", { error });
     return res.status(500).json({ error: "Failed to load analytics" });
   }
-});
+}));
 
 export default router;

@@ -11,6 +11,8 @@ import { sendOrderConfirmationWhatsApp } from "../services/whatsapp";
 import { sendOrderConfirmationSMS } from "../services/sms";
 import { sendOrderReceivedEmail } from "../lib/email";
 import { z } from "zod";
+import { logger } from "../lib/logger";
+import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
@@ -73,16 +75,16 @@ router.get("/currencies", (_req: Request, res: Response) => {
 });
 
 // GET /api/diaspora/rates
-router.get("/rates", async (_req: Request, res: Response) => {
+router.get("/rates", asyncHandler(async (_req: Request, res: Response) => {
   const rates: Record<string, number> = {};
   for (const c of DIASPORA_CURRENCIES) {
     rates[c.code] = await getUgxRate(c.code);
   }
   return res.json({ rates, base: "UGX" });
-});
+}));
 
 // POST /api/diaspora/checkout — create Stripe Payment Intent + pending order
-router.post("/checkout", async (req: Request, res: Response) => {
+router.post("/checkout", asyncHandler(async (req: Request, res: Response) => {
   try {
     if (!process.env.STRIPE_SECRET_KEY) {
       return res.status(503).json({ error: "International payments not yet configured. Contact support." });
@@ -181,16 +183,16 @@ router.post("/checkout", async (req: Request, res: Response) => {
       currency: body.currency,
     });
   } catch (err: any) {
-    console.error("Diaspora checkout error:", err.message);
+    logger.error("Diaspora checkout error", { error: err.message });
     if (err.name === "ZodError") {
       return res.status(400).json({ error: err.errors[0]?.message || "Invalid request" });
     }
     return res.status(500).json({ error: "Checkout failed. Please try again." });
   }
-});
+}));
 
 // POST /api/diaspora/webhook — Stripe webhook (raw body required)
-router.post("/webhook", async (req: Request, res: Response) => {
+router.post("/webhook", asyncHandler(async (req: Request, res: Response) => {
   const sig = req.headers["stripe-signature"] as string;
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -249,12 +251,12 @@ router.post("/webhook", async (req: Request, res: Response) => {
           }
         }
       } catch (err: any) {
-        console.error("Diaspora webhook processing error:", err.message);
+        logger.error("Diaspora webhook processing error", { error: err.message });
       }
     }
   }
 
   return res.json({ received: true });
-});
+}));
 
 export default router;

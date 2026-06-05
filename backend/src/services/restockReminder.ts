@@ -1,6 +1,7 @@
 import prisma from "../lib/prisma";
 import { sendWhatsApp } from "./whatsapp";
 import { sendSMS } from "./sms";
+import { logger } from "../lib/logger";
 
 // Called after an order is marked DELIVERED
 // Schedules restock reminders for consumable products
@@ -38,7 +39,7 @@ export async function scheduleRestockReminders(orderId: string): Promise<void> {
       });
     }
   } catch (error) {
-    console.error("Schedule restock reminders error:", error);
+    logger.error("Schedule restock reminders error", { error });
   }
 }
 
@@ -70,7 +71,7 @@ export async function startRestockReminderJob(): Promise<void> {
         });
       }
     } catch (error) {
-      console.error("Restock reminder job error:", error);
+      logger.error("Restock reminder job error", { error });
     }
   };
 
