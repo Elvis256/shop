@@ -48,6 +48,7 @@ model User {
   subscriptions     Subscription[]
   pushSubscriptions PushSubscription[]
   browseHistory     BrowseEvent[]
+  layawayPlans      LayawayPlan[]
   segmentTags       String[]
   shareDiscounts    ShareDiscount[]
   groupBuyJoined    GroupBuyParticipant[]
@@ -244,6 +245,7 @@ model Product {
   conversations    Conversation[]
   priceDropAlerts  PriceDropAlert[]
   promotions       ProductPromotion[]
+  layawayPlans     LayawayPlan[]
 
   @@index([categoryId])
   @@index([status])
@@ -371,6 +373,12 @@ model Order {
 
   // Delivery time slot
   deliveryTimeSlot    String?
+
+  // Delivery OTP (pay-on-delivery verification)
+  deliveryOtp         String?
+  deliveryOtpExpiry   DateTime?
+  deliveryConfirmedAt DateTime?
+  deliveryConfirmedBy String?
 
   // Coupon
   couponId        String?
@@ -1038,10 +1046,14 @@ model AbandonedCart {
   email1SentAt  DateTime?
   email2SentAt  DateTime?
   email3SentAt  DateTime?
-  
+
+  // WhatsApp tracking
+  whatsapp1SentAt DateTime?
+  couponCode      String?
+
   recoveredAt   DateTime?
   recoveredOrderId String?
-  
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
@@ -2237,4 +2249,42 @@ enum BadgeType {
   PREMIUM            // All badges earned + GOLD tier
   NEW_SELLER         // First 30 days
   RISING_STAR        // Fast-growing seller metrics
+}
+
+// ─── Layaway / Micro-Subscriptions ───────────────────────────────────────────
+model LayawayPlan {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  targetAmount      Decimal  @db.Decimal(10, 2)
+  paidAmount        Decimal  @default(0) @db.Decimal(10, 2)
+  frequency         String   // DAILY, WEEKLY, BIWEEKLY
+  installmentAmount Decimal  @db.Decimal(10, 2)
+  status            String   @default("ACTIVE") // ACTIVE, COMPLETED, CANCELLED, EXPIRED
+  completedAt       DateTime?
+  orderId           String?  // Created when plan completes
+  nextPaymentDate   DateTime
+  payments          LayawayPayment[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([nextPaymentDate])
+}
+
+model LayawayPayment {
+  id        String   @id @default(cuid())
+  planId    String
+  plan      LayawayPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  amount    Decimal  @db.Decimal(10, 2)
+  status    String   @default("PENDING") // PENDING, PAID, FAILED
+  flwRef    String?  // Flutterwave transaction reference
+  paidAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([planId])
 }
