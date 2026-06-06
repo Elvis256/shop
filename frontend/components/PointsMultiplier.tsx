@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Zap } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -13,13 +13,14 @@ interface Multiplier {
 
 function useCountdown(targetDate: Date) {
   const [timeLeft, setTimeLeft] = useState(() => getTimeLeft(targetDate));
+  const targetMs = targetDate.getTime();
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setTimeLeft(getTimeLeft(targetDate));
+      setTimeLeft(getTimeLeft(new Date(targetMs)));
     }, 1000);
     return () => clearInterval(timer);
-  }, [targetDate]);
+  }, [targetMs]);
 
   return timeLeft;
 }
@@ -54,7 +55,7 @@ export default function PointsMultiplier() {
 }
 
 function MultiplierBanner({ multiplier }: { multiplier: Multiplier }) {
-  const endsAt = new Date(multiplier.endsAt);
+  const endsAt = useMemo(() => new Date(multiplier.endsAt), [multiplier.endsAt]);
   const { hours, minutes, seconds, expired } = useCountdown(endsAt);
 
   if (expired) return null;

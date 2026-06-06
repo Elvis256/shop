@@ -18,12 +18,13 @@ function getTimeLeft(endTime: Date) {
 export default function FlashSaleCountdown({ endTime }: Props) {
   const [timeLeft, setTimeLeft] = useState(() => getTimeLeft(endTime));
 
+  const endMs = endTime.getTime();
   useEffect(() => {
     const timer = setInterval(() => {
-      setTimeLeft(getTimeLeft(endTime));
+      setTimeLeft(getTimeLeft(new Date(endMs)));
     }, 1000);
     return () => clearInterval(timer);
-  }, [endTime]);
+  }, [endMs]);
 
   if (!timeLeft) {
     return <span className="text-sm font-medium text-red-500">Ended</span>;

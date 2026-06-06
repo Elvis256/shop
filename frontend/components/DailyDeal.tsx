@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
 import { useCurrency } from "@/contexts/CurrencyContext";
@@ -23,11 +23,11 @@ interface DailyDealData {
 
 function useCountdown(targetDate: Date) {
   const [time, setTime] = useState({ hours: 0, minutes: 0, seconds: 0 });
+  const targetMs = targetDate.getTime();
 
   useEffect(() => {
     const tick = () => {
-      const now = new Date();
-      const diff = Math.max(0, targetDate.getTime() - now.getTime());
+      const diff = Math.max(0, targetMs - Date.now());
       setTime({
         hours: Math.floor(diff / 3600000),
         minutes: Math.floor((diff % 3600000) / 60000),
@@ -37,7 +37,7 @@ function useCountdown(targetDate: Date) {
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [targetDate]);
+  }, [targetMs]);
 
   return time;
 }
@@ -51,8 +51,9 @@ function getMidnight(): Date {
 export default function DailyDeal() {
   const [deal, setDeal] = useState<DailyDealData | null>(null);
   const { formatPrice } = useCurrency();
-  const midnight = getMidnight();
-  const countdown = useCountdown(deal?.endsAt ? new Date(deal.endsAt) : midnight);
+  const midnight = useMemo(() => getMidnight(), []);
+  const countdownTarget = useMemo(() => deal?.endsAt ? new Date(deal.endsAt) : midnight, [deal?.endsAt, midnight]);
+  const countdown = useCountdown(countdownTarget);
 
   useEffect(() => {
     fetch(`${API_URL}/api/daily-deal`)
