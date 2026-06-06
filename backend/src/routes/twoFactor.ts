@@ -3,6 +3,8 @@ import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, generateToken, createRefreshToken, COOKIE_OPTIONS, REFRESH_COOKIE_OPTIONS } from "../middleware/auth";
 import redis from "../lib/redis";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
+import QRCode from "qrcode";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
 
@@ -123,13 +125,15 @@ router.post("/setup", authenticate, asyncHandler(async (req: AuthRequest, res: R
       },
     });
 
-    // Generate QR code URL (otpauth format)
+    // Generate QR code as data URL (server-side, no external API)
     const issuer = "PleasureZone";
-    const otpauthUrl = `otpauth://totp/${issuer}:${userEmail}?secret=${Buffer.from(secret, "base64").toString("hex")}&issuer=${issuer}&digits=6&period=30`;
+    const hexSecret = Buffer.from(secret, "base64").toString("hex");
+    const otpauthUrl = `otpauth://totp/${issuer}:${userEmail}?secret=${hexSecret}&issuer=${issuer}&digits=6&period=30`;
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl, { width: 200, margin: 1 });
 
     res.json({
-      secret: Buffer.from(secret, "base64").toString("hex"),
-      qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUrl)}`,
+      secret: hexSecret,
+      qrCodeUrl: qrCodeDataUrl,
       backupCodes, // Show only once
     });
   } catch (error) {
@@ -294,6 +298,24 @@ router.post("/disable", authenticate, asyncHandler(async (req: AuthRequest, res:
       return res.status(401).json({ error: "Not authenticated" });
     }
 
+    // Require password to disable 2FA
+    if (!password) {
+      return res.status(400).json({ error: "Password is required to disable 2FA" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { password: true },
+    });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(400).json({ error: "Incorrect password" });
+    }
+
     const twoFactor = await prisma.twoFactorAuth.findUnique({
       where: { userId },
     });
@@ -302,7 +324,7 @@ router.post("/disable", authenticate, asyncHandler(async (req: AuthRequest, res:
       return res.status(400).json({ error: "2FA is not enabled" });
     }
 
-    // Verify token before disabling
+    // Verify TOTP token before disabling
     if (!verifyTOTP(twoFactor.secret, token)) {
       return res.status(400).json({ error: "Invalid verification code" });
     }

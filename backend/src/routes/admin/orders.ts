@@ -228,6 +228,25 @@ router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) =
       return res.status(404).json({ error: "Order not found" });
     }
 
+    // Validate state transition — prevent invalid status changes
+    const validTransitions: Record<string, string[]> = {
+      PENDING:    ["CONFIRMED", "PROCESSING", "CANCELLED"],
+      CONFIRMED:  ["PROCESSING", "SHIPPED", "CANCELLED"],
+      PROCESSING: ["SHIPPED", "CANCELLED"],
+      SHIPPED:    ["DELIVERED", "CANCELLED"],
+      DELIVERED:  ["REFUNDED"],
+      CANCELLED:  [],  // terminal state
+      REFUNDED:   [],  // terminal state
+    };
+
+    const allowed = validTransitions[order.status] || [];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        error: `Cannot change status from ${order.status} to ${status}`,
+        allowedTransitions: allowed,
+      });
+    }
+
     // Update order
     const updateData: any = { status };
     if (trackingNumber) {

@@ -88,6 +88,13 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
+        {/* Google tag (gtag.js) — placed first in <head> for detection */}
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-9533LL81DP" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-9533LL81DP');`,
+          }}
+        />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
         <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16" />
@@ -103,7 +110,6 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen flex flex-col bg-bg text-text transition-colors" suppressHydrationWarning>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:bg-pink-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm">Skip to content</a>
-        <GoogleAnalytics />
         <ServiceWorkerRegistration />
         <OrganizationSchema />
         <ThemeProvider>

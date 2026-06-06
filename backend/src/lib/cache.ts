@@ -1,4 +1,5 @@
 import redis from "./redis";
+import { logger } from "./logger";
 
 const DEFAULT_TTL = 300; // 5 minutes
 const SHORT_TTL = 60;   // 1 minute
@@ -8,7 +9,8 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   try {
     const data = await redis.get(`cache:${key}`);
     return data ? JSON.parse(data) : null;
-  } catch {
+  } catch (err) {
+    logger.debug("cache_get_error", { key, error: (err as Error).message });
     return null;
   }
 }
@@ -16,14 +18,28 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
 export async function cacheSet(key: string, data: any, ttl = DEFAULT_TTL): Promise<void> {
   try {
     await redis.set(`cache:${key}`, JSON.stringify(data), "EX", ttl);
-  } catch {}
+  } catch (err) {
+    logger.debug("cache_set_error", { key, error: (err as Error).message });
+  }
 }
 
 export async function cacheDel(pattern: string): Promise<void> {
   try {
-    const keys = await redis.keys(`cache:${pattern}`);
-    if (keys.length > 0) await redis.del(...keys);
-  } catch {}
+    // If pattern has no glob characters, delete exact key
+    if (!pattern.includes("*") && !pattern.includes("?")) {
+      await redis.del(`cache:${pattern}`);
+      return;
+    }
+    // Use SCAN instead of KEYS to avoid blocking Redis
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", `cache:${pattern}`, "COUNT", 100);
+      cursor = nextCursor;
+      if (keys.length > 0) await redis.del(...keys);
+    } while (cursor !== "0");
+  } catch (err) {
+    logger.debug("cache_del_error", { pattern, error: (err as Error).message });
+  }
 }
 
 // Stale-while-revalidate: return cached data immediately, refresh in background

@@ -10,3 +10,7 @@ postgres_data
 .DS_Store
 *.apk
 *.tsbuildinfo
+frontend/public/sw.js
+frontend/public/sw.js.map
+frontend/public/workbox-*.js
+frontend/public/workbox-*.js.map

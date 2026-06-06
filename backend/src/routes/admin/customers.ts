@@ -10,6 +10,7 @@ const router = Router();
 router.use(authenticate, requireAdmin);
 
 // GET /api/admin/customers — Combined registered users + guest order customers
+// Uses DB-level aggregation instead of loading all orders into memory
 router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const {
@@ -27,165 +28,121 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
     const skip = (pageNum - 1) * take;
     const searchStr = (search as string || "").trim().toLowerCase();
 
-    // Aggregate all customers from orders (both registered and guest)
-    const allOrders = await prisma.order.findMany({
-      select: {
-        userId: true,
-        customerEmail: true,
-        customerName: true,
-        customerPhone: true,
-        totalAmount: true,
-        status: true,
-        paymentStatus: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    // Build customer map keyed by email (lowercase)
-    const customerMap = new Map<string, {
-      id: string | null;
-      email: string;
-      name: string;
-      phone: string | null;
-      isRegistered: boolean;
-      role: string | null;
-      orderCount: number;
-      totalSpent: number;
-      activeOrders: number;
-      lastOrderDate: Date | null;
-      firstOrderDate: Date | null;
-    }>();
-
-    for (const o of allOrders) {
-      const key = o.customerEmail.toLowerCase();
-      const existing = customerMap.get(key);
-      const amt = Number(o.totalAmount) || 0;
-      const isActive = !["CANCELLED", "REFUNDED"].includes(o.status);
-
-      if (existing) {
-        existing.orderCount++;
-        if (isActive) {
-          existing.totalSpent += amt;
-          existing.activeOrders++;
-        }
-        if (!existing.name && o.customerName) existing.name = o.customerName;
-        if (!existing.phone && o.customerPhone) existing.phone = o.customerPhone;
-        if (!existing.firstOrderDate || o.createdAt < existing.firstOrderDate) existing.firstOrderDate = o.createdAt;
-      } else {
-        customerMap.set(key, {
-          id: o.userId,
-          email: o.customerEmail,
-          name: o.customerName || "",
-          phone: o.customerPhone || null,
-          isRegistered: !!o.userId,
-          role: null,
-          orderCount: 1,
-          totalSpent: isActive ? amt : 0,
-          activeOrders: isActive ? 1 : 0,
-          lastOrderDate: o.createdAt,
-          firstOrderDate: o.createdAt,
-        });
-      }
-    }
-
-    // Also include registered customers who may not have ordered
+    // Whitelist sort columns (prevents SQL injection)
+    const sortMap: Record<string, string> = {
+      name: "name", email: "email", orders: "order_count",
+      spent: "total_spent", lastOrder: "last_order_date",
+    };
+    const sortCol = sortMap[sort as string] || "last_order_date";
+    const sortDir = order === "asc" ? "ASC" : "DESC";
     const showAllRoles = includeAllRoles === "true";
-    const registeredUsers = await prisma.user.findMany({
-      where: showAllRoles ? {} : { role: "CUSTOMER" },
-      select: { id: true, email: true, name: true, phone: true, role: true, createdAt: true, isBlocked: true },
-    });
+    const roleFilter = showAllRoles ? "" : `WHERE u."id" IS NULL OR u."role" = 'CUSTOMER'`;
 
-    for (const u of registeredUsers) {
-      const key = u.email.toLowerCase();
-      if (customerMap.has(key)) {
-        const c = customerMap.get(key)!;
-        c.id = u.id;
-        c.isRegistered = true;
-        c.role = u.role;
-        if (!c.name && u.name) c.name = u.name || "";
-        if (!c.phone && u.phone) c.phone = u.phone;
-      } else {
-        customerMap.set(key, {
-          id: u.id,
-          email: u.email,
-          name: u.name || "",
-          phone: u.phone || null,
-          isRegistered: true,
-          role: u.role,
-          orderCount: 0,
-          totalSpent: 0,
-          activeOrders: 0,
-          lastOrderDate: null,
-          firstOrderDate: u.createdAt,
-        });
-      }
-    }
+    // CTE: aggregate orders at DB level, then FULL OUTER JOIN with users
+    const cte = `
+      WITH order_stats AS (
+        SELECT
+          LOWER("customerEmail") as email,
+          MAX("customerName") as cust_name,
+          MAX("customerPhone") as phone,
+          MAX("userId") as user_id,
+          COUNT(*)::int as order_count,
+          COALESCE(SUM(CASE WHEN "status" NOT IN ('CANCELLED','REFUNDED') THEN "totalAmount"::numeric ELSE 0 END),0)::float8 as total_spent,
+          COUNT(CASE WHEN "status" NOT IN ('CANCELLED','REFUNDED') THEN 1 END)::int as active_orders,
+          MAX("createdAt") as last_order_date,
+          MIN("createdAt") as first_order_date
+        FROM "Order"
+        GROUP BY LOWER("customerEmail")
+      ),
+      combined AS (
+        SELECT
+          COALESCE(u."id", os.user_id)::text as id,
+          COALESCE(os.email, LOWER(u."email")) as email,
+          COALESCE(NULLIF(os.cust_name,''), u."name", '') as name,
+          COALESCE(os.phone, u."phone") as phone,
+          (u."id" IS NOT NULL) as is_registered,
+          COALESCE(u."isBlocked", false) as is_blocked,
+          COALESCE(u."role"::text, 'CUSTOMER') as role,
+          COALESCE(os.order_count, 0)::int as order_count,
+          COALESCE(os.total_spent, 0)::float8 as total_spent,
+          COALESCE(os.active_orders, 0)::int as active_orders,
+          os.last_order_date,
+          COALESCE(os.first_order_date, u."createdAt") as first_order_date
+        FROM order_stats os
+        FULL OUTER JOIN "User" u ON
+          (os.user_id IS NOT NULL AND os.user_id = u."id")
+          OR (os.user_id IS NULL AND LOWER(u."email") = os.email)
+        ${roleFilter}
+      )`;
 
-    // Convert to array and apply search/filter
-    let customers = Array.from(customerMap.values());
+    // Build WHERE conditions and params
+    const conditions: string[] = [];
+    const params: any[] = [];
 
     if (searchStr) {
-      customers = customers.filter((c) =>
-        c.email.toLowerCase().includes(searchStr) ||
-        c.name.toLowerCase().includes(searchStr) ||
-        (c.phone && c.phone.includes(searchStr))
-      );
+      const escaped = searchStr.replace(/[%_\\]/g, "\\$&");
+      params.push(`%${escaped}%`);
+      conditions.push(`(LOWER(c.email) LIKE $${params.length} OR LOWER(c.name) LIKE $${params.length} OR c.phone LIKE $${params.length})`);
     }
 
     if (filter === "registered") {
-      customers = customers.filter((c) => c.isRegistered);
+      conditions.push("c.is_registered = true");
     } else if (filter === "guest") {
-      customers = customers.filter((c) => !c.isRegistered);
+      conditions.push("c.is_registered = false");
     }
 
-    // Sort
-    const sortField = sort as string;
-    customers.sort((a, b) => {
-      let cmp = 0;
-      switch (sortField) {
-        case "name": cmp = a.name.localeCompare(b.name); break;
-        case "email": cmp = a.email.localeCompare(b.email); break;
-        case "orders": cmp = a.orderCount - b.orderCount; break;
-        case "spent": cmp = a.totalSpent - b.totalSpent; break;
-        case "lastOrder":
-          cmp = (a.lastOrderDate?.getTime() || 0) - (b.lastOrderDate?.getTime() || 0);
-          break;
-        default:
-          cmp = (a.firstOrderDate?.getTime() || 0) - (b.firstOrderDate?.getTime() || 0);
-      }
-      return order === "asc" ? cmp : -cmp;
-    });
+    const whereStr = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    const total = customers.length;
-    const paginated = customers.slice(skip, skip + take);
+    // Count query for pagination + stats
+    const countParams = [...params];
+    const countSql = `${cte}
+      SELECT
+        COUNT(*)::int as total,
+        COUNT(CASE WHEN c.is_registered THEN 1 END)::int as registered,
+        COUNT(CASE WHEN NOT c.is_registered THEN 1 END)::int as guest,
+        COUNT(CASE WHEN c.order_count > 0 THEN 1 END)::int as with_orders
+      FROM combined c ${whereStr}`;
+
+    // Data query with sort + pagination
+    params.push(take);
+    const limitIdx = params.length;
+    params.push(skip);
+    const offsetIdx = params.length;
+
+    const dataSql = `${cte}
+      SELECT c.* FROM combined c ${whereStr}
+      ORDER BY c.${sortCol} ${sortDir} NULLS LAST
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
+
+    const [stats] = await prisma.$queryRawUnsafe<any[]>(countSql, ...countParams);
+    const customers = await prisma.$queryRawUnsafe<any[]>(dataSql, ...params);
 
     return res.json({
-      customers: paginated.map((c) => ({
+      customers: customers.map((c: any) => ({
         id: c.id,
         email: c.email,
         name: c.name,
         phone: c.phone,
-        isRegistered: c.isRegistered,
-        isBlocked: false,
+        isRegistered: c.is_registered,
+        isBlocked: c.is_blocked,
         role: c.role || "CUSTOMER",
-        orderCount: c.orderCount,
-        activeOrders: c.activeOrders,
-        totalSpent: c.totalSpent,
-        lastOrderDate: c.lastOrderDate,
-        firstOrderDate: c.firstOrderDate,
+        orderCount: c.order_count,
+        activeOrders: c.active_orders,
+        totalSpent: Number(c.total_spent),
+        lastOrderDate: c.last_order_date,
+        firstOrderDate: c.first_order_date,
       })),
       pagination: {
-        total,
+        total: stats.total,
         page: pageNum,
         limit: take,
-        totalPages: Math.ceil(total / take),
+        totalPages: Math.ceil(stats.total / take),
       },
       stats: {
-        total,
-        registered: Array.from(customerMap.values()).filter((c) => c.isRegistered).length,
-        guest: Array.from(customerMap.values()).filter((c) => !c.isRegistered).length,
-        withOrders: Array.from(customerMap.values()).filter((c) => c.orderCount > 0).length,
+        total: stats.total,
+        registered: stats.registered,
+        guest: stats.guest,
+        withOrders: stats.with_orders,
       },
     });
   } catch (error) {
@@ -340,7 +297,7 @@ router.post("/:id/segment", asyncHandler(async (req: AuthRequest, res: Response)
 }));
 
 /**
- * Auto-segment users based on behavior:
+ * Auto-segment users based on behavior (single SQL query, no N+1):
  * - "new": registered < 30 days ago
  * - "vip": total orders > 5
  * - "at_risk": last order > 60 days ago
@@ -349,59 +306,52 @@ router.post("/:id/segment", asyncHandler(async (req: AuthRequest, res: Response)
 export async function autoSegmentUsers(): Promise<number> {
   let updated = 0;
   try {
-    const users = await prisma.user.findMany({
-      where: { role: "CUSTOMER" },
-      select: { id: true, createdAt: true, segmentTags: true },
-    });
-
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
-    for (const user of users) {
-      const tags = new Set<string>(user.segmentTags);
+    // Single query: get all customers with their order aggregates
+    const rows = await prisma.$queryRaw<Array<{
+      id: string;
+      createdAt: Date;
+      segmentTags: string[];
+      order_count: number;
+      total_spent: number;
+      last_order: Date | null;
+    }>>`
+      SELECT u.id, u."createdAt", u."segmentTags",
+        COALESCE(os.cnt, 0)::int as order_count,
+        COALESCE(os.total, 0)::float8 as total_spent,
+        os.last_order
+      FROM "User" u
+      LEFT JOIN (
+        SELECT "userId",
+          COUNT(*)::int as cnt,
+          SUM("totalAmount"::numeric)::float8 as total,
+          MAX("createdAt") as last_order
+        FROM "Order"
+        WHERE status NOT IN ('CANCELLED', 'REFUNDED')
+        GROUP BY "userId"
+      ) os ON os."userId" = u.id
+      WHERE u.role = 'CUSTOMER'`;
+
+    for (const row of rows) {
+      const tags = new Set<string>(row.segmentTags || []);
 
       // "new" check
-      if (user.createdAt > thirtyDaysAgo) {
-        tags.add("new");
-      } else {
-        tags.delete("new");
-      }
-
-      // Get order stats
-      const orderStats = await prisma.order.aggregate({
-        where: { userId: user.id, status: { notIn: ["CANCELLED", "REFUNDED"] } },
-        _count: { id: true },
-        _sum: { totalAmount: true },
-        _max: { createdAt: true },
-      });
-
+      if (new Date(row.createdAt) > thirtyDaysAgo) { tags.add("new"); } else { tags.delete("new"); }
       // "vip" check
-      if ((orderStats._count.id || 0) > 5) {
-        tags.add("vip");
-      } else {
-        tags.delete("vip");
-      }
-
+      if (row.order_count > 5) { tags.add("vip"); } else { tags.delete("vip"); }
       // "at_risk" check
-      if (orderStats._max.createdAt && orderStats._max.createdAt < sixtyDaysAgo) {
-        tags.add("at_risk");
-      } else {
-        tags.delete("at_risk");
-      }
-
+      if (row.last_order && new Date(row.last_order) < sixtyDaysAgo) { tags.add("at_risk"); } else { tags.delete("at_risk"); }
       // "high_value" check
-      if (Number(orderStats._sum.totalAmount || 0) > 500000) {
-        tags.add("high_value");
-      } else {
-        tags.delete("high_value");
-      }
+      if (row.total_spent > 500000) { tags.add("high_value"); } else { tags.delete("high_value"); }
 
       const newTags = Array.from(tags);
-      const oldTags = new Set(user.segmentTags);
+      const oldTags = new Set(row.segmentTags || []);
       if (newTags.length !== oldTags.size || newTags.some((t) => !oldTags.has(t))) {
         await prisma.user.update({
-          where: { id: user.id },
+          where: { id: row.id },
           data: { segmentTags: newTags },
         });
         updated++;

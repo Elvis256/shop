@@ -153,6 +153,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Logout error:", error);
     }
     setUser(null);
+    // Clear cart data on logout
+    try {
+      localStorage.removeItem("cart");
+      localStorage.removeItem("cartId");
+    } catch {}
   };
 
   const isAdmin = user?.role === "ADMIN" || user?.role === "MANAGER";

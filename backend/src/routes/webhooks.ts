@@ -73,8 +73,13 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
           return res.status(200).json({ error: "Amount verification mismatch", received: true });
         }
       } catch (verifyErr) {
-        logger.error(`Flutterwave server-side verification failed for ${tx_ref}, proceeding with webhook data`, { error: verifyErr });
-        // Continue processing — the webhook hash was already verified
+        logger.error(`Flutterwave server-side verification failed for ${tx_ref}, flagging for manual review`, { error: verifyErr });
+        // Do NOT proceed with unverified payment — flag the order for review
+        await prisma.order.update({
+          where: { id: tx_ref },
+          data: { notes: "FLAGGED: Flutterwave server-side verification failed. Manual review required." },
+        }).catch(() => {});
+        return res.status(200).json({ received: true, flagged: true });
       }
 
       // Verify amount AND currency match
@@ -226,6 +231,20 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
       if (parts.length >= 3) {
         const planId = parts[1];
         const paymentId = parts.slice(2).join("-");
+
+        // Idempotency guard for installment webhooks
+        try {
+          await prisma.processedWebhook.create({
+            data: { webhookId: `installment-${data.flw_ref || data.id}`, provider: "flutterwave", eventType: "installment" },
+          });
+        } catch (err: any) {
+          if (err.code === "P2002") {
+            logger.info(`Installment webhook ${data.flw_ref || data.id} already processed, skipping`);
+            return res.status(200).json({ received: true, duplicate: true });
+          }
+          throw err;
+        }
+
         try {
           if (data.status === "successful") {
             const plan = await prisma.installmentPlan.findUnique({

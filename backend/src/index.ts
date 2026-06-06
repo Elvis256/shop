@@ -186,8 +186,17 @@ app.use("/api/v1", developerApiRoutes);
 
 app.use("/api", validateCsrf);
 
-// Static files (uploads)
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+// Static files (uploads) — with security headers
+app.use("/uploads", (req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'none'; script-src 'none'");
+  // Force download for non-image files
+  const ext = path.extname(req.path).toLowerCase();
+  if (![".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".ico"].includes(ext)) {
+    res.setHeader("Content-Disposition", "attachment");
+  }
+  next();
+}, express.static(path.join(__dirname, "../uploads")));
 
 // API Routes
 app.use("/api/auth", authRoutes);
@@ -320,8 +329,11 @@ const server = app.listen(Number(PORT), "0.0.0.0", () => {
   startJob("installment_reminders", import("./services/installmentReminders"), "startInstallmentReminderJob");
   startJob("layaway_reminders", import("./services/layawayReminders"), "startLayawayReminderJob");
 
+  // Track interval handles for graceful shutdown
+  const intervalHandles: NodeJS.Timeout[] = [];
+
   // Private order history cleanup — runs daily
-  setInterval(async () => {
+  intervalHandles.push(setInterval(async () => {
     try {
       const users = await prisma.user.findMany({
         where: { orderHistoryDays: { not: null } },
@@ -338,10 +350,10 @@ const server = app.listen(Number(PORT), "0.0.0.0", () => {
     } catch (err: any) {
       logger.error("order_history_cleanup_failed", { error: err.message });
     }
-  }, 24 * 60 * 60 * 1000);
+  }, 24 * 60 * 60 * 1000));
 
   // Guest data auto-delete cleanup — runs daily
-  setInterval(async () => {
+  intervalHandles.push(setInterval(async () => {
     try {
       const result = await prisma.order.updateMany({
         where: {
@@ -363,10 +375,10 @@ const server = app.listen(Number(PORT), "0.0.0.0", () => {
     } catch (err: any) {
       logger.error("guest_data_cleanup_failed", { error: err.message });
     }
-  }, 24 * 60 * 60 * 1000);
+  }, 24 * 60 * 60 * 1000));
 
   // Expired refresh token cleanup — every 6 hours
-  const tokenCleanupInterval = setInterval(async () => {
+  intervalHandles.push(setInterval(async () => {
     try {
       const result = await prisma.refreshToken.deleteMany({
         where: { expiresAt: { lt: new Date() } },
@@ -377,7 +389,7 @@ const server = app.listen(Number(PORT), "0.0.0.0", () => {
     } catch (err: any) {
       logger.error("token_cleanup_failed", { error: err.message });
     }
-  }, 6 * 60 * 60 * 1000);
+  }, 6 * 60 * 60 * 1000));
   // Run once on startup after 30s
   setTimeout(async () => {
     try {
@@ -389,7 +401,8 @@ const server = app.listen(Number(PORT), "0.0.0.0", () => {
   const shutdown = async (signal: string) => {
     logger.info("shutdown_initiated", { signal });
     server.close(async () => {
-      clearInterval(tokenCleanupInterval);
+      // Stop all background interval jobs
+      for (const handle of intervalHandles) clearInterval(handle);
       await prisma.$disconnect().catch(() => {});
       await redis.quit().catch(() => {});
       logger.info("shutdown_complete");

@@ -128,22 +128,14 @@ router.get("/low-stock", asyncHandler(async (req: AuthRequest, res: Response) =>
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
 
-    // Prisma can't compare two columns, so fetch active products with
-    // low stock (heuristic ceiling) and filter in JS.
-    const products = await prisma.product.findMany({
-      where: {
-        status: "ACTIVE",
-        stock: { lte: 100 },
-      },
-      orderBy: { stock: "asc" },
-      include: {
-        category: { select: { name: true } },
-      },
-    });
-
-    const lowStockProducts = products
-      .filter((p) => p.stock <= p.lowStockAlert)
-      .slice(0, limit);
+    // Use raw SQL to compare two columns (stock <= lowStockAlert) at DB level
+    const lowStockProducts = await prisma.$queryRaw<any[]>`
+      SELECT p.*, c.name as "categoryName"
+      FROM "Product" p
+      LEFT JOIN "Category" c ON p."categoryId" = c.id
+      WHERE p.status = 'ACTIVE' AND p.stock <= p."lowStockAlert"
+      ORDER BY p.stock ASC
+      LIMIT ${limit}`;
 
     return res.json({
       products: lowStockProducts.map((p) => ({
@@ -153,7 +145,7 @@ router.get("/low-stock", asyncHandler(async (req: AuthRequest, res: Response) =>
         stock: p.stock,
         lowStockAlert: p.lowStockAlert,
         price: p.price,
-        category: p.category?.name || null,
+        category: p.categoryName || null,
       })),
       total: lowStockProducts.length,
     });
@@ -580,7 +572,7 @@ router.post("/bulk", asyncHandler(async (req: AuthRequest, res: Response) => {
     const { action, ids } = z
       .object({
         action: z.enum(["activate", "archive", "delete", "feature", "unfeature"]),
-        ids: z.array(z.string()),
+        ids: z.array(z.string()).max(100, "Maximum 100 items per batch"),
       })
       .parse(req.body);
 
@@ -631,7 +623,7 @@ router.patch("/bulk-stock", asyncHandler(async (req: AuthRequest, res: Response)
   try {
     const { updates } = z
       .object({
-        updates: z.array(z.object({ id: z.string(), stock: z.number().int().min(0) })),
+        updates: z.array(z.object({ id: z.string(), stock: z.number().int().min(0) })).max(100, "Maximum 100 items per batch"),
       })
       .parse(req.body);
 

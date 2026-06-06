@@ -72,19 +72,20 @@ async function reserveStock(
   const reservations = [];
   
   for (const item of cartItems) {
-    // Re-fetch product inside transaction for consistent reads (prevents TOCTOU race)
-    const product = await tx.product.findUnique({ where: { id: item.productId } });
+    // Acquire row-level lock to prevent TOCTOU race on stock check
+    const [product] = await tx.$queryRaw<any[]>`
+      SELECT * FROM "Product" WHERE id = ${item.productId} FOR UPDATE`;
     if (!product) {
       return { success: false, error: `Product "${item.product.name}" no longer exists.` };
     }
-    
+
     // Skip inventory check if not tracking or allows backorder
     if (!product.trackInventory || product.allowBackorder) {
       continue;
     }
-    
+
     const availableStock = product.stock - (product.reservedStock || 0);
-    
+
     if (availableStock < item.quantity) {
       return {
         success: false,
@@ -285,9 +286,9 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
       let couponDiscount = 0;
       let appliedCouponId: string | undefined;
       if (couponCode) {
-        const coupon = await tx.coupon.findUnique({
-          where: { code: couponCode.toUpperCase() },
-        });
+        // Lock the coupon row to prevent concurrent usage race condition
+        const [coupon] = await tx.$queryRaw<any[]>`
+          SELECT * FROM "Coupon" WHERE code = ${couponCode.toUpperCase()} FOR UPDATE`;
         if (coupon && coupon.active) {
           const now = new Date();
           if (now >= coupon.validFrom && now <= coupon.validUntil) {
@@ -318,11 +319,11 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
       let giftCardDiscount = 0;
       let giftCardId: string | undefined;
       if (giftCardCode && giftCardRequestedAmount && giftCardRequestedAmount > 0) {
-        const giftCard = await tx.giftCard.findUnique({
-          where: { code: giftCardCode.toUpperCase() },
-        });
+        // Lock the gift card row to prevent concurrent double-spend
+        const [giftCard] = await tx.$queryRaw<any[]>`
+          SELECT * FROM "GiftCard" WHERE code = ${giftCardCode.toUpperCase()} FOR UPDATE`;
         if (giftCard && giftCard.isActive && Number(giftCard.currentValue) > 0) {
-          if (!giftCard.expiresAt || giftCard.expiresAt > new Date()) {
+          if (!giftCard.expiresAt || new Date(giftCard.expiresAt) > new Date()) {
             giftCardDiscount = Math.min(giftCardRequestedAmount, Number(giftCard.currentValue));
             giftCardId = giftCard.id;
             const gc = await tx.giftCard.update({
