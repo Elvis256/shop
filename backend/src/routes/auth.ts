@@ -583,10 +583,20 @@ router.post("/change-password", authenticate, asyncHandler(async (req: AuthReque
     // Hash new password
     const hashedPassword = await bcrypt.hash(body.newPassword, 12);
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { password: hashedPassword },
-    });
+    // Update password and invalidate all existing sessions
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword },
+      }),
+      prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
+    ]);
+
+    // Issue new tokens for the current session
+    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal: req.user!.portal });
+    const refreshToken = await createRefreshToken(user.id);
+    res.cookie("auth_token", accessToken, COOKIE_OPTIONS);
+    res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
 
     return res.json({ message: "Password changed successfully" });
   } catch (error) {

@@ -94,21 +94,22 @@ const paymentIcons: Record<string, any> = {
 function TrackOrderContent() {
   const searchParams = useSearchParams();
   const [orderNumber, setOrderNumber] = useState(searchParams.get("order") || "");
+  const [email, setEmail] = useState(searchParams.get("email") || "");
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const doSearch = useCallback(async (num: string) => {
-    if (!num.trim()) return;
+  const doSearch = useCallback(async (num: string, emailAddr: string) => {
+    if (!num.trim() || !emailAddr.trim()) return;
     setLoading(true);
     setError(null);
     setSearched(true);
     try {
-      const res = await fetch(`${API_URL}/api/orders/track/${num.trim()}`);
+      const res = await fetch(`${API_URL}/api/orders/track/${num.trim()}?email=${encodeURIComponent(emailAddr.trim())}`);
       if (!res.ok) {
-        setError(res.status === 404 ? "Order not found. Please check your order number and try again." : "Failed to fetch order. Please try again.");
+        setError(res.status === 404 ? "Order not found. Please check your order number and email, then try again." : "Failed to fetch order. Please try again.");
         setOrder(null);
         return;
       }
@@ -122,10 +123,11 @@ function TrackOrderContent() {
     }
   }, []);
 
-  // Auto-search if ?order= param is present
+  // Auto-search if ?order= and ?email= params are present
   useEffect(() => {
     const param = searchParams.get("order");
-    if (param) doSearch(param);
+    const emailParam = searchParams.get("email");
+    if (param && emailParam) doSearch(param, emailParam);
   }, [searchParams, doSearch]);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -134,7 +136,11 @@ function TrackOrderContent() {
       setError("Please enter an order number");
       return;
     }
-    doSearch(orderNumber);
+    if (!email.trim()) {
+      setError("Please enter the email address used for your order");
+      return;
+    }
+    doSearch(orderNumber, email);
   };
 
   const copyText = (text: string) => {
@@ -207,29 +213,43 @@ function TrackOrderContent() {
             Enter your order number to see the current status and estimated delivery time.
           </p>
 
-          <form onSubmit={handleSearch} className="flex gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                value={orderNumber}
-                onChange={(e) => setOrderNumber(e.target.value)}
-                placeholder="e.g. ORD-1773560066372-TX80LSHCI"
-                className="w-full pl-12 pr-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-accent focus:border-accent bg-white shadow-sm text-sm"
-              />
+          <form onSubmit={handleSearch} className="space-y-3">
+            <div className="flex gap-3">
+              <div className="flex-1 relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={orderNumber}
+                  onChange={(e) => setOrderNumber(e.target.value)}
+                  placeholder="Order number, e.g. ORD-1773560066372-TX80LSHCI"
+                  className="w-full pl-12 pr-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-accent focus:border-accent bg-white shadow-sm text-sm"
+                />
+              </div>
             </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary px-8 rounded-xl shadow-sm"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                  Searching
-                </span>
-              ) : "Track"}
-            </button>
+            <div className="flex gap-3">
+              <div className="flex-1 relative">
+                <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Email address used for the order"
+                  className="w-full pl-12 pr-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-accent focus:border-accent bg-white shadow-sm text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary px-8 rounded-xl shadow-sm"
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Searching
+                  </span>
+                ) : "Track"}
+              </button>
+            </div>
           </form>
 
           {error && (

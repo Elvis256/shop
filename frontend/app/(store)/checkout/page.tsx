@@ -416,7 +416,7 @@ export default function CheckoutPage() {
     const checkStatus = async () => {
       if (pollingCancelRef.current) return;
       try {
-        const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status`);
+        const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status`, { credentials: "include" });
         const data = await res.json();
 
         if (pollingCancelRef.current) return;

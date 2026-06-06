@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { verifyFlutterwaveHash } from "../utils/verifyFlutterwave";
+import { verifyFlutterwaveTransaction } from "../services/flutterwave";
 import prisma from "../lib/prisma";
 import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
 import { placeCJOrdersForOrder } from "../services/cjOrder";
@@ -21,7 +22,7 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
 
     const { event, data } = req.body;
 
-    if (event === "charge.completed") {
+    if (event === "charge.completed" && !data.tx_ref?.startsWith("installment-") && !data.tx_ref?.startsWith("layaway-")) {
       const tx_ref = data.tx_ref;
       const status = data.status;
       const flw_ref = data.flw_ref;
@@ -55,6 +56,25 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
       if (!order) {
         logger.warn(`Order not found for tx_ref: ${tx_ref}`);
         return res.status(200).json({ error: "Order not found", received: true });
+      }
+
+      // Server-side verification: confirm transaction with Flutterwave API
+      try {
+        const verification = await verifyFlutterwaveTransaction(data.id?.toString() || flw_ref);
+        const verifiedStatus = verification?.data?.status;
+        const verifiedAmount = verification?.data?.amount;
+        const verifiedCurrency = verification?.data?.currency;
+        if (verifiedStatus !== "successful" && status === "successful") {
+          logger.warn(`Flutterwave verification mismatch for ${tx_ref}: webhook says successful, API says ${verifiedStatus}`);
+          return res.status(200).json({ error: "Verification mismatch", received: true });
+        }
+        if (verifiedAmount !== undefined && verifiedAmount !== amount) {
+          logger.warn(`Flutterwave verified amount mismatch for ${tx_ref}: webhook ${amount}, API ${verifiedAmount}`);
+          return res.status(200).json({ error: "Amount verification mismatch", received: true });
+        }
+      } catch (verifyErr) {
+        logger.error(`Flutterwave server-side verification failed for ${tx_ref}, proceeding with webhook data`, { error: verifyErr });
+        // Continue processing — the webhook hash was already verified
       }
 
       // Verify amount AND currency match

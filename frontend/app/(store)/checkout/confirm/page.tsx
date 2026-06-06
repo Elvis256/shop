@@ -30,7 +30,7 @@ function ConfirmContent() {
 
     const checkStatus = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status`);
+        const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status`, { credentials: "include" });
         const data = await res.json();
 
         if (cancelled) return;

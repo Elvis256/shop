@@ -275,71 +275,65 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
     }, 0);
     const shippingAmount = body.shipping || 0;
 
-    // Apply coupon discount if provided
-    let couponDiscount = 0;
-    let appliedCouponId: string | undefined;
-    if (body.couponCode) {
-      const coupon = await prisma.coupon.findUnique({
-        where: { code: body.couponCode.toUpperCase() },
-      });
-      if (coupon && coupon.active) {
-        const now = new Date();
-        if (now >= coupon.validFrom && now <= coupon.validUntil) {
-          if (!coupon.usageLimit || coupon.usedCount < coupon.usageLimit) {
-            if (!coupon.minOrderAmount || calculatedTotal >= Number(coupon.minOrderAmount)) {
-              if (coupon.type === "PERCENTAGE") {
-                couponDiscount = calculatedTotal * (Number(coupon.value) / 100);
-                if (coupon.maxDiscount && couponDiscount > Number(coupon.maxDiscount)) {
-                  couponDiscount = Number(coupon.maxDiscount);
+    // Coupon and gift card validation moved inside transaction to prevent race conditions
+    const couponCode = body.couponCode;
+    const giftCardCode = body.giftCardCode;
+    const giftCardRequestedAmount = body.giftCardAmount;
+
+    const txResult = await prisma.$transaction(async (tx) => {
+      // Validate and apply coupon inside transaction (atomic check + increment)
+      let couponDiscount = 0;
+      let appliedCouponId: string | undefined;
+      if (couponCode) {
+        const coupon = await tx.coupon.findUnique({
+          where: { code: couponCode.toUpperCase() },
+        });
+        if (coupon && coupon.active) {
+          const now = new Date();
+          if (now >= coupon.validFrom && now <= coupon.validUntil) {
+            if (!coupon.usageLimit || coupon.usedCount < coupon.usageLimit) {
+              if (!coupon.minOrderAmount || calculatedTotal >= Number(coupon.minOrderAmount)) {
+                if (coupon.type === "PERCENTAGE") {
+                  couponDiscount = calculatedTotal * (Number(coupon.value) / 100);
+                  if (coupon.maxDiscount && couponDiscount > Number(coupon.maxDiscount)) {
+                    couponDiscount = Number(coupon.maxDiscount);
+                  }
+                } else {
+                  couponDiscount = Number(coupon.value);
                 }
-              } else {
-                couponDiscount = Number(coupon.value);
+                couponDiscount = Math.round(Math.min(couponDiscount, calculatedTotal));
+                appliedCouponId = coupon.id;
+                // Atomically increment usage inside the transaction
+                await tx.coupon.update({
+                  where: { id: coupon.id },
+                  data: { usedCount: { increment: 1 } },
+                });
               }
-              couponDiscount = Math.round(Math.min(couponDiscount, calculatedTotal));
-              appliedCouponId = coupon.id;
             }
           }
         }
       }
-    }
 
-    // Validate gift card if provided
-    let giftCardDiscount = 0;
-    let giftCardId: string | undefined;
-    if (body.giftCardCode && body.giftCardAmount && body.giftCardAmount > 0) {
-      const giftCard = await prisma.giftCard.findUnique({
-        where: { code: body.giftCardCode.toUpperCase() },
-      });
-      if (giftCard && giftCard.isActive && Number(giftCard.currentValue) > 0) {
-        if (!giftCard.expiresAt || giftCard.expiresAt > new Date()) {
-          giftCardDiscount = Math.min(body.giftCardAmount, Number(giftCard.currentValue));
-          giftCardId = giftCard.id;
-        }
-      }
-    }
-
-    // Move coupon increment inside transaction to prevent race condition
-    const txResult = await prisma.$transaction(async (tx) => {
-      // Atomically increment coupon usage inside the transaction
-      if (appliedCouponId) {
-        await tx.coupon.update({
-          where: { id: appliedCouponId },
-          data: { usedCount: { increment: 1 } },
+      // Validate and redeem gift card inside transaction (atomic check + decrement)
+      let giftCardDiscount = 0;
+      let giftCardId: string | undefined;
+      if (giftCardCode && giftCardRequestedAmount && giftCardRequestedAmount > 0) {
+        const giftCard = await tx.giftCard.findUnique({
+          where: { code: giftCardCode.toUpperCase() },
         });
-      }
-
-      // Redeem gift card inside transaction
-      if (giftCardId && giftCardDiscount > 0) {
-        const gc = await tx.giftCard.update({
-          where: { id: giftCardId },
-          data: {
-            currentValue: { decrement: giftCardDiscount },
-            isActive: undefined, // will set below
-          },
-        });
-        // Deactivate if fully used
-        if (Number(gc.currentValue) <= 0) {
-          await tx.giftCard.update({ where: { id: giftCardId }, data: { isActive: false } });
+        if (giftCard && giftCard.isActive && Number(giftCard.currentValue) > 0) {
+          if (!giftCard.expiresAt || giftCard.expiresAt > new Date()) {
+            giftCardDiscount = Math.min(giftCardRequestedAmount, Number(giftCard.currentValue));
+            giftCardId = giftCard.id;
+            const gc = await tx.giftCard.update({
+              where: { id: giftCard.id },
+              data: { currentValue: { decrement: giftCardDiscount } },
+            });
+            // Deactivate if fully used
+            if (Number(gc.currentValue) <= 0) {
+              await tx.giftCard.update({ where: { id: giftCard.id }, data: { isActive: false } });
+            }
+          }
         }
       }
 
@@ -444,11 +438,13 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
         }
       }
 
-      return { order, storeCreditUsed };
+      return { order, storeCreditUsed, couponDiscount, giftCardDiscount };
     });
 
     const result = txResult.order;
     const storeCreditUsed = txResult.storeCreditUsed;
+    const couponDiscount = txResult.couponDiscount;
+    const giftCardDiscount = txResult.giftCardDiscount;
     const orderTotal = calculatedTotal - couponDiscount + shippingAmount;
     const paymentAmount = orderTotal - storeCreditUsed;
     const chargeAmount = body.installments && body.installments >= 2 && body.paymentMethod !== "cod"
@@ -851,6 +847,19 @@ router.get("/paypal-cancel", asyncHandler(async (req: Request, res: Response) =>
 
   if (orderId) {
     try {
+      // Verify the order exists, is still PENDING, and has a pending PayPal payment
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { payments: true },
+      });
+      if (!order || order.status !== "PENDING") {
+        return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=payment_cancelled`);
+      }
+      const hasPendingPaypal = order.payments.some(p => p.method === "PAYPAL" && p.status === "PENDING");
+      if (!hasPendingPaypal) {
+        return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=payment_cancelled`);
+      }
+
       // Release stock reservations
       await prisma.$transaction(async (tx) => {
         const reservations = await tx.stockReservation.findMany({

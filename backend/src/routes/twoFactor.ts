@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
-import { authenticate, AuthRequest } from "../middleware/auth";
+import { authenticate, AuthRequest, generateToken, createRefreshToken, COOKIE_OPTIONS, REFRESH_COOKIE_OPTIONS } from "../middleware/auth";
+import redis from "../lib/redis";
 import crypto from "crypto";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -180,13 +181,27 @@ router.post("/enable", authenticate, asyncHandler(async (req: AuthRequest, res: 
   }
 }));
 
-// Verify 2FA token (during login)
+// Verify 2FA token (during login) — issues JWT tokens on success
 router.post("/verify", asyncHandler(async (req, res) => {
   try {
     const { userId, token } = req.body;
 
     if (!userId || !token) {
       return res.status(400).json({ error: "User ID and token required" });
+    }
+
+    // Rate limit 2FA verification attempts (10 attempts per 15 minutes per userId)
+    const rateLimitKey = `2fa_attempts:${userId}`;
+    try {
+      const attempts = await redis.incr(rateLimitKey);
+      if (attempts === 1) {
+        await redis.expire(rateLimitKey, 15 * 60); // 15 min window
+      }
+      if (attempts > 10) {
+        return res.status(429).json({ error: "Too many verification attempts. Please try again later." });
+      }
+    } catch {
+      // Redis down — continue without rate limiting
     }
 
     const twoFactor = await prisma.twoFactorAuth.findUnique({
@@ -197,36 +212,72 @@ router.post("/verify", asyncHandler(async (req, res) => {
       return res.status(400).json({ error: "2FA not enabled for this user" });
     }
 
+    let verified = false;
+    let usedBackupCode = false;
+
     // Try TOTP first
     if (verifyTOTP(twoFactor.secret, token)) {
-      await prisma.twoFactorAuth.update({
-        where: { userId },
-        data: { lastUsedAt: new Date() },
-      });
-      return res.json({ valid: true });
+      verified = true;
+    } else {
+      // Try backup code
+      const hashedToken = crypto.createHash("sha256").update(token.toUpperCase()).digest("hex");
+      const backupCodeIndex = twoFactor.backupCodes.indexOf(hashedToken);
+
+      if (backupCodeIndex !== -1) {
+        // Remove used backup code
+        const updatedCodes = [...twoFactor.backupCodes];
+        updatedCodes.splice(backupCodeIndex, 1);
+
+        await prisma.twoFactorAuth.update({
+          where: { userId },
+          data: {
+            backupCodes: updatedCodes,
+            lastUsedAt: new Date(),
+          },
+        });
+        verified = true;
+        usedBackupCode = true;
+      }
     }
 
-    // Try backup code
-    const hashedToken = crypto.createHash("sha256").update(token.toUpperCase()).digest("hex");
-    const backupCodeIndex = twoFactor.backupCodes.indexOf(hashedToken);
-    
-    if (backupCodeIndex !== -1) {
-      // Remove used backup code
-      const updatedCodes = [...twoFactor.backupCodes];
-      updatedCodes.splice(backupCodeIndex, 1);
-      
-      await prisma.twoFactorAuth.update({
-        where: { userId },
-        data: {
-          backupCodes: updatedCodes,
-          lastUsedAt: new Date(),
-        },
-      });
-      
-      return res.json({ valid: true, usedBackupCode: true });
+    if (!verified) {
+      return res.status(400).json({ valid: false, error: "Invalid verification code" });
     }
 
-    res.status(400).json({ valid: false, error: "Invalid verification code" });
+    await prisma.twoFactorAuth.update({
+      where: { userId },
+      data: { lastUsedAt: new Date() },
+    });
+
+    // Clear rate limit on success
+    try { await redis.del(rateLimitKey); } catch {}
+
+    // Issue JWT tokens to complete the login flow
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, role: true, isBlocked: true },
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: "User not found" });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ error: "Account has been suspended" });
+    }
+
+    const portal = (user.role === "ADMIN" || user.role === "MANAGER") ? "admin" : "customer";
+    const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal });
+    const refreshToken = await createRefreshToken(user.id);
+
+    res.cookie("auth_token", accessToken, COOKIE_OPTIONS);
+    res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
+
+    return res.json({
+      valid: true,
+      usedBackupCode,
+      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+    });
   } catch (error) {
     logger.error("Verify 2FA error", { error });
     res.status(500).json({ error: "Failed to verify 2FA" });

@@ -102,12 +102,16 @@ router.post("/login", asyncHandler(async (req, res: Response) => {
     // Find user — must be ADMIN or MANAGER
     const user = await prisma.user.findUnique({
       where: { email: body.email },
-      select: { id: true, email: true, name: true, password: true, role: true },
+      select: { id: true, email: true, name: true, password: true, role: true, isBlocked: true },
     });
 
     if (!user || (user.role !== "ADMIN" && user.role !== "MANAGER")) {
       await recordAdminFailedLogin(body.email, ip);
       return res.status(401).json({ error: "Invalid credentials or insufficient permissions" });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ error: "Account has been suspended. Please contact support." });
     }
 
     const validPassword = await bcrypt.compare(body.password, user.password);

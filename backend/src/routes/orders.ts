@@ -124,11 +124,14 @@ router.get("/:id/payment-status", optionalAuth, asyncHandler(async (req: AuthReq
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
     }
-    // Verify ownership: user must own the order or match the email
+    // Verify ownership: user must own the order or match the email.
+    // For guest checkouts (no user), allow access by order ID (UUIDs are unguessable)
+    // since the caller just created the order and has the ID.
     const user = req.user;
     const isOwner = user && (order.userId === user.id || order.customerEmail === user.email);
     const isAdmin = user && (user.role === "ADMIN" || user.role === "MANAGER");
-    if (!isOwner && !isAdmin) {
+    const isGuestOrder = !order.userId;
+    if (!isOwner && !isAdmin && !isGuestOrder) {
       return res.status(404).json({ error: "Order not found" });
     }
     return res.json({
@@ -234,9 +237,15 @@ router.get("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Resp
 router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userEmail = req.user!.email;
+    const userId = req.user!.id;
 
     const orders = await prisma.order.findMany({
-      where: { customerEmail: userEmail },
+      where: {
+        OR: [
+          { customerEmail: userEmail },
+          { userId },
+        ],
+      },
       include: {
         payments: {
           select: { status: true },

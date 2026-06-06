@@ -339,11 +339,16 @@ router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) =
             data: { status: "FAILED" },
           });
         }
-        for (const item of order.items) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
-          });
+        // Only restore stock if payment was successful (stock was actually decremented).
+        // For unpaid orders, stock was only reserved, not decremented — reservations
+        // are released below.
+        if (order.paymentStatus === "SUCCESSFUL") {
+          for (const item of order.items) {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
+          }
         }
         // Release stock reservations
         const reservations = await tx.stockReservation.findMany({
@@ -465,12 +470,23 @@ router.post("/:id/refund", asyncHandler(async (req: AuthRequest, res: Response) 
       return res.status(400).json({ error: "Refund amount cannot exceed order total" });
     }
 
-    // Initiate refund via Flutterwave
-    const refundResult = await refundFlutterwaveTransaction(
-      payment.flwTxId!,
-      amount,
-      reason
-    );
+    // Route refund to correct provider
+    let refundResult: any = null;
+    if (payment.provider === "flutterwave" && payment.flwTxId) {
+      refundResult = await refundFlutterwaveTransaction(
+        payment.flwTxId,
+        amount,
+        reason
+      );
+    } else if (payment.provider === "paypal") {
+      // PayPal refunds must be processed manually through PayPal dashboard
+      refundResult = { status: "manual", message: "PayPal refund must be processed through PayPal dashboard" };
+    } else if (payment.provider === "cod" || payment.method === "COD") {
+      // COD refund is manual — just update the records
+      refundResult = { status: "manual", message: "COD refund processed manually" };
+    } else {
+      return res.status(400).json({ error: `Refund not supported for provider: ${payment.provider}. No transaction ID available.` });
+    }
 
     // Update order/payment status and restore inventory atomically
     await prisma.$transaction(async (tx) => {

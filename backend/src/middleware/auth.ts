@@ -158,18 +158,25 @@ export async function optionalAuth(req: AuthRequest, res: Response, next: NextFu
   try {
     // Try cookie first, then Authorization header
     let token = req.cookies?.auth_token;
-    
+
     if (!token) {
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
         token = authHeader.split(" ")[1];
       }
     }
-    
+
     if (token) {
       const decoded = verifyToken(token);
       if (decoded) {
-        req.user = decoded;
+        // Verify user is not blocked before granting identity
+        const user = await prisma.user.findUnique({
+          where: { id: decoded.id },
+          select: { isBlocked: true },
+        });
+        if (user && !user.isBlocked) {
+          req.user = decoded;
+        }
       }
     }
     next();
