@@ -27,9 +27,12 @@ const PAGE_CONFIG: Record<string, { title: string; type: "faq" | "contact" | "te
 
 async function getCsrfToken(): Promise<string> {
   try {
-    const res = await fetch("/api/auth/csrf", { credentials: "include" });
+    // Check cookie first
+    const match = document.cookie.match(/csrf_token=([^;]+)/);
+    if (match) return match[1];
+    const res = await fetch("/api/csrf-token", { credentials: "include" });
     const data = await res.json();
-    return data.token || "";
+    return data.csrfToken || data.token || "";
   } catch {
     return "";
   }

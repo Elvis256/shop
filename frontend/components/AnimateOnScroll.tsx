@@ -1,7 +1,6 @@
 "use client";
 
-import { motion, useInView } from "framer-motion";
-import { useRef, type ReactNode } from "react";
+import { useRef, useEffect, useState, type ReactNode } from "react";
 
 type AnimateOnScrollProps = {
   children: ReactNode;
@@ -10,29 +9,6 @@ type AnimateOnScrollProps = {
   duration?: number;
   variant?: "fadeUp" | "fadeIn" | "scaleIn" | "slideLeft" | "slideRight";
   once?: boolean;
-};
-
-const variants = {
-  fadeUp: {
-    hidden: { opacity: 0, y: 30 },
-    visible: { opacity: 1, y: 0 },
-  },
-  fadeIn: {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1 },
-  },
-  scaleIn: {
-    hidden: { opacity: 0, scale: 0.9 },
-    visible: { opacity: 1, scale: 1 },
-  },
-  slideLeft: {
-    hidden: { opacity: 0, x: 40 },
-    visible: { opacity: 1, x: 0 },
-  },
-  slideRight: {
-    hidden: { opacity: 0, x: -40 },
-    visible: { opacity: 1, x: 0 },
-  },
 };
 
 export default function AnimateOnScroll({
@@ -44,19 +20,49 @@ export default function AnimateOnScroll({
   once = true,
 }: AnimateOnScrollProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once, margin: "-50px" });
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          if (once) observer.unobserve(el);
+        } else if (!once) {
+          setIsVisible(false);
+        }
+      },
+      { rootMargin: "-50px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [once]);
+
+  const baseStyle: React.CSSProperties = {
+    transition: `opacity ${duration}s ease, transform ${duration}s ease`,
+    transitionDelay: `${delay}s`,
+  };
+
+  const hiddenStyles: Record<string, React.CSSProperties> = {
+    fadeUp: { opacity: 0, transform: "translateY(30px)" },
+    fadeIn: { opacity: 0 },
+    scaleIn: { opacity: 0, transform: "scale(0.9)" },
+    slideLeft: { opacity: 0, transform: "translateX(40px)" },
+    slideRight: { opacity: 0, transform: "translateX(-40px)" },
+  };
+
+  const visibleStyle: React.CSSProperties = { opacity: 1, transform: "none" };
 
   return (
-    <motion.div
+    <div
       ref={ref}
-      initial="hidden"
-      animate={isInView ? "visible" : "hidden"}
-      variants={variants[variant]}
-      transition={{ duration, delay, ease: [0.25, 0.1, 0.25, 1] }}
       className={className}
+      style={{ ...baseStyle, ...(isVisible ? visibleStyle : hiddenStyles[variant]) }}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -69,38 +75,39 @@ type StaggerGridProps = {
 
 export function StaggerGrid({ children, className = "", staggerDelay = 0.06 }: StaggerGridProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, margin: "-30px" });
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.unobserve(el);
+        }
+      },
+      { rootMargin: "-30px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <motion.div
+    <div
       ref={ref}
-      initial="hidden"
-      animate={isInView ? "visible" : "hidden"}
-      variants={{
-        hidden: {},
-        visible: {
-          transition: {
-            staggerChildren: staggerDelay,
-          },
-        },
-      }}
-      className={className}
+      className={`${className} stagger-grid ${isVisible ? "stagger-visible" : ""}`}
+      style={{ "--stagger-delay": `${staggerDelay}s` } as React.CSSProperties}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
 
 export function StaggerItem({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <motion.div
-      variants={{
-        hidden: { opacity: 0, y: 20 },
-        visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.1, 0.25, 1] } },
-      }}
-      className={className}
-    >
+    <div className={`stagger-item ${className}`}>
       {children}
-    </motion.div>
+    </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api";
 import {
   PlusCircle, Edit2, Trash2, Eye, EyeOff, Star,
   Search, RefreshCw, FileText, Calendar, Tag, ArrowLeft
@@ -33,8 +34,7 @@ export default function AdminBlogPage() {
   async function loadPosts() {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/blog?limit=100", { credentials: "include" });
-      const data = await res.json();
+      const data = await apiFetch("/api/admin/blog?limit=100");
       setPosts(data.posts || []);
     } catch {
       console.error("Failed to load posts");
@@ -48,10 +48,8 @@ export default function AdminBlogPage() {
   async function togglePublish(post: BlogPost) {
     const newStatus = post.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED";
     try {
-      await fetch(`/api/admin/blog/${post.id}`, {
+      await apiFetch(`/api/admin/blog/${post.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ status: newStatus }),
       });
       setPosts(ps => ps.map(p => p.id === post.id ? { ...p, status: newStatus } : p));
@@ -62,10 +60,8 @@ export default function AdminBlogPage() {
 
   async function toggleFeatured(post: BlogPost) {
     try {
-      await fetch(`/api/admin/blog/${post.id}`, {
+      await apiFetch(`/api/admin/blog/${post.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ featured: !post.featured }),
       });
       setPosts(ps => ps.map(p => p.id === post.id ? { ...p, featured: !p.featured } : p));
@@ -78,7 +74,7 @@ export default function AdminBlogPage() {
     if (!confirm("Delete this post? This cannot be undone.")) return;
     setDeleting(id);
     try {
-      await fetch(`/api/admin/blog/${id}`, { method: "DELETE", credentials: "include" });
+      await apiFetch(`/api/admin/blog/${id}`, { method: "DELETE" });
       setPosts(ps => ps.filter(p => p.id !== id));
     } catch {
       alert("Failed to delete post");

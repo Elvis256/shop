@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api";
 import { ArrowLeft, Save, Eye, EyeOff, Star, Loader2 } from "lucide-react";
 
 interface PostForm {
@@ -43,9 +44,8 @@ export default function BlogPostEditorPage() {
 
   useEffect(() => {
     if (!isNew) {
-      fetch(`/api/admin/blog/${params.id}`, { credentials: "include" })
-        .then(r => r.json())
-        .then(data => {
+      apiFetch(`/api/admin/blog/${params.id}`)
+        .then((data: any) => {
           if (data.post) {
             const p = data.post;
             setForm({
@@ -91,14 +91,10 @@ export default function BlogPostEditorPage() {
 
       const url = isNew ? "/api/admin/blog" : `/api/admin/blog/${params.id}`;
       const method = isNew ? "POST" : "PUT";
-      const res = await fetch(url, {
+      await apiFetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to save");
       router.push("/admin/content/blog");
     } catch (err: any) {
       setError(err.message);

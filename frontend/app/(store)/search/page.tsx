@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Section from "@/components/Section";
 import ProductCard from "@/components/ProductCard";
+import SearchBar from "@/components/SearchBar";
 import { api } from "@/lib/api";
-import { Search as SearchIcon, SlidersHorizontal, Loader2, X } from "lucide-react";
+import { Search as SearchIcon, SlidersHorizontal, Loader2, X, Star } from "lucide-react";
 
 interface Product {
   id: string;
@@ -57,6 +58,8 @@ function SearchContent() {
   const [totalPages, setTotalPages] = useState(1);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [didYouMean, setDidYouMean] = useState<string | null>(null);
+  const minRating = searchParams.get("minRating") || "";
 
   // Local filter state (applied on submit / toggle)
   const [minPriceInput, setMinPriceInput] = useState(minPrice);
@@ -81,18 +84,20 @@ function SearchContent() {
     if (maxPrice) params.maxPrice = maxPrice;
     if (inStockOnly) params.inStock = "true";
     if (categorySlug) params.category = categorySlug;
+    if (minRating) params.minRating = minRating;
     if (sort && sort !== "relevance") params.sort = sort;
 
     api
       .search(query, params)
-      .then((data) => {
+      .then((data: any) => {
         setProducts(data.products as Product[]);
         setTotal(data.pagination?.total ?? data.products.length);
         setTotalPages(data.pagination?.totalPages ?? 1);
+        setDidYouMean(data.didYouMean || null);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [query, minPrice, maxPrice, inStockOnly, categorySlug, sort, page]);
+  }, [query, minPrice, maxPrice, inStockOnly, categorySlug, minRating, sort, page]);
 
   function updateParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
@@ -119,27 +124,15 @@ function SearchContent() {
     setMaxPriceInput("");
   }
 
-  const hasFilters = minPrice || maxPrice || inStockOnly || categorySlug || (sort && sort !== "relevance");
+  const hasFilters = minPrice || maxPrice || inStockOnly || categorySlug || minRating || (sort && sort !== "relevance");
 
   return (
     <Section>
       {/* Search Header */}
       <div className="mb-6">
         <div className="flex items-center gap-4 mb-4">
-          <div className="relative flex-1 max-w-xl">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
-            <input
-              type="text"
-              className="input pl-10"
-              placeholder="Search products..."
-              defaultValue={query}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const value = (e.target as HTMLInputElement).value;
-                  router.push(`/search?q=${encodeURIComponent(value)}`);
-                }
-              }}
-            />
+          <div className="flex-1 max-w-xl">
+            <SearchBar initialQuery={query} variant="page" autoFocus={!query} />
           </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
@@ -174,6 +167,20 @@ function SearchContent() {
           )}
         </div>
       </div>
+
+      {/* Did you mean */}
+      {didYouMean && (
+        <div className="mb-4 text-sm text-text-muted">
+          Did you mean{" "}
+          <button
+            onClick={() => router.push(`/search?q=${encodeURIComponent(didYouMean)}`)}
+            className="text-primary font-medium hover:underline"
+          >
+            &ldquo;{didYouMean}&rdquo;
+          </button>
+          ?
+        </div>
+      )}
 
       {/* Results */}
       <div className="flex gap-8">
@@ -214,6 +221,29 @@ function SearchContent() {
               />
               <span className="text-sm font-medium">In Stock Only</span>
             </label>
+          </div>
+
+          {/* Rating Filter */}
+          <div className="bg-surface rounded-xl p-4">
+            <h3 className="font-semibold text-sm mb-3">Minimum Rating</h3>
+            <div className="space-y-1">
+              {[4, 3, 2, 1].map((r) => (
+                <button
+                  key={r}
+                  onClick={() => updateParam("minRating", minRating === String(r) ? null : String(r))}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${
+                    minRating === String(r) ? "bg-primary/10 text-primary font-medium" : "hover:bg-surface-secondary"
+                  }`}
+                >
+                  <div className="flex">
+                    {[1,2,3,4,5].map((s) => (
+                      <Star key={s} className={`w-3.5 h-3.5 ${s <= r ? "fill-amber-400 text-amber-400" : "text-gray-200"}`} />
+                    ))}
+                  </div>
+                  <span>& up</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Category Filter */}

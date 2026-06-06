@@ -421,7 +421,7 @@ export default function AdminDisputesPage() {
                       </h4>
                       <p className="font-medium">{selectedDispute.seller.storeName}</p>
                       <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-                        <span>Rating: {Number(selectedDispute.seller.rating).toFixed(1)}</span>
+                        <span>Rating: {Number(selectedDispute.seller.rating || 0).toFixed(1)}</span>
                         <span>&middot;</span>
                         <span>Trust: {selectedDispute.seller.trustScore}/100</span>
                         <span>&middot;</span>

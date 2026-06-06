@@ -134,7 +134,7 @@ export default function SellerStorePage() {
               {seller.rating > 0 && (
                 <div className="flex items-center gap-1">
                   <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                  <span className="text-sm text-white/90">{seller.rating.toFixed(1)} ({seller.reviewCount} reviews)</span>
+                  <span className="text-sm text-white/90">{(seller.rating || 0).toFixed(1)} ({seller.reviewCount} reviews)</span>
                 </div>
               )}
               {seller.location && (

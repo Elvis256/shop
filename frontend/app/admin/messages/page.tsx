@@ -197,7 +197,7 @@ export default function AdminMessagesPage() {
     try {
       const formData = new FormData();
       formData.append("images", files[0]);
-      const data = await apiFetch("/api/seller/upload-images", { method: "POST", body: formData });
+      const data = await apiFetch("/api/admin/upload", { method: "POST", body: formData });
       if (data.urls?.[0]) {
         const fileUrl = data.urls[0];
         const fileName = files[0].name;

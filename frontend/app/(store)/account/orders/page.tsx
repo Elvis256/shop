@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { api, apiFetch } from "@/lib/api";
-import { Package, Eye, ChevronLeft, RefreshCw, Loader2, AlertCircle, X } from "lucide-react";
+import { Package, Eye, ChevronLeft, RefreshCw, Loader2, AlertCircle, X, Search, MapPin } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
 interface Order {
@@ -17,7 +17,24 @@ interface Order {
   status: string;
   paymentStatus: string;
   createdAt: string;
+  items?: { id: string; quantity: number; product?: { name: string; images?: { url: string }[] } }[];
 }
+
+const STATUS_TABS = [
+  { value: "", label: "All" },
+  { value: "PENDING", label: "Pending" },
+  { value: "PROCESSING", label: "Processing" },
+  { value: "SHIPPED", label: "Shipped" },
+  { value: "DELIVERED", label: "Delivered" },
+  { value: "CANCELLED", label: "Cancelled" },
+];
+
+const DATE_RANGES = [
+  { value: "", label: "All time" },
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 3 months" },
+];
 
 export default function OrdersPage() {
   const router = useRouter();
@@ -27,6 +44,11 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState("");
+  const [dateRange, setDateRange] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const handleReorder = async (orderId: string) => {
     setReorderingId(orderId);
@@ -56,6 +78,28 @@ export default function OrdersPage() {
     }
   }, [user]);
 
+  const filteredOrders = useMemo(() => {
+    let result = orders;
+
+    if (statusFilter) {
+      result = result.filter((o) => o.status === statusFilter);
+    }
+
+    if (dateRange) {
+      const days = parseInt(dateRange);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      result = result.filter((o) => new Date(o.createdAt) >= cutoff);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((o) => o.orderNumber.toLowerCase().includes(q));
+    }
+
+    return result;
+  }, [orders, statusFilter, dateRange, searchQuery]);
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "DELIVERED":
@@ -84,11 +128,54 @@ export default function OrdersPage() {
     <Section>
       <div className="max-w-4xl mx-auto">
         <Breadcrumbs items={[{ label: "Account", href: "/account" }, { label: "My Orders" }]} />
-        <div className="flex items-center gap-4 mb-8">
+        <div className="flex items-center gap-4 mb-6">
           <Link href="/account" className="btn-icon">
             <ChevronLeft className="w-5 h-5" />
           </Link>
           <h1>My Orders</h1>
+        </div>
+
+        {/* Filters */}
+        <div className="mb-6 space-y-4">
+          {/* Status Tabs */}
+          <div className="flex gap-1 overflow-x-auto pb-1">
+            {STATUS_TABS.map((tab) => (
+              <button
+                key={tab.value}
+                onClick={() => setStatusFilter(tab.value)}
+                className={`px-4 py-2 text-sm font-medium rounded-full whitespace-nowrap transition-colors ${
+                  statusFilter === tab.value
+                    ? "bg-primary text-white"
+                    : "bg-surface-secondary text-text-muted hover:text-text"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Search + Date Range */}
+          <div className="flex gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+              <input
+                type="text"
+                placeholder="Search by order number..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="input pl-9 py-2 text-sm w-full"
+              />
+            </div>
+            <select
+              value={dateRange}
+              onChange={(e) => setDateRange(e.target.value)}
+              className="input py-2 text-sm max-w-[180px]"
+            >
+              {DATE_RANGES.map((dr) => (
+                <option key={dr.value} value={dr.value}>{dr.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {reorderError && (
@@ -117,66 +204,89 @@ export default function OrdersPage() {
                     <div className="h-5 bg-surface-secondary rounded w-16 ml-auto" />
                   </div>
                 </div>
-                <div className="mt-4 pt-4 border-t border-border flex justify-end gap-2">
-                  <div className="h-8 bg-surface-secondary rounded w-24" />
-                  <div className="h-8 bg-surface-secondary rounded w-28" />
-                </div>
               </div>
             ))}
           </div>
-        ) : orders.length === 0 ? (
+        ) : filteredOrders.length === 0 ? (
           <div className="card text-center py-16">
             <Package className="w-16 h-16 mx-auto mb-4 text-text-muted" />
-            <h3 className="mb-2">No orders yet</h3>
-            <p className="text-text-muted mb-6">Start shopping to see your orders here.</p>
-            <Link href="/category" className="btn-primary">
-              Browse Products
-            </Link>
+            <h3 className="mb-2">{orders.length === 0 ? "No orders yet" : "No matching orders"}</h3>
+            <p className="text-text-muted mb-6">
+              {orders.length === 0
+                ? "Start shopping to see your orders here."
+                : "Try adjusting your filters or search term."}
+            </p>
+            {orders.length === 0 && (
+              <Link href="/category" className="btn-primary">
+                Browse Products
+              </Link>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
-            {orders.map((order) => (
-              <div key={order.id} className="card">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <p className="font-medium">Order #{order.orderNumber}</p>
-                    <p className="text-small text-text-muted">
-                      {new Date(order.createdAt).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </p>
+            {filteredOrders.map((order) => {
+              const itemCount = order.items?.reduce((sum, it) => sum + it.quantity, 0) || 0;
+              const firstImage = order.items?.[0]?.product?.images?.[0]?.url;
+              return (
+                <div key={order.id} className="card">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      {firstImage && (
+                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-surface-secondary flex-shrink-0">
+                          <img src={firstImage} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-medium">Order #{order.orderNumber}</p>
+                        <p className="text-small text-text-muted">
+                          {new Date(order.createdAt).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })}
+                          {itemCount > 0 && <span className="ml-2">({itemCount} item{itemCount !== 1 ? "s" : ""})</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold">{formatPrice(Number(order.totalAmount))}</p>
+                      <span className={`badge ${getStatusColor(order.status)}`}>
+                        {order.status}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold">{formatPrice(Number(order.totalAmount))}</p>
-                    <span className={`badge ${getStatusColor(order.status)}`}>
-                      {order.status}
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-4 pt-4 border-t border-border flex justify-end gap-2">
-                  <button
-                    onClick={() => handleReorder(order.id)}
-                    disabled={reorderingId === order.id}
-                    className="btn-secondary text-small gap-2"
-                  >
-                    {reorderingId === order.id ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" />Reordering...</>
-                    ) : (
-                      <><RefreshCw className="w-4 h-4" />Reorder</>
+                  <div className="mt-4 pt-4 border-t border-border flex justify-end gap-2">
+                    {(order.status === "SHIPPED" || order.status === "PROCESSING") && (
+                      <Link
+                        href={`/orders/${order.id}`}
+                        className="btn-secondary text-small gap-2"
+                      >
+                        <MapPin className="w-4 h-4" />
+                        Track
+                      </Link>
                     )}
-                  </button>
-                  <Link
-                    href={`/orders/${order.id}`}
-                    className="btn-secondary text-small gap-2"
-                  >
-                    <Eye className="w-4 h-4" />
-                    View Details
-                  </Link>
+                    <button
+                      onClick={() => handleReorder(order.id)}
+                      disabled={reorderingId === order.id}
+                      className="btn-secondary text-small gap-2"
+                    >
+                      {reorderingId === order.id ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" />Reordering...</>
+                      ) : (
+                        <><RefreshCw className="w-4 h-4" />Reorder</>
+                      )}
+                    </button>
+                    <Link
+                      href={`/orders/${order.id}`}
+                      className="btn-secondary text-small gap-2"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View Details
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

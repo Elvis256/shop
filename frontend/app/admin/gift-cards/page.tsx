@@ -96,7 +96,7 @@ export default function GiftCardsPage() {
   const loadCards = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch("/api/giftcards");
+      const data = await apiFetch("/api/gift-cards");
       setCards(Array.isArray(data) ? data : data.giftCards || data.data || []);
     } catch (err) {
       console.error("Failed to load gift cards:", err);
@@ -156,7 +156,7 @@ export default function GiftCardsPage() {
     if (!form.initialValue) return;
     setSaving(true);
     try {
-      await apiFetch("/api/giftcards", {
+      await apiFetch("/api/gift-cards", {
         method: "POST",
         body: JSON.stringify({
           initialValue: parseFloat(form.initialValue),
@@ -178,7 +178,7 @@ export default function GiftCardsPage() {
 
   const toggleActive = async (card: GiftCard) => {
     try {
-      await apiFetch("/api/giftcards/" + card.code, {
+      await apiFetch("/api/gift-cards/" + card.code, {
         method: "PUT",
         body: JSON.stringify({ isActive: !card.isActive }),
       });
@@ -190,7 +190,7 @@ export default function GiftCardsPage() {
 
   const viewDetail = async (card: GiftCard) => {
     try {
-      const data = await apiFetch("/api/giftcards/" + card.code);
+      const data = await apiFetch("/api/gift-cards/" + card.code);
       setDetailCard(data.giftCard || data);
     } catch {
       setDetailCard(card);

@@ -88,30 +88,28 @@ export default function Header() {
   // Toys/Lingerie/Wellness are inside the mega-menu, not duplicated in top nav
   const desktopNavLinks = [
     { href: "/sales", label: "Sales" },
-    { href: "/subscription-boxes", label: "Subscriptions" },
-    { href: "/send-to-uganda", label: "Gift to Uganda" },
-    { href: "/gift-finder", label: "Gift Finder" },
-    { href: "/build-your-box", label: "Build a Box" },
+    { href: "/blog", label: "Learn" },
+    { href: "/beginners", label: "New? Start Here" },
   ];
 
   // Mobile nav: all links including categories
   const mobileNavLinks = [
     { href: "/category", label: "Shop All" },
     { href: "/sales", label: "Sales & Deals" },
-    { href: "/subscription-boxes", label: "Subscriptions" },
-    { href: "/send-to-uganda", label: "Gift to Uganda" },
-    { href: "/gift-finder", label: "Gift Finder" },
-    { href: "/build-your-box", label: "Build Your Box" },
+    { href: "/beginners", label: "New? Start Here" },
+    { href: "/couples", label: "Couples" },
     { href: "/category?cat=toys", label: "Toys" },
     { href: "/category?cat=lingerie", label: "Lingerie" },
     { href: "/category?cat=wellness", label: "Wellness" },
+    { href: "/blog", label: "Learn" },
+    { href: "/subscription-boxes", label: "Subscriptions" },
   ];
 
   return (
     <>
-      <header className={`sticky top-0 z-40 transition-all duration-300 border-b ${
+      <header className={`sticky top-0 z-40 transition-all duration-200 border-b ${
         scrolled
-          ? "bg-surface/80 backdrop-blur-xl border-border shadow-sm"
+          ? "bg-surface/72 backdrop-blur-xl backdrop-saturate-[180%] border-border/60 shadow-sm"
           : "bg-surface border-transparent"
       }`}>
         <div className="container">
@@ -191,6 +189,8 @@ export default function Header() {
                             { href: "/send-to-uganda", label: "Send a Gift", icon: Gift },
                             { href: "/build-your-box", label: "Build Your Box", icon: BoxSelect },
                             { href: "/gift-finder", label: "Gift Finder", icon: Wand2 },
+                            { href: "/couples", label: "Couples", icon: Heart },
+                            { href: "/beginners", label: "Beginners Guide", icon: Sparkles },
                           ].map(({ href, label, icon: Icon }) => (
                             <Link
                               key={href}
@@ -242,7 +242,7 @@ export default function Header() {
             </nav>
 
             {/* Search - Desktop */}
-            <div className="hidden md:flex items-center flex-1 max-w-xs mx-8">
+            <div className="hidden md:flex items-center flex-1 max-w-md mx-6">
               <SearchBar />
             </div>
 

@@ -75,6 +75,9 @@ export const metadata: Metadata = {
   verification: {
     google: process.env.GOOGLE_SITE_VERIFICATION,
   },
+  other: {
+    "google-adsense-account": "ca-pub-2159433666559208",
+  },
 };
 
 export default function RootLayout({

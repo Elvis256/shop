@@ -34,12 +34,14 @@ interface Suggestions {
 interface SearchBarProps {
   autoFocus?: boolean;
   onNavigate?: () => void;
+  initialQuery?: string;
+  variant?: "default" | "page";
 }
 
-export default function SearchBar({ autoFocus = false, onNavigate }: SearchBarProps) {
+export default function SearchBar({ autoFocus = false, onNavigate, initialQuery = "", variant = "default" }: SearchBarProps) {
   const router = useRouter();
   const { formatPrice } = useCurrency();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -89,13 +91,32 @@ export default function SearchBar({ autoFocus = false, onNavigate }: SearchBarPr
     }
   };
 
+  const getSearchHistory = (): string[] => {
+    try {
+      return JSON.parse(localStorage.getItem("searchHistory") || "[]");
+    } catch { return []; }
+  };
+
+  const saveToHistory = (term: string) => {
+    try {
+      const history = getSearchHistory().filter((h) => h !== term);
+      history.unshift(term);
+      localStorage.setItem("searchHistory", JSON.stringify(history.slice(0, 5)));
+    } catch {}
+  };
+
   const loadPopularSearches = async () => {
     if (query.length > 0) return;
     try {
       const res = await fetch(`${API_URL}/api/search/suggestions?q=`);
       if (res.ok) {
         const data = await res.json();
-        setSuggestions(data.suggestions || null);
+        const history = getSearchHistory();
+        const merged = data.suggestions || { products: [], categories: [], popular: [] };
+        if (history.length > 0) {
+          merged.popular = [...history, ...merged.popular.filter((p: string) => !history.includes(p))].slice(0, 8);
+        }
+        setSuggestions(merged);
         setShowDropdown(true);
       }
     } catch {
@@ -106,6 +127,7 @@ export default function SearchBar({ autoFocus = false, onNavigate }: SearchBarPr
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
+      saveToHistory(query.trim());
       router.push(`/search?q=${encodeURIComponent(query)}`);
       setShowDropdown(false);
       onNavigate?.();
@@ -139,7 +161,9 @@ export default function SearchBar({ autoFocus = false, onNavigate }: SearchBarPr
               else loadPopularSearches();
             }}
             placeholder="Search products..."
-            className="w-full h-10 pl-10 pr-10 text-sm bg-surface-secondary border-0 rounded-full placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+            className={`w-full pl-10 pr-10 text-sm border-0 rounded-full placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all ${
+              variant === "page" ? "h-12 bg-white border border-gray-200 shadow-sm" : "h-10 bg-surface-secondary"
+            }`}
             autoFocus={autoFocus}
             suppressHydrationWarning
           />

@@ -47,8 +47,9 @@ interface AnalyticsData {
 interface Scorecard {
   fulfillmentRate: number;
   returnRate: number;
-  rating: number;
-  warningCount: number;
+  customerRating: number;
+  totalOrders: number;
+  flags: string[];
 }
 
 const periods = [
@@ -109,7 +110,7 @@ export default function SellerAnalyticsPage() {
 
   useEffect(() => {
     apiFetch("/api/seller/scorecard")
-      .then((d) => setScorecard(d))
+      .then((d) => setScorecard(d.scorecard || d))
       .catch(() => {});
   }, []);
 
@@ -255,20 +256,20 @@ export default function SellerAnalyticsPage() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900">{scorecard.fulfillmentRate}%</p>
+              <p className="text-2xl font-bold text-gray-900">{scorecard.fulfillmentRate ?? 0}%</p>
               <p className="text-xs text-gray-500 mt-1">Fulfillment Rate</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900">{scorecard.returnRate}%</p>
+              <p className="text-2xl font-bold text-gray-900">{scorecard.returnRate ?? 0}%</p>
               <p className="text-xs text-gray-500 mt-1">Return Rate</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900">{scorecard.rating.toFixed(1)}</p>
+              <p className="text-2xl font-bold text-gray-900">{((scorecard.customerRating || 0)).toFixed(1)}</p>
               <p className="text-xs text-gray-500 mt-1">Rating</p>
             </div>
             <div className="text-center">
-              <p className={`text-2xl font-bold ${scorecard.warningCount > 0 ? "text-red-600" : "text-gray-900"}`}>{scorecard.warningCount}</p>
-              <p className="text-xs text-gray-500 mt-1">Warnings</p>
+              <p className="text-2xl font-bold text-gray-900">{scorecard.totalOrders ?? 0}</p>
+              <p className="text-xs text-gray-500 mt-1">Total Orders</p>
             </div>
           </div>
         </div>

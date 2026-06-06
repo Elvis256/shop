@@ -50,6 +50,13 @@ export default function TrackingScripts() {
         </Script>
       )}
 
+      {/* Google AdSense */}
+      <Script
+        src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2159433666559208"
+        crossOrigin="anonymous"
+        strategy="lazyOnload"
+      />
+
       {/* TikTok Pixel */}
       {tiktokEnabled && tiktokId && (
         <Script id="tiktok-pixel" strategy="afterInteractive">

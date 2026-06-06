@@ -220,7 +220,7 @@ export default function AffiliateBrowsePage() {
                     {p.rating && p.rating > 0 && (
                       <div className="flex items-center gap-1 mt-1.5">
                         <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                        <span className="text-xs text-gray-500">{Number(p.rating).toFixed(1)} ({p.reviewCount})</span>
+                        <span className="text-xs text-gray-500">{Number(p.rating || 0).toFixed(1)} ({p.reviewCount})</span>
                       </div>
                     )}
                     <div className="flex items-baseline gap-2 mt-2">

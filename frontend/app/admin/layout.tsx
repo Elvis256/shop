@@ -83,6 +83,7 @@ const navGroups: NavGroup[] = [
     title: "SALES",
     items: [
       { href: "/admin/orders", icon: ShoppingCart, label: "Orders" },
+      { href: "/admin/abandoned-carts", icon: ShoppingCart, label: "Abandoned Carts" },
       { href: "/admin/returns", icon: RotateCcw, label: "Returns" },
       { href: "/admin/disputes", icon: Shield, label: "Disputes" },
       { href: "/admin/customers", icon: Users, label: "Customers" },

@@ -44,7 +44,7 @@ export default function ReferralsPage() {
 
   const fetchReferrals = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/referrals/my-code`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/referrals/code`, {
         credentials: "include",
       });
       if (res.ok) {

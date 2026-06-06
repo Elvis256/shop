@@ -951,9 +951,9 @@ export default function SellerDetailPage() {
                       <p className="text-xs text-gray-500">Return Rate</p>
                       <p className={`text-lg font-bold ${scorecard.returnRate > 10 ? "text-red-600" : "text-green-600"}`}>{scorecard.returnRate}%</p>
                     </div>
-                    <div className={`rounded-lg p-3 text-center ${scorecard.customerRating < 3.0 ? "bg-red-50 border border-red-200" : "bg-green-50"}`}>
+                    <div className={`rounded-lg p-3 text-center ${(scorecard.customerRating || 0) < 3.0 ? "bg-red-50 border border-red-200" : "bg-green-50"}`}>
                       <p className="text-xs text-gray-500">Rating</p>
-                      <p className={`text-lg font-bold ${scorecard.customerRating < 3.0 ? "text-red-600" : "text-green-600"}`}>{scorecard.customerRating.toFixed(1)}</p>
+                      <p className={`text-lg font-bold ${(scorecard.customerRating || 0) < 3.0 ? "text-red-600" : "text-green-600"}`}>{((scorecard.customerRating || 0)).toFixed(1)}</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 text-center">
                       <p className="text-xs text-gray-500">Avg Response</p>

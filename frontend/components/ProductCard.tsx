@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
-import { Star, Heart, Plus, Check, Eye } from "lucide-react";
+import { Star, Heart, Plus, Check, Eye, ArrowLeftRight } from "lucide-react";
 import { useState } from "react";
 import { useCart } from "@/lib/hooks/useCart";
 import { useToast } from "@/lib/hooks/useToast";
 import { useWishlist } from "@/lib/hooks/useWishlist";
+import { useCompare } from "@/contexts/CompareContext";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
 type ProductCardProps = {
@@ -27,6 +29,7 @@ type ProductCardProps = {
   flashSalePrice?: number | null;
   flashSaleEndsAt?: string | null;
   isSponsored?: boolean;
+  materialSafety?: string | null;
   onQuickView?: (slug: string) => void;
 };
 
@@ -49,6 +52,7 @@ export default function ProductCard({
   flashSalePrice,
   flashSaleEndsAt,
   isSponsored,
+  materialSafety,
   onQuickView,
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false);
@@ -56,6 +60,7 @@ export default function ProductCard({
   const { showToast } = useToast();
   const { formatPrice } = useCurrency();
   const { isInWishlist, toggleItem } = useWishlist();
+  const { addToCompare, isInCompare, removeFromCompare, canAddMore } = useCompare();
   
   const isWishlisted = isInWishlist(id);
   const hasFlashSale = flashSalePrice && flashSaleEndsAt && new Date(flashSaleEndsAt) > new Date();
@@ -97,8 +102,22 @@ export default function ProductCard({
     showToast(added ? "Added to wishlist" : "Removed from wishlist", added ? "success" : "info");
   };
 
+  const handleCompare = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isInCompare(id)) {
+      removeFromCompare(id);
+      showToast("Removed from compare", "info");
+    } else if (canAddMore) {
+      addToCompare({ id, name, slug, price: Number(effectivePrice), comparePrice: originalPrice || undefined, imageUrl: imageUrl || null, category });
+      showToast("Added to compare", "success");
+    } else {
+      showToast("Compare list is full (max 4)", "info");
+    }
+  };
+
   return (
-    <a href={productUrl} className="group hover-lift block cursor-pointer no-underline text-inherit">
+    <Link href={productUrl} className="group hover-lift block cursor-pointer no-underline text-inherit">
       {/* Image Container */}
       <div className="aspect-[4/5] bg-surface-secondary rounded-24 overflow-hidden relative transition-all duration-500 group-hover:shadow-lg">
         <ProductImage
@@ -164,6 +183,17 @@ export default function ProductCard({
               aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
             >
               <Heart className={`w-4 h-4 ${isWishlisted ? "fill-current" : ""}`} />
+            </button>
+            <button
+              onClick={handleCompare}
+              className={`p-2.5 rounded-full shadow-soft backdrop-blur-sm transition-all duration-200 ${
+                isInCompare(id)
+                  ? "bg-primary text-white"
+                  : "bg-white/90 text-text-muted hover:text-primary hover:bg-white"
+              }`}
+              aria-label={isInCompare(id) ? "Remove from compare" : "Add to compare"}
+            >
+              <ArrowLeftRight className="w-4 h-4" />
             </button>
             {onQuickView && (
               <button
@@ -231,7 +261,7 @@ export default function ProductCard({
               />
             ))}
           </div>
-          <span className="text-xs text-text-muted">({Number(rating).toFixed(1)})</span>
+          <span className="text-xs text-text-muted">({Number(rating || 0).toFixed(1)})</span>
         </div>
 
         {/* Price */}
@@ -244,6 +274,14 @@ export default function ProductCard({
           )}
         </div>
 
+        {/* Material Safety Badge */}
+        {materialSafety && (
+          <span className="mt-1.5 inline-flex items-center text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md gap-1">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+            {materialSafety === "BODY_SAFE" ? "Body-Safe" : materialSafety === "MEDICAL_GRADE" ? "Medical Grade" : "Hypoallergenic"}
+          </span>
+        )}
+
         {/* Low stock badge */}
         {inStock && stock != null && stock > 0 && stock <= lowStockThreshold && (
           <span className="mt-1.5 inline-flex items-center text-xs font-medium text-orange-700 bg-orange-50 px-2 py-0.5 rounded-md">
@@ -251,6 +289,6 @@ export default function ProductCard({
           </span>
         )}
       </div>
-    </a>
+    </Link>
   );
 }

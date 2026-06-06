@@ -201,6 +201,7 @@ export interface Review {
   verified: boolean;
   approved: boolean;
   createdAt: string;
+  images?: string[];
   user: {
     name: string | null;
   };

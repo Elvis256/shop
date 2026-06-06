@@ -217,7 +217,7 @@ export default function AdminCommissionsPage() {
     if (!editOverride) return;
     setSavingOverride(true);
     try {
-      await apiFetch(`/api/admin/sellers/${editOverride.id}/settings`, {
+      await apiFetch(`/api/admin/sellers/${editOverride.id}`, {
         method: "PUT",
         body: JSON.stringify({ commissionRate: overrideRate ? Number(overrideRate) : null }),
       });

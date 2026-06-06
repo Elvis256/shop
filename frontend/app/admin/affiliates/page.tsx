@@ -866,9 +866,9 @@ export default function AdminAffiliatesPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className="font-medium">${p.price.toFixed(2)}</span>
+                          <span className="font-medium">${(p.price || 0).toFixed(2)}</span>
                           {p.originalPrice && (
-                            <span className="text-xs text-gray-400 line-through ml-1">${p.originalPrice.toFixed(2)}</span>
+                            <span className="text-xs text-gray-400 line-through ml-1">${(p.originalPrice || 0).toFixed(2)}</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right text-green-600 font-medium">{p.commissionRate || 0}%</td>

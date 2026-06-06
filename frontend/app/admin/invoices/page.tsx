@@ -113,7 +113,7 @@ export default function AdminInvoicesPage() {
       const params = new URLSearchParams({ page: String(page), limit: "20" });
       if (search) params.set("search", search);
       if (statusFilter !== "all") params.set("status", statusFilter);
-      const data = await apiFetch(`/api/invoices?${params}`);
+      const data = await apiFetch(`/api/invoices/admin/all?${params}`);
       const list: Invoice[] = data.invoices || data.data || [];
       setInvoices(list);
       if (data.pagination) setPagination(data.pagination);
@@ -146,7 +146,7 @@ export default function AdminInvoicesPage() {
 
   const downloadPdf = async (id: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/invoices/${id}/pdf`, { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/invoices/${id}/download`, { credentials: "include" });
       if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

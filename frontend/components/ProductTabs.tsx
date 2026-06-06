@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import DOMPurify from "isomorphic-dompurify";
-import { Star, ThumbsUp, ShieldCheck, Truck, RotateCcw } from "lucide-react";
+import { Star, ThumbsUp, ShieldCheck, Truck, RotateCcw, Camera, X } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Review, ReviewsResponse } from "@/lib/types/api";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 interface ProductTabsProps {
   description?: string | null;
@@ -30,6 +32,10 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewContent, setReviewContent] = useState("");
+  const [reviewImages, setReviewImages] = useState<string[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
@@ -53,15 +59,44 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
     }
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const remaining = 3 - reviewImages.length;
+    const toUpload = Array.from(files).slice(0, remaining);
+    setUploadingImages(true);
+    try {
+      for (const file of toUpload) {
+        const formData = new FormData();
+        formData.append("image", file);
+        const res = await fetch(`${API_URL}/api/reviews/upload-image`, {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setReviewImages((prev) => [...prev, data.url || data.imageUrl]);
+        }
+      }
+    } catch (err) {
+      console.error("Image upload failed:", err);
+    } finally {
+      setUploadingImages(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!productId) return;
     setSubmitting(true);
     try {
-      await api.createReview(productId, reviewRating, undefined, reviewContent);
+      await api.createReview(productId, reviewRating, undefined, reviewContent, reviewImages.length > 0 ? reviewImages : undefined);
       setSubmitSuccess(true);
       setShowReviewForm(false);
       setReviewContent("");
+      setReviewImages([]);
       loadReviews();
     } catch (err) {
       console.error("Failed to submit review:", err);
@@ -191,7 +226,7 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
                 {reviewStats ? (
                   <>
                     <div className="text-center">
-                      <div className="text-4xl font-bold text-gray-900">{reviewStats.average.toFixed(1)}</div>
+                      <div className="text-4xl font-bold text-gray-900">{(reviewStats.average || 0).toFixed(1)}</div>
                       <div className="flex gap-0.5 mt-1 justify-center">
                         {[1,2,3,4,5].map((s) => (
                           <Star key={s} className={`w-3.5 h-3.5 ${s <= Math.round(reviewStats.average) ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
@@ -249,9 +284,35 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
                   onChange={(e) => setReviewContent(e.target.value)}
                   required
                 />
+                {/* Image Upload */}
+                <div className="mt-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {reviewImages.map((img, i) => (
+                      <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200">
+                        <img src={img} alt="" className="w-full h-full object-cover" />
+                        <button type="button" onClick={() => setReviewImages((prev) => prev.filter((_, idx) => idx !== i))} className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center">
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {reviewImages.length < 3 && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingImages}
+                        className="w-16 h-16 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-400 hover:text-primary hover:border-primary transition-colors disabled:opacity-50"
+                      >
+                        <Camera className="w-5 h-5" />
+                        <span className="text-[10px] mt-0.5">{uploadingImages ? "..." : "Photo"}</span>
+                      </button>
+                    )}
+                  </div>
+                  <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
+                  <p className="text-xs text-gray-400 mt-1">Up to 3 images (optional)</p>
+                </div>
                 <div className="flex gap-2 mt-3 justify-end">
                   <button type="button" onClick={() => setShowReviewForm(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
-                  <button type="submit" disabled={submitting} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 font-medium">
+                  <button type="submit" disabled={submitting || uploadingImages} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 font-medium">
                     {submitting ? "Submitting..." : "Submit"}
                   </button>
                 </div>
@@ -304,6 +365,15 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
                     </div>
                     {review.title && <p className="text-sm font-medium text-gray-900 mb-1">{review.title}</p>}
                     {review.content && <p className="text-sm text-gray-600 leading-relaxed">{review.content}</p>}
+                    {review.images && review.images.length > 0 && (
+                      <div className="flex gap-2 mt-2">
+                        {review.images.map((img, i) => (
+                          <button key={i} onClick={() => setLightboxImage(img)} className="w-14 h-14 rounded-lg overflow-hidden border border-gray-200 hover:border-primary transition-colors">
+                            <img src={img} alt="" className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -316,6 +386,16 @@ export default function ProductTabs({ description, productId, reviewCount = 0, r
           </div>
         )}
       </div>
+
+      {/* Image Lightbox */}
+      {lightboxImage && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setLightboxImage(null)}>
+          <button className="absolute top-4 right-4 text-white hover:text-gray-300" onClick={() => setLightboxImage(null)}>
+            <X className="w-8 h-8" />
+          </button>
+          <img src={lightboxImage} alt="Review image" className="max-w-full max-h-[80vh] rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   );
 }

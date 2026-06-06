@@ -104,15 +104,28 @@ export default function BlogPage() {
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-1.5 rounded-full text-sm font-medium mb-6">
               <BookOpen className="w-4 h-4" />
-              Our Blog
+              Learn &amp; Explore
             </div>
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">
-              Pleasure Zone Blog
+              Your Wellness Knowledge Hub
             </h1>
             <p className="text-lg text-white/80 mb-8">
-              Tips, guides, and insights on intimacy, wellness, and self-care. 
-              Empowering you to explore with confidence.
+              Beginner&apos;s guides, wellness tips, product guides, and safety information.
+              Empowering you to explore with confidence and knowledge.
             </p>
+
+            {/* Quick Categories */}
+            <div className="flex flex-wrap gap-2 justify-center mb-6">
+              {["Beginner's Guides", "Wellness Tips", "Product Guides", "Safety & Materials"].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className="px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full text-sm hover:bg-white/30 transition-colors"
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
 
             {/* Search */}
             <div className="relative max-w-md mx-auto">

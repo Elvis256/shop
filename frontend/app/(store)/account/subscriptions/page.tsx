@@ -17,6 +17,8 @@ import {
   RefreshCw,
   Calendar,
   AlertCircle,
+  SkipForward,
+  TrendingUp,
 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -130,6 +132,31 @@ export default function SubscriptionsPage() {
     updateSubscription(sub.id, { status: newStatus });
   };
 
+  const skipNextDelivery = async (id: string) => {
+    setUpdating(id);
+    try {
+      const res = await fetch(`${API_URL}/api/subscriptions/${id}/skip`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        showToast("Next delivery skipped", "success");
+        fetchSubscriptions();
+      } else {
+        showToast("Failed to skip delivery", "error");
+      }
+    } catch {
+      showToast("Failed to skip delivery", "error");
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  // Calculate savings
+  const totalSaved = subscriptions
+    .filter((s) => s.status === "ACTIVE")
+    .reduce((sum, s) => sum + Number(s.price) * s.quantity * 0.1, 0); // 10% subscribe & save discount
+
   if (isLoading || !user) {
     return (
       <Section>
@@ -150,6 +177,26 @@ export default function SubscriptionsPage() {
         </Link>
 
         <h1 className="text-2xl font-semibold mb-8">My Subscriptions</h1>
+
+        {/* Savings Dashboard */}
+        {!loading && subscriptions.length > 0 && (
+          <div className="mb-6 p-5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-sm text-emerald-700 font-medium">Subscribe &amp; Save</p>
+                <p className="text-lg font-bold text-emerald-900">
+                  You save {formatPrice(totalSaved)} per delivery cycle
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-emerald-600">
+              Active subscribers enjoy 10% off every delivery. The more you subscribe, the more you save!
+            </p>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-16">Loading...</div>
@@ -269,6 +316,16 @@ export default function SubscriptionsPage() {
 
                       {/* Actions */}
                       <div className="flex items-center gap-2 ml-auto">
+                        {sub.status === "ACTIVE" && (
+                          <button
+                            onClick={() => skipNextDelivery(sub.id)}
+                            disabled={updating === sub.id}
+                            className="p-2 rounded-lg border border-border hover:bg-surface-secondary text-text-muted hover:text-text transition-colors disabled:opacity-50"
+                            title="Skip next delivery"
+                          >
+                            <SkipForward className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => togglePause(sub)}
                           disabled={updating === sub.id}

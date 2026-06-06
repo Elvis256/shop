@@ -107,7 +107,7 @@ export default function DailyDealsPage() {
   const loadDeals = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch("/api/daily-deals");
+      const data = await apiFetch("/api/daily-deal/admin/all");
       const items = Array.isArray(data) ? data : data.deals || data.data || [];
       setDeals(items);
     } catch (err) {
@@ -200,7 +200,7 @@ export default function DailyDealsPage() {
     if (!productId || !dealPrice || !dealDate) return;
     setSaving(true);
     try {
-      await apiFetch("/api/daily-deals", {
+      await apiFetch("/api/daily-deal/admin/set", {
         method: "POST",
         body: JSON.stringify({
           productId,
@@ -220,7 +220,7 @@ export default function DailyDealsPage() {
   const removeDeal = async (productId: string) => {
     if (!confirm("Remove this daily deal?")) return;
     try {
-      await apiFetch("/api/daily-deals/" + productId, { method: "DELETE" });
+      await apiFetch("/api/daily-deal/admin/" + productId, { method: "DELETE" });
       loadDeals();
     } catch (err) {
       console.error("Failed to remove deal:", err);

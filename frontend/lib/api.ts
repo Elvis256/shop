@@ -263,8 +263,8 @@ export const api = {
     const query = params ? `?${new URLSearchParams(params)}` : "";
     return apiFetch(`/api/reviews/product/${productId}${query}`);
   },
-  createReview: (productId: string, rating: number, title?: string, content?: string): Promise<SuccessMessage> =>
-    apiFetch("/api/reviews", { method: "POST", body: JSON.stringify({ productId, rating, title, content }) }),
+  createReview: (productId: string, rating: number, title?: string, content?: string, images?: string[]): Promise<SuccessMessage> =>
+    apiFetch("/api/reviews", { method: "POST", body: JSON.stringify({ productId, rating, title, content, images }) }),
 
   // Checkout
   createCheckout: (data: CheckoutRequest): Promise<CheckoutResponse> => 
