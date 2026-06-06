@@ -2,6 +2,7 @@ import prisma from "../lib/prisma";
 import { sendWhatsApp } from "./whatsapp";
 import { sendSMS } from "./sms";
 import { logger } from "../lib/logger";
+import { generateReorderToken } from "../routes/quickReorder";
 
 // Called after an order is marked DELIVERED
 // Schedules restock reminders for consumable products
@@ -59,8 +60,16 @@ export async function startRestockReminderJob(): Promise<void> {
       for (const reminder of due) {
         if (!reminder.user.phone) continue;
 
-        const productUrl = `${process.env.FRONTEND_URL}/product/${reminder.product.slug}`;
-        const message = `💊 PleasureZone: Time to restock ${reminder.product.name}!\n\nRunning low? Reorder in one tap:\n${productUrl}`;
+        const BASE_URL = process.env.FRONTEND_URL || "https://ugsex.com";
+        let reorderUrl = `${BASE_URL}/product/${reminder.product.slug}`;
+
+        // Try to generate a quick-reorder deep link
+        const token = await generateReorderToken(reminder.userId, reminder.productId);
+        if (token) {
+          reorderUrl = `${BASE_URL}/reorder/${token}`;
+        }
+
+        const message = `💊 PleasureZone: Time to restock ${reminder.product.name}!\n\nRunning low? Reorder in one tap:\n${reorderUrl}`;
 
         const sent = await sendWhatsApp({ to: reminder.user.phone, text: message });
         if (!sent) await sendSMS(reminder.user.phone, message);

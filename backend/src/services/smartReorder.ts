@@ -2,6 +2,7 @@ import prisma from "../lib/prisma";
 import { sendWhatsApp } from "../services/whatsapp";
 import { sendSMS } from "../services/sms";
 import { logger } from "../lib/logger";
+import { generateReorderToken } from "../routes/quickReorder";
 
 const BASE_URL = process.env.FRONTEND_URL || "https://ugsex.com";
 
@@ -67,7 +68,14 @@ export async function processSmartReorderReminders(): Promise<number> {
       });
       if (activeSub) continue;
 
-      const reorderUrl = `${BASE_URL}/cart?reorder=${row.productId}:1`;
+      let reorderUrl = `${BASE_URL}/cart?reorder=${row.productId}:1`;
+
+      // Try to generate a quick-reorder deep link
+      const token = await generateReorderToken(row.userId, row.productId);
+      if (token) {
+        reorderUrl = `${BASE_URL}/reorder/${token}`;
+      }
+
       const message = `Time to restock ${row.productName}? Based on your purchase history, you might be running low. Quick reorder: ${reorderUrl}`;
 
       try {

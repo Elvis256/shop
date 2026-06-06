@@ -5,6 +5,7 @@ import { uploadMultiple, validateUploadedFiles, uploadDocuments, validateUploade
 import { logActivity } from "../lib/activityLogger";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { createFlutterwaveTransfer } from "../services/flutterwave";
 
 const router = Router();
 
@@ -1096,6 +1097,39 @@ router.post("/payouts/request", authenticate, requireSeller, asyncHandler(async 
         },
       }),
     ]);
+
+    // Auto-disburse for GOLD/SILVER sellers under UGX 500,000
+    const autoDisburseEligible =
+      ["GOLD", "SILVER"].includes(seller.tier) &&
+      payoutAmount <= 500000 &&
+      seller.payoutPhone;
+
+    if (autoDisburseEligible) {
+      try {
+        const transferResult = await createFlutterwaveTransfer({
+          reference: `payout-${payout.id}`,
+          amount: payoutAmount,
+          currency: "UGX",
+          narration: `PleasureZone payout for ${seller.storeName}`,
+          beneficiary: {
+            account_bank: "MPS",
+            account_number: seller.payoutPhone,
+            beneficiary_name: seller.storeName,
+          },
+        });
+
+        if (transferResult.status === "success") {
+          await prisma.sellerPayout.update({
+            where: { id: payout.id },
+            data: { status: "PROCESSING", reference: transferResult.data?.reference || `payout-${payout.id}` },
+          });
+          payout.status = "PROCESSING";
+        }
+      } catch (err) {
+        logger.error("Auto-disburse failed", { payoutId: payout.id, error: err });
+        // Payout stays PENDING for manual processing
+      }
+    }
 
     return res.status(201).json({ payout });
   } catch (error) {

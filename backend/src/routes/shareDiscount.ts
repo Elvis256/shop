@@ -64,10 +64,24 @@ router.get("/share/:code/click", asyncHandler(async (req, res) => {
     // Generate coupon after 3 clicks
     if (updated.clicks >= 3 && !updated.couponCode) {
       const couponCode = `SHARE-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
-      await prisma.shareDiscount.update({
-        where: { id: share.id },
-        data: { couponCode },
-      });
+      await prisma.$transaction([
+        prisma.shareDiscount.update({
+          where: { id: share.id },
+          data: { couponCode },
+        }),
+        prisma.coupon.create({
+          data: {
+            code: couponCode,
+            description: `Share discount for product`,
+            type: "PERCENTAGE",
+            value: updated.discount,
+            usageLimit: 1,
+            validFrom: new Date(),
+            validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            active: true,
+          },
+        }),
+      ]);
       return res.json({ share: { ...updated, couponCode }, couponUnlocked: true });
     }
 

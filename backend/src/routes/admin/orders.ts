@@ -4,10 +4,11 @@ import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { sendShippingNotification, sendProcessingNotification, sendDeliveredNotification, sendCancelledNotification } from "../../lib/email";
 import { refundFlutterwaveTransaction } from "../../services/flutterwave";
-import { sendOrderConfirmationWhatsApp, sendShippingUpdateWhatsApp, sendDeliveryConfirmationWhatsApp } from "../../services/whatsapp";
-import { sendOrderConfirmationSMS, sendShippingUpdateSMS } from "../../services/sms";
+import { sendWhatsApp, sendOrderConfirmationWhatsApp, sendShippingUpdateWhatsApp, sendDeliveryConfirmationWhatsApp } from "../../services/whatsapp";
+import { sendSMS, sendOrderConfirmationSMS, sendShippingUpdateSMS } from "../../services/sms";
 import { logger } from "../../lib/logger";
 import { asyncHandler } from "../../middleware/errorHandler";
+import crypto from "crypto";
 
 const router = Router();
 
@@ -304,6 +305,20 @@ router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) =
       if (status === "SHIPPED") {
         sendShippingUpdateWhatsApp(order.customerPhone, order.orderNumber, order.trackingNumber || undefined).catch(() => {});
         sendShippingUpdateSMS(order.customerPhone, order.orderNumber).catch(() => {});
+
+        // Auto-generate delivery OTP for COD (unpaid) orders
+        if (order.paymentStatus === "PENDING") {
+          const otp = crypto.randomInt(100000, 999999).toString();
+          const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+          prisma.order.update({
+            where: { id },
+            data: { deliveryOtp: otp, deliveryOtpExpiry: expiry },
+          }).then(() => {
+            const msg = `Your delivery verification code for order ${order.orderNumber} is: ${otp}. Share this with the delivery agent upon receipt. Valid for 24 hours.`;
+            sendWhatsApp({ to: order.customerPhone!, text: msg }).catch(() => {});
+            sendSMS(order.customerPhone!, msg).catch(() => {});
+          }).catch(err => logger.error("Auto OTP generation failed", { error: err }));
+        }
       }
       if (status === "DELIVERED") {
         sendDeliveryConfirmationWhatsApp(order.customerPhone, order.orderNumber).catch(() => {});

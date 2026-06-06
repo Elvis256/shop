@@ -1,6 +1,8 @@
 import prisma from "../lib/prisma";
 import nodemailer from "nodemailer";
 import { logger } from "../lib/logger";
+import { sendWhatsApp } from "./whatsapp";
+import crypto from "crypto";
 
 
 // Email transporter (configure with your SMTP settings)
@@ -202,8 +204,20 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
 
         await prisma.abandonedCart.update({
           where: { id: cart.id },
-          data: { email1SentAt: new Date() },
+          data: { email1SentAt: new Date(), whatsapp1SentAt: new Date() },
         });
+
+        // Wave 1: also send WhatsApp if user has phone
+        if (cart.userId) {
+          const user = await prisma.user.findUnique({ where: { id: cart.userId }, select: { phone: true } });
+          if (user?.phone) {
+            const itemNames = cartItems.slice(0, 3).map((i: CartItem) => i.productName).join(", ");
+            await sendWhatsApp({
+              to: user.phone,
+              text: `🛒 You left items in your cart: ${itemNames}. Complete your order now: ${recoveryUrl}`,
+            });
+          }
+        }
 
         logger.info(`Sent reminder 1 to ${cart.email}`);
       } catch (err) {
@@ -229,25 +243,53 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
       try {
         const cartItems = cart.cartData as unknown as CartItem[];
         const recoveryUrl = `${process.env.BASE_URL || "http://localhost:3000"}/cart?recover=${cart.cartId}`;
+
+        // Generate 5% discount coupon for wave 2
+        const couponCode = `COMEBACK-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+        await prisma.coupon.create({
+          data: {
+            code: couponCode,
+            description: "Abandoned cart recovery discount",
+            type: "PERCENTAGE",
+            value: 5,
+            usageLimit: 1,
+            validFrom: new Date(),
+            validUntil: new Date(Date.now() + 48 * 60 * 60 * 1000), // 48 hours
+            active: true,
+          },
+        });
+
+        const recoveryWithCoupon = `${recoveryUrl}&coupon=${couponCode}`;
         const html = generateCartEmailHtml({
           cartData: cartItems,
           cartValue: Number(cart.cartValue),
           currency: cart.currency,
-        }, "reminder2", recoveryUrl);
-        
+        }, "reminder2", recoveryWithCoupon);
+
         await transporter.sendMail({
           from: `"PleasureZone" <${process.env.SMTP_FROM || "noreply@pleasurezone.ug"}>`,
           to: cart.email,
-          subject: "Last chance! Your cart expires soon ⏰",
+          subject: `Last chance! Use code ${couponCode} for 5% off ⏰`,
           html,
         });
 
         await prisma.abandonedCart.update({
           where: { id: cart.id },
-          data: { email2SentAt: new Date() },
+          data: { email2SentAt: new Date(), couponCode },
         });
 
-        logger.info(`Sent reminder 2 to ${cart.email}`);
+        // Wave 2: also send WhatsApp with coupon
+        if (cart.userId) {
+          const user = await prisma.user.findUnique({ where: { id: cart.userId }, select: { phone: true } });
+          if (user?.phone) {
+            await sendWhatsApp({
+              to: user.phone,
+              text: `⏰ Your cart is about to expire! Use code ${couponCode} for 5% off. Complete your order: ${recoveryWithCoupon}`,
+            });
+          }
+        }
+
+        logger.info(`Sent reminder 2 with coupon ${couponCode} to ${cart.email}`);
       } catch (err) {
         logger.error(`Failed to send reminder 2 to ${cart.email}`, { error: err });
       }

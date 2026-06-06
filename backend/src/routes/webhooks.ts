@@ -4,6 +4,7 @@ import prisma from "../lib/prisma";
 import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
 import { placeCJOrdersForOrder } from "../services/cjOrder";
 import { getCommissionRate } from "./seller";
+import { handleLayawayPayment } from "./layaway";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
 const router = Router();
@@ -194,6 +195,61 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
         });
         placeCJOrdersForOrder(tx_ref).catch((err) => {
           logger.error(`CJ auto-order failed for ${tx_ref}`, { error: err.message });
+        });
+      }
+    }
+
+    // Handle installment payment webhooks
+    if (event === "charge.completed" && data.tx_ref?.startsWith("installment-")) {
+      const parts = data.tx_ref.split("-");
+      // format: installment-{planId}-{paymentId}
+      if (parts.length >= 3) {
+        const planId = parts[1];
+        const paymentId = parts.slice(2).join("-");
+        try {
+          if (data.status === "successful") {
+            const plan = await prisma.installmentPlan.findUnique({
+              where: { id: planId },
+              include: { payments: { orderBy: { number: "asc" } } },
+            });
+            if (plan) {
+              const newPaidCount = plan.paidCount + 1;
+              const isCompleted = newPaidCount >= plan.installments;
+              const intervalDays = plan.installments <= 2 ? 14 : 30;
+
+              await prisma.$transaction([
+                prisma.installmentPayment.update({
+                  where: { id: paymentId },
+                  data: { status: "PAID", paidAt: new Date() },
+                }),
+                prisma.installmentPlan.update({
+                  where: { id: planId },
+                  data: {
+                    paidCount: newPaidCount,
+                    status: isCompleted ? "COMPLETED" : "ACTIVE",
+                    nextDueDate: isCompleted
+                      ? plan.nextDueDate
+                      : new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000),
+                  },
+                }),
+              ]);
+              logger.info(`Installment ${paymentId} paid for plan ${planId}`);
+            }
+          }
+        } catch (err) {
+          logger.error("Installment webhook error", { error: err, planId, paymentId });
+        }
+      }
+    }
+
+    // Handle layaway payment webhooks
+    if (event === "charge.completed" && data.tx_ref?.startsWith("layaway-")) {
+      const parts = data.tx_ref.split("-");
+      if (parts.length >= 3) {
+        const planId = parts[1];
+        const paymentId = parts.slice(2).join("-");
+        handleLayawayPayment(planId, paymentId, data.status).catch(err => {
+          logger.error("Layaway webhook handler error", { error: err });
         });
       }
     }

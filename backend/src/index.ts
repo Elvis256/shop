@@ -77,6 +77,9 @@ import priceDropAlertsRoutes from "./routes/priceDropAlerts";
 import sellerAdsRoutes from "./routes/sellerAds";
 import pickupPointsRoutes from "./routes/pickupPoints";
 import supportChatRoutes from "./routes/supportChat";
+import deliveryRoutes from "./routes/delivery";
+import quickReorderRoutes from "./routes/quickReorder";
+import layawayRoutes from "./routes/layaway";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -244,6 +247,9 @@ app.use("/api/diaspora", diasporaRoutes);
 app.use("/api/country-config", countryConfigRoutes);
 app.use("/api/courier", localCourierRoutes);
 app.use("/api/price-alerts", priceDropAlertsRoutes);
+app.use("/api/delivery", deliveryRoutes);
+app.use("/api/quick-reorder", quickReorderRoutes);
+app.use("/api/layaway", layawayRoutes);
 
 // Admin Routes
 app.use("/api/admin/dashboard", adminDashboard);
@@ -311,6 +317,8 @@ const server = app.listen(Number(PORT), "0.0.0.0", () => {
   startJob("smart_reorder", import("./services/smartReorder"), "startSmartReorderJob");
   startJob("seller_tiers", import("./scripts/evaluateSellerTiers"), "startSellerTierJob");
   startJob("ad_billing", import("./services/adBilling"), "startAdBillingJob");
+  startJob("installment_reminders", import("./services/installmentReminders"), "startInstallmentReminderJob");
+  startJob("layaway_reminders", import("./services/layawayReminders"), "startLayawayReminderJob");
 
   // Private order history cleanup — runs daily
   setInterval(async () => {

@@ -3,6 +3,7 @@ import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { createFlutterwavePayment } from "../services/flutterwave";
 
 const router = Router();
 
@@ -82,16 +83,17 @@ router.get("/my-plans", authenticate, asyncHandler(async (req: AuthRequest, res:
   }
 }));
 
-// POST /api/installments/pay/:planId — Mark next installment as paid
+// POST /api/installments/pay/:planId — Initiate Flutterwave payment for next installment
 router.post("/pay/:planId", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { planId } = req.params;
+    const { paymentMethod, mobileNetwork, mobilePhone } = req.body;
 
     const plan = await prisma.installmentPlan.findUnique({
       where: { id: planId },
       include: {
-        order: { select: { userId: true } },
+        order: { select: { userId: true, customerName: true, customerEmail: true, currency: true, id: true } },
         payments: { orderBy: { number: "asc" } },
       },
     });
@@ -111,28 +113,41 @@ router.post("/pay/:planId", authenticate, asyncHandler(async (req: AuthRequest, 
       return res.status(400).json({ error: "All installments already paid" });
     }
 
-    const newPaidCount = plan.paidCount + 1;
-    const isCompleted = newPaidCount >= plan.installments;
-    const intervalDays = plan.installments <= 2 ? 14 : 30;
+    const tx_ref = `installment-${planId}-${nextPayment.id}`;
+    const BASE_URL = process.env.FRONTEND_URL || "https://ugsex.com";
 
-    await prisma.$transaction([
-      prisma.installmentPayment.update({
-        where: { id: nextPayment.id },
-        data: { status: "PAID", paidAt: new Date() },
-      }),
-      prisma.installmentPlan.update({
-        where: { id: planId },
-        data: {
-          paidCount: newPaidCount,
-          status: isCompleted ? "COMPLETED" : "ACTIVE",
-          nextDueDate: isCompleted
-            ? plan.nextDueDate
-            : new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000),
-        },
-      }),
-    ]);
+    const flwPayload: any = {
+      tx_ref,
+      amount: Number(nextPayment.amount),
+      currency: plan.order.currency || "UGX",
+      customer: {
+        name: plan.order.customerName,
+        email: plan.order.customerEmail,
+      },
+      paymentMethod: paymentMethod || "mobile_money",
+      redirect_url: `${BASE_URL}/account/orders`,
+      meta: { planId, paymentId: nextPayment.id, orderId: plan.order.id },
+    };
 
-    return res.json({ message: "Installment paid", paidCount: newPaidCount, completed: isCompleted });
+    if (paymentMethod === "mobile_money" && mobileNetwork && mobilePhone) {
+      flwPayload.mobileMoney = { network: mobileNetwork, phone: mobilePhone };
+    }
+
+    const result = await createFlutterwavePayment(flwPayload);
+
+    // Create a Payment record to track this transaction
+    await prisma.payment.create({
+      data: {
+        orderId: plan.order.id,
+        amount: Number(nextPayment.amount),
+        currency: plan.order.currency || "UGX",
+        method: paymentMethod || "MOBILE_MONEY",
+        status: "PENDING",
+        flwRef: tx_ref,
+      },
+    });
+
+    return res.json({ paymentLink: result.data?.link, tx_ref });
   } catch (error) {
     logger.error("Pay installment error", { error });
     return res.status(500).json({ error: "Failed to process installment payment" });

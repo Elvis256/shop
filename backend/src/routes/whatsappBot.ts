@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { sendWhatsApp } from "../services/whatsapp";
 import { createFlutterwavePayment } from "../services/flutterwave";
+import { generateAIResponse } from "../services/aiAssistant";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
 
@@ -342,11 +343,51 @@ async function handleMessage(phone: string, text: string): Promise<void> {
     }
   }
 
-  // ── Default ──
-  await sendWhatsApp({
-    to: phone,
-    text: `Sorry, I didn't understand that. Reply *menu* to see options, or *browse* to shop. 🛍️`,
+  // ── AI recommendations step ──
+  if (session.step === "ai_recommendations" && session.data.ai_recommendations) {
+    const idx = parseInt(text) - 1;
+    const recs = session.data.ai_recommendations as Array<{ name: string; slug: string; price: number }>;
+    if (idx >= 0 && idx < recs.length) {
+      const product = await prisma.product.findFirst({
+        where: { slug: recs[idx].slug },
+        select: { id: true, name: true, price: true, stock: true },
+      });
+      if (product && product.stock > 0) {
+        const newCart = [...session.cart, { productId: product.id, name: product.name, price: Number(product.price), quantity: 1 }];
+        setSession(phone, { cart: newCart, step: "menu" });
+        await sendWhatsApp({ to: phone, text: `✅ Added ${product.name} to your cart!\n\nReply *cart* to view your cart or *menu* for more options.` });
+        return;
+      }
+    }
+    setSession(phone, { step: "menu" });
+    await sendWhatsApp({ to: phone, text: `Reply *menu* to see options or *browse* to shop.` });
+    return;
+  }
+
+  // ── Default: AI Assistant ──
+  const aiResponse = await generateAIResponse(phone, text, {
+    cart: session.cart.map(i => ({ name: i.name, price: i.price })),
+    language: lang,
   });
+
+  if (aiResponse) {
+    let reply = aiResponse.text;
+
+    if (aiResponse.products && aiResponse.products.length > 0) {
+      setSession(phone, {
+        step: "ai_recommendations",
+        data: { ai_recommendations: aiResponse.products },
+      });
+      reply += "\n\nReply with a number to add to cart.";
+    }
+
+    await sendWhatsApp({ to: phone, text: reply });
+  } else {
+    await sendWhatsApp({
+      to: phone,
+      text: `Sorry, I didn't understand that. Reply *menu* to see options, or *browse* to shop. 🛍️`,
+    });
+  }
 }
 
 async function showCategories(phone: string, lang: string): Promise<void> {
