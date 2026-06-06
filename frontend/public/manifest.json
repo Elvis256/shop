@@ -1,11 +1,11 @@
 {
-  "name": "UGSex Store",
-  "short_name": "UGSex",
-  "description": "Premium Adult Products - Discreet Delivery in Uganda",
+  "name": "PleasureZone Uganda",
+  "short_name": "PleasureZone",
+  "description": "Intimate Wellness Products - Discreet Delivery in Uganda",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#ec4899",
+  "background_color": "#fbfbfd",
+  "theme_color": "#0071e3",
   "orientation": "portrait-primary",
   "icons": [
     {

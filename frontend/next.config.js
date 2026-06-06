@@ -3,6 +3,9 @@ const withPWA = require('@ducanh2912/next-pwa').default({
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
+  buildExcludes: [/middleware-manifest\.json$/],
+  publicExcludes: ['!robots.txt'],
+  extendDefaultRuntimeCaching: false,
   runtimeCaching: [
     {
       urlPattern: /^https:\/\/fonts\.(?:gstatic|googleapis)\.com\/.*/i,
@@ -20,9 +23,16 @@ const withPWA = require('@ducanh2912/next-pwa').default({
       options: { cacheName: 'next-image', expiration: { maxEntries: 100, maxAgeSeconds: 30 * 24 * 60 * 60 } },
     },
     {
-      urlPattern: /\/_next\/static\/.+/i,
+      // JS/CSS chunks use content-hashed filenames — safe to CacheFirst but with a sane TTL
+      urlPattern: /\/_next\/static\/chunks\/.+\.(?:js|css)$/i,
       handler: 'CacheFirst',
-      options: { cacheName: 'next-static', expiration: { maxEntries: 200, maxAgeSeconds: 365 * 24 * 60 * 60 } },
+      options: { cacheName: 'next-static', expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 } },
+    },
+    {
+      // Build manifests and non-chunk static assets change on every deploy
+      urlPattern: /\/_next\/static\/(?!chunks\/).+/i,
+      handler: 'StaleWhileRevalidate',
+      options: { cacheName: 'next-static-misc', expiration: { maxEntries: 50, maxAgeSeconds: 24 * 60 * 60 } },
     },
     {
       urlPattern: /^https?:\/\/.*\/api\/.*/i,
@@ -51,12 +61,12 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://www.paypal.com https://www.google-analytics.com https://www.googletagmanager.com https://connect.facebook.net https://static.cloudflareinsights.com",
+              "script-src 'self' 'unsafe-inline' https://www.paypal.com https://www.google-analytics.com https://www.googletagmanager.com https://connect.facebook.net https://static.cloudflareinsights.com https://js.stripe.com https://accounts.google.com https://apis.google.com https://pagead2.googlesyndication.com https://www.googleadservices.com https://adservice.google.com https://tpc.googlesyndication.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: blob: https: http:",
               "font-src 'self' https://fonts.gstatic.com data:",
-              "connect-src 'self' https://www.paypal.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com https://region1.analytics.google.com https://www.facebook.com https://connect.facebook.net https://fonts.googleapis.com https://fonts.gstatic.com https://ae01.alicdn.com https://*.alicdn.com https://*.aliexpress.com https://*.cjdropshipping.com https://res.cloudinary.com https://static.cloudflareinsights.com",
-              "frame-src 'self' https://www.paypal.com https://www.google.com",
+              "connect-src 'self' https://www.paypal.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com https://region1.analytics.google.com https://www.facebook.com https://connect.facebook.net https://fonts.googleapis.com https://fonts.gstatic.com https://ae01.alicdn.com https://*.alicdn.com https://*.aliexpress.com https://*.cjdropshipping.com https://res.cloudinary.com https://static.cloudflareinsights.com https://api.stripe.com https://nominatim.openstreetmap.org https://accounts.google.com https://pagead2.googlesyndication.com https://www.googleadservices.com",
+              "frame-src 'self' https://www.paypal.com https://www.google.com https://js.stripe.com https://accounts.google.com https://googleads.g.doubleclick.net https://tpc.googlesyndication.com",
               "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self'",
