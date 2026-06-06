@@ -69,6 +69,22 @@ const PUBLIC_KEYS = [
   "tracking_gtm_container_id",
 ];
 
+// GET /api/settings/announcement - Return current announcement bar content
+router.get("/announcement", asyncHandler(async (_req: Request, res: Response) => {
+  try {
+    const setting = await prisma.setting.findUnique({
+      where: { key: "appearance_banner_text" },
+    });
+    if (setting?.value) {
+      return res.json({ id: "banner", text: setting.value });
+    }
+    return res.json(null);
+  } catch (error) {
+    logger.error("Announcement fetch error", { error });
+    return res.json(null);
+  }
+}));
+
 // GET /api/settings/public - Return safe public settings
 router.get("/public", asyncHandler(async (_req: Request, res: Response) => {
   try {
