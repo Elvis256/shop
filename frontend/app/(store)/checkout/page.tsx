@@ -222,7 +222,8 @@ export default function CheckoutPage() {
   const orderTotal = cartTotal - couponDiscount + shippingCost;
   const creditDiscount = storeCreditApplied ? Math.min(storeCreditAmount, orderTotal) : 0;
   const giftCardDiscount = giftCardApplied ? Math.min(giftCardBalance, orderTotal - creditDiscount) : 0;
-  const finalTotal = orderTotal - creditDiscount - giftCardDiscount;
+  const loyaltyDiscount = loyaltyApplied ? loyaltyRedeem : 0;
+  const finalTotal = orderTotal - creditDiscount - giftCardDiscount - loyaltyDiscount;
   const firstInstallmentAmount = installmentsEnabled && installmentCount >= 2
     ? Math.ceil(finalTotal / installmentCount)
     : finalTotal;

@@ -1,19 +1,31 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Section from "@/components/Section";
 import { CheckCircle, Package, Mail, ArrowRight, Loader2, MessageCircle } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { useCart } from "@/lib/hooks/useCart";
 
 function SuccessContent() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
   const txRef = searchParams.get("tx_ref");
 
+  const { clearCart } = useCart();
+  const cartCleared = useRef(false);
+
   const [orderData, setOrderData] = useState<{ id: string; orderNumber: string } | null>(null);
   const [resolving, setResolving] = useState(false);
+
+  // Clear cart on mount (payment redirect landed here)
+  useEffect(() => {
+    if (!cartCleared.current) {
+      clearCart();
+      cartCleared.current = true;
+    }
+  }, [clearCart]);
 
   useEffect(() => {
     if (orderId) {

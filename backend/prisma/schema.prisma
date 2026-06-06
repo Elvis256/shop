@@ -122,6 +122,8 @@ model Address {
   deliveryAlias String? // Name shown on package label instead of real name
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Product {
@@ -251,6 +253,10 @@ model Product {
   @@index([status])
   @@index([featured])
   @@index([sellerId])
+  @@index([price])
+  @@index([createdAt])
+  @@index([flashSaleEndsAt])
+  @@index([status, categoryId, createdAt])
 }
 
 model ProductVariant {
@@ -423,6 +429,7 @@ model OrderItem {
 
   @@index([productId])
   @@index([orderId])
+  @@index([sellerId])
 }
 
 model OrderEvent {

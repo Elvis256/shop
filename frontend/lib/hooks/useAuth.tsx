@@ -55,12 +55,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
+      // First try with current token
       const res = await fetch(`${API_URL}/api/auth/me`, {
         credentials: "include",
       });
       if (res.ok) {
         const data = await res.json();
         setUser(data);
+      } else if (res.status === 401) {
+        // Access token expired — attempt refresh then retry
+        try {
+          const refreshRes = await fetch(`${API_URL}/api/auth/refresh`, {
+            method: "POST",
+            credentials: "include",
+          });
+          if (refreshRes.ok) {
+            // Retry /me with new token
+            const retryRes = await fetch(`${API_URL}/api/auth/me`, {
+              credentials: "include",
+            });
+            if (retryRes.ok) {
+              const data = await retryRes.json();
+              setUser(data);
+            } else {
+              setUser(null);
+            }
+          } else {
+            setUser(null);
+          }
+        } catch {
+          setUser(null);
+        }
       } else {
         setUser(null);
       }

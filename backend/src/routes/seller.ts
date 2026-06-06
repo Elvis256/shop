@@ -916,6 +916,25 @@ router.put("/orders/:id/status", authenticate, requireSeller, asyncHandler(async
       return res.status(404).json({ error: "Order not found" });
     }
 
+    // Check if this is a multi-seller order
+    const totalItemCount = await prisma.orderItem.count({ where: { orderId: req.params.id } });
+    const isMultiSeller = totalItemCount > sellerItems.length;
+
+    if (isMultiSeller) {
+      // Multi-seller order: only add timeline event, do NOT update global order status
+      // as other sellers' items may not be ready.
+      await prisma.orderEvent.create({
+        data: {
+          orderId: req.params.id,
+          status,
+          note: `${seller.storeName}'s items: ${status}${trackingNumber ? ` (Tracking: ${trackingNumber.trim()})` : ""}`,
+        },
+      });
+
+      return res.json({ message: `Your items marked as ${status}`, multiSeller: true });
+    }
+
+    // Single-seller order: safe to update global order status
     const updateData: any = { status };
     if (trackingNumber) {
       updateData.trackingNumber = trackingNumber.trim();
@@ -926,7 +945,6 @@ router.put("/orders/:id/status", authenticate, requireSeller, asyncHandler(async
       data: updateData,
     });
 
-    // Add timeline event
     await prisma.orderEvent.create({
       data: {
         orderId: req.params.id,
@@ -973,23 +991,23 @@ router.get("/earnings", authenticate, requireSeller, asyncHandler(async (req: Se
       },
     });
 
-    // Compute commission and net for each item
-    const commissionRate = seller.commissionRate !== null ? Number(seller.commissionRate) : 15;
-    const recentTransactions = recentItems.map((item) => {
+    // Compute commission and net for each item using the full commission rate logic
+    const recentTransactions = await Promise.all(recentItems.map(async (item) => {
       const amount = Number(item.price) * item.quantity;
-      const commission = Math.round((amount * commissionRate) / 100);
+      const rate = await getCommissionRate(seller.id, (item as any).product?.categoryId || null);
+      const commission = Math.round((amount * rate) / 100);
       return {
         id: item.id,
         orderId: item.order.id,
         orderNumber: item.order.orderNumber,
         productName: item.product?.name || "Unknown Product",
         amount,
-        commissionRate,
+        commissionRate: rate,
         commission,
         net: amount - commission,
         date: item.order.createdAt,
       };
-    });
+    }));
 
     return res.json({
       totalEarnings: seller.totalEarnings,
@@ -1023,21 +1041,21 @@ router.get("/earnings/invoice/:orderId", authenticate, requireSeller, asyncHandl
       return res.status(404).json({ error: "Order not found" });
     }
 
-    const commissionRate = seller.commissionRate !== null ? Number(seller.commissionRate) : 15;
-    const items = order.items.map((item) => {
+    const items = await Promise.all(order.items.map(async (item) => {
       const amount = Number(item.price) * item.quantity;
-      const commission = Math.round((amount * commissionRate) / 100);
+      const rate = await getCommissionRate(seller.id, (item as any).product?.categoryId || null);
+      const commission = Math.round((amount * rate) / 100);
       return {
         productName: item.product?.name || "Unknown",
         sku: item.product?.sku || "",
         quantity: item.quantity,
         unitPrice: Number(item.price),
         amount,
-        commissionRate,
+        commissionRate: rate,
         commission,
         net: amount - commission,
       };
-    });
+    }));
 
     const totals = items.reduce(
       (acc, i) => ({ gross: acc.gross + i.amount, commission: acc.commission + i.commission, net: acc.net + i.net }),

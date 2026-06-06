@@ -71,11 +71,20 @@ router.get("/", asyncHandler(async (req: Request, res: Response) => {
     }
 
     if (onSale === "true") {
-      where.OR = [
-        ...(where.OR || []),
-        { comparePrice: { not: null } },
-        { flashSalePrice: { not: null }, flashSaleEndsAt: { gt: new Date() } },
-      ];
+      // Use AND to intersect with existing search filters instead of merging into OR
+      const saleCondition = {
+        OR: [
+          { comparePrice: { not: null } },
+          { flashSalePrice: { not: null }, flashSaleEndsAt: { gt: new Date() } },
+        ],
+      };
+      if (where.OR) {
+        // search is active — wrap both in AND to intersect
+        where.AND = [{ OR: where.OR }, saleCondition];
+        delete where.OR;
+      } else {
+        where.OR = saleCondition.OR;
+      }
     }
 
     if (featured === "true") {

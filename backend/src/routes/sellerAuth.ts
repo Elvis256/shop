@@ -64,9 +64,10 @@ async function clearLoginAttempts(email: string): Promise<void> {
 router.post("/login", asyncHandler(async (req, res: Response) => {
   try {
     const body = SellerLoginSchema.parse(req.body);
+    const normalizedEmail = body.email.toLowerCase().trim();
 
     // Check brute-force lockout
-    const lockout = await checkLockout(body.email);
+    const lockout = await checkLockout(normalizedEmail);
     if (lockout.locked) {
       return res.status(429).json({
         error: `Account temporarily locked. Try again in ${lockout.remainingTime} minutes.`,
@@ -74,12 +75,12 @@ router.post("/login", asyncHandler(async (req, res: Response) => {
     }
 
     const user = await prisma.user.findUnique({
-      where: { email: body.email },
+      where: { email: normalizedEmail },
       select: { id: true, email: true, name: true, password: true, role: true, isBlocked: true },
     });
 
     if (!user) {
-      await recordFailedLogin(body.email);
+      await recordFailedLogin(normalizedEmail);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
@@ -90,7 +91,7 @@ router.post("/login", asyncHandler(async (req, res: Response) => {
 
     const validPassword = await bcrypt.compare(body.password, user.password);
     if (!validPassword) {
-      await recordFailedLogin(body.email);
+      await recordFailedLogin(normalizedEmail);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
@@ -113,7 +114,7 @@ router.post("/login", asyncHandler(async (req, res: Response) => {
     }
 
     // Clear lockout on success
-    await clearLoginAttempts(body.email);
+    await clearLoginAttempts(normalizedEmail);
 
     const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal: "customer" });
     const refreshToken = await createRefreshToken(user.id);

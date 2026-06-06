@@ -59,8 +59,10 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
       where.stock = 0;
     }
 
+    const allowedSortFields = ["price", "stock", "createdAt", "name", "status", "rating", "updatedAt"];
+    const sortField = allowedSortFields.includes(sort as string) ? (sort as string) : "createdAt";
     const orderBy: any = {};
-    orderBy[sort as string] = order;
+    orderBy[sortField] = order;
 
     const [products, total, totalAll, activeCount, lowStockCount, outOfStockCount] = await Promise.all([
       prisma.product.findMany({
@@ -609,8 +611,10 @@ router.post("/bulk", asyncHandler(async (req: AuthRequest, res: Response) => {
         });
         break;
       case "delete":
-        result = await prisma.product.deleteMany({
+        // Soft-delete (archive) to match single-product delete behavior
+        result = await prisma.product.updateMany({
           where: { id: { in: ids } },
+          data: { status: "ARCHIVED" },
         });
         break;
     }
