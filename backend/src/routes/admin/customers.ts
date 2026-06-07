@@ -1,7 +1,7 @@
 import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
-import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
+import { authenticate, requireAdmin, AuthRequest, invalidateAuthCache } from "../../middleware/auth";
 import { logger } from "../../lib/logger";
 import { asyncHandler } from "../../middleware/errorHandler";
 
@@ -151,25 +151,15 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   }
 }));
 
-// GET /api/admin/customers/segments — Get all unique segment tags with user counts
+// GET /api/admin/customers/segments — Get all unique segment tags with user counts (SQL aggregation)
 // Must be defined before /:id to avoid route conflict
 router.get("/segments", asyncHandler(async (_req: AuthRequest, res: Response) => {
   try {
-    const users = await prisma.user.findMany({
-      where: { segmentTags: { isEmpty: false } },
-      select: { segmentTags: true },
-    });
-
-    const tagCounts = new Map<string, number>();
-    for (const user of users) {
-      for (const tag of user.segmentTags) {
-        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
-      }
-    }
-
-    const segments = Array.from(tagCounts.entries())
-      .map(([tag, count]) => ({ tag, count }))
-      .sort((a, b) => b.count - a.count);
+    const segments = await prisma.$queryRaw<Array<{ tag: string; count: number }>>`
+      SELECT tag, COUNT(*)::int as count
+      FROM "User", UNNEST("segmentTags") as tag
+      GROUP BY tag
+      ORDER BY count DESC`;
 
     return res.json({ segments });
   } catch (error) {
@@ -261,6 +251,9 @@ router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
       select: { id: true, email: true, name: true, phone: true, role: true, isBlocked: true },
     });
 
+    // Invalidate auth cache so changes take effect immediately
+    await invalidateAuthCache(id);
+
     return res.json({ message: "Customer updated", customer: updated });
   } catch (error) {
     logger.error("Admin update customer error", { error });
@@ -297,70 +290,50 @@ router.post("/:id/segment", asyncHandler(async (req: AuthRequest, res: Response)
 }));
 
 /**
- * Auto-segment users based on behavior (single SQL query, no N+1):
+ * Auto-segment users based on behavior — pure SQL, no N+1.
+ * Uses a single UPDATE ... FROM to compute and apply tags in one query.
  * - "new": registered < 30 days ago
  * - "vip": total orders > 5
  * - "at_risk": last order > 60 days ago
  * - "high_value": total spend > 500000 UGX
  */
 export async function autoSegmentUsers(): Promise<number> {
-  let updated = 0;
   try {
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
 
-    // Single query: get all customers with their order aggregates
-    const rows = await prisma.$queryRaw<Array<{
-      id: string;
-      createdAt: Date;
-      segmentTags: string[];
-      order_count: number;
-      total_spent: number;
-      last_order: Date | null;
-    }>>`
-      SELECT u.id, u."createdAt", u."segmentTags",
-        COALESCE(os.cnt, 0)::int as order_count,
-        COALESCE(os.total, 0)::float8 as total_spent,
-        os.last_order
-      FROM "User" u
-      LEFT JOIN (
-        SELECT "userId",
-          COUNT(*)::int as cnt,
-          SUM("totalAmount"::numeric)::float8 as total,
-          MAX("createdAt") as last_order
-        FROM "Order"
-        WHERE status NOT IN ('CANCELLED', 'REFUNDED')
-        GROUP BY "userId"
-      ) os ON os."userId" = u.id
-      WHERE u.role = 'CUSTOMER'`;
+    // Single SQL: compute tags and bulk update in one statement
+    const result = await prisma.$executeRaw`
+      UPDATE "User" u
+      SET "segmentTags" = computed.new_tags
+      FROM (
+        SELECT u2.id,
+          ARRAY_REMOVE(ARRAY[
+            CASE WHEN u2."createdAt" > ${thirtyDaysAgo} THEN 'new' END,
+            CASE WHEN COALESCE(os.cnt, 0) > 5 THEN 'vip' END,
+            CASE WHEN os.last_order IS NOT NULL AND os.last_order < ${sixtyDaysAgo} THEN 'at_risk' END,
+            CASE WHEN COALESCE(os.total, 0) > 500000 THEN 'high_value' END
+          ], NULL) as new_tags
+        FROM "User" u2
+        LEFT JOIN (
+          SELECT "userId",
+            COUNT(*)::int as cnt,
+            SUM("totalAmount"::numeric)::float8 as total,
+            MAX("createdAt") as last_order
+          FROM "Order"
+          WHERE status NOT IN ('CANCELLED', 'REFUNDED')
+          GROUP BY "userId"
+        ) os ON os."userId" = u2.id
+        WHERE u2.role = 'CUSTOMER'
+      ) computed
+      WHERE u.id = computed.id
+        AND u."segmentTags" IS DISTINCT FROM computed.new_tags`;
 
-    for (const row of rows) {
-      const tags = new Set<string>(row.segmentTags || []);
-
-      // "new" check
-      if (new Date(row.createdAt) > thirtyDaysAgo) { tags.add("new"); } else { tags.delete("new"); }
-      // "vip" check
-      if (row.order_count > 5) { tags.add("vip"); } else { tags.delete("vip"); }
-      // "at_risk" check
-      if (row.last_order && new Date(row.last_order) < sixtyDaysAgo) { tags.add("at_risk"); } else { tags.delete("at_risk"); }
-      // "high_value" check
-      if (row.total_spent > 500000) { tags.add("high_value"); } else { tags.delete("high_value"); }
-
-      const newTags = Array.from(tags);
-      const oldTags = new Set(row.segmentTags || []);
-      if (newTags.length !== oldTags.size || newTags.some((t) => !oldTags.has(t))) {
-        await prisma.user.update({
-          where: { id: row.id },
-          data: { segmentTags: newTags },
-        });
-        updated++;
-      }
-    }
+    return result;
   } catch (error) {
     logger.error("Auto-segment users error", { error });
+    return 0;
   }
-  return updated;
 }
 
 // PUT /api/admin/customers/:id/role - Change a user's role

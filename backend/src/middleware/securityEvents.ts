@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import logger from "../lib/logger";
 import prisma from "../lib/prisma";
+import redis from "../lib/redis";
 
 /**
  * Security event tracking and alerting
@@ -29,11 +30,15 @@ export interface LoginAttempt {
 }
 
 /**
- * Track login attempts for account lockout and brute force detection
+ * Track login attempts for account lockout and brute force detection.
+ * Uses Redis for persistence across restarts and horizontal scaling.
  */
-const loginAttempts = new Map<string, LoginAttempt[]>();
 const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const LOCKOUT_DURATION_S = 15 * 60; // 15 minutes in seconds
+
+function redisKey(email: string, ipAddress: string): string {
+  return `login_attempts:${email}:${ipAddress}`;
+}
 
 export async function trackLoginAttempt(
   email: string,
@@ -41,33 +46,22 @@ export async function trackLoginAttempt(
   userAgent: string,
   success: boolean
 ) {
-  const key = `${email}:${ipAddress}`;
-  const now = new Date();
+  const key = redisKey(email, ipAddress);
 
-  if (!loginAttempts.has(key)) {
-    loginAttempts.set(key, []);
-  }
+  try {
+    if (success) {
+      // Reset on successful login
+      await redis.del(key);
+      return { isLocked: false, attemptsRemaining: MAX_LOGIN_ATTEMPTS };
+    }
 
-  const attempts = loginAttempts.get(key)!;
+    // Increment failure count with TTL
+    const count = await redis.incr(key);
+    if (count === 1) {
+      await redis.expire(key, LOCKOUT_DURATION_S);
+    }
 
-  // Remove attempts older than lockout duration
-  const recentAttempts = attempts.filter(
-    (a) => now.getTime() - a.timestamp.getTime() < LOCKOUT_DURATION_MS
-  );
-
-  recentAttempts.push({
-    email,
-    ipAddress,
-    success,
-    timestamp: now,
-    userAgent,
-  });
-
-  loginAttempts.set(key, recentAttempts);
-
-  // Log security event for failed attempts
-  if (!success) {
-    const failureCount = recentAttempts.filter((a) => !a.success).length;
+    const failureCount = count;
 
     if (failureCount >= MAX_LOGIN_ATTEMPTS) {
       await logSecurityEvent({
@@ -76,13 +70,7 @@ export async function trackLoginAttempt(
         ipAddress,
         userAgent,
         path: "/auth/login",
-        details: {
-          failureCount,
-          attempts: recentAttempts.map((a) => ({
-            timestamp: a.timestamp,
-            success: a.success,
-          })),
-        },
+        details: { failureCount },
         severity: "high",
       });
     } else if (failureCount >= 3) {
@@ -99,44 +87,39 @@ export async function trackLoginAttempt(
         severity: "medium",
       });
     }
-  }
 
-  return {
-    isLocked: recentAttempts.filter((a) => !a.success).length >= MAX_LOGIN_ATTEMPTS,
-    attemptsRemaining: Math.max(0, MAX_LOGIN_ATTEMPTS - recentAttempts.filter((a) => !a.success).length),
-  };
+    return {
+      isLocked: failureCount >= MAX_LOGIN_ATTEMPTS,
+      attemptsRemaining: Math.max(0, MAX_LOGIN_ATTEMPTS - failureCount),
+    };
+  } catch {
+    // Redis unavailable — fail open (allow login)
+    return { isLocked: false, attemptsRemaining: MAX_LOGIN_ATTEMPTS };
+  }
 }
 
 /**
  * Check if account is locked due to too many failed attempts
  */
-export function isAccountLocked(email: string, ipAddress: string): boolean {
-  const key = `${email}:${ipAddress}`;
-  const attempts = loginAttempts.get(key) || [];
-  const now = new Date();
-
-  const recentFailures = attempts.filter(
-    (a) =>
-      !a.success && now.getTime() - a.timestamp.getTime() < LOCKOUT_DURATION_MS
-  );
-
-  return recentFailures.length >= MAX_LOGIN_ATTEMPTS;
+export async function isAccountLocked(email: string, ipAddress: string): Promise<boolean> {
+  try {
+    const count = await redis.get(redisKey(email, ipAddress));
+    return count !== null && parseInt(count) >= MAX_LOGIN_ATTEMPTS;
+  } catch {
+    return false; // Redis unavailable — fail open
+  }
 }
 
 /**
  * Get remaining login attempts
  */
-export function getRemainingLoginAttempts(email: string, ipAddress: string): number {
-  const key = `${email}:${ipAddress}`;
-  const attempts = loginAttempts.get(key) || [];
-  const now = new Date();
-
-  const recentFailures = attempts.filter(
-    (a) =>
-      !a.success && now.getTime() - a.timestamp.getTime() < LOCKOUT_DURATION_MS
-  );
-
-  return Math.max(0, MAX_LOGIN_ATTEMPTS - recentFailures.length);
+export async function getRemainingLoginAttempts(email: string, ipAddress: string): Promise<number> {
+  try {
+    const count = await redis.get(redisKey(email, ipAddress));
+    return Math.max(0, MAX_LOGIN_ATTEMPTS - (count ? parseInt(count) : 0));
+  } catch {
+    return MAX_LOGIN_ATTEMPTS;
+  }
 }
 
 /**
@@ -312,17 +295,4 @@ export async function onUnauthorizedAccess(
   });
 }
 
-// Cleanup: Remove old login attempts every 5 minutes
-setInterval(() => {
-  const now = new Date();
-  for (const [key, attempts] of loginAttempts.entries()) {
-    const recentAttempts = attempts.filter(
-      (a) => now.getTime() - a.timestamp.getTime() < LOCKOUT_DURATION_MS
-    );
-    if (recentAttempts.length === 0) {
-      loginAttempts.delete(key);
-    } else {
-      loginAttempts.set(key, recentAttempts);
-    }
-  }
-}, 5 * 60 * 1000);
+// No cleanup needed — Redis TTL handles expiration automatically

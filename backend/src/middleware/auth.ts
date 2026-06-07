@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { Request, Response, NextFunction } from "express";
 import prisma from "../lib/prisma";
+import redis from "../lib/redis";
 
 // SECURITY: Require JWT_SECRET in production - no fallback allowed
 const envSecret = process.env.JWT_SECRET;
@@ -111,18 +112,43 @@ export async function invalidateAllRefreshTokens(userId: string): Promise<void> 
   await prisma.refreshToken.deleteMany({ where: { userId } });
 }
 
+// Cache user auth data in Redis (30s TTL) to avoid DB hit on every request
+const AUTH_CACHE_TTL = 30;
+
+async function getCachedUser(userId: string): Promise<{ id: string; email: string; role: string; isBlocked: boolean } | null> {
+  try {
+    const cached = await redis.get(`auth:user:${userId}`);
+    if (cached) return JSON.parse(cached);
+  } catch {}
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, role: true, isBlocked: true },
+  });
+
+  if (user) {
+    try { await redis.set(`auth:user:${userId}`, JSON.stringify(user), "EX", AUTH_CACHE_TTL); } catch {}
+  }
+
+  return user;
+}
+
+// Call this when a user is blocked/updated to invalidate their auth cache
+export async function invalidateAuthCache(userId: string): Promise<void> {
+  try { await redis.del(`auth:user:${userId}`); } catch {}
+}
+
 export async function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    // Try cookie first, then Authorization header (for backward compatibility/API clients)
     let token = req.cookies?.auth_token;
-    
+
     if (!token) {
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
         token = authHeader.split(" ")[1];
       }
     }
-    
+
     if (!token) {
       return res.status(401).json({ error: "No token provided" });
     }
@@ -133,11 +159,7 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
       return res.status(401).json({ error: "Invalid token" });
     }
 
-    // Verify user still exists and is not blocked
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: { id: true, email: true, role: true, isBlocked: true },
-    });
+    const user = await getCachedUser(decoded.id);
 
     if (!user) {
       return res.status(401).json({ error: "User not found" });
@@ -156,7 +178,6 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
 
 export async function optionalAuth(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    // Try cookie first, then Authorization header
     let token = req.cookies?.auth_token;
 
     if (!token) {
@@ -169,11 +190,7 @@ export async function optionalAuth(req: AuthRequest, res: Response, next: NextFu
     if (token) {
       const decoded = verifyToken(token);
       if (decoded) {
-        // Verify user is not blocked before granting identity
-        const user = await prisma.user.findUnique({
-          where: { id: decoded.id },
-          select: { isBlocked: true },
-        });
+        const user = await getCachedUser(decoded.id);
         if (user && !user.isBlocked) {
           req.user = decoded;
         }
@@ -202,14 +219,26 @@ export async function requireSeller(req: AuthRequest, res: Response, next: NextF
   if (!req.user) {
     return res.status(401).json({ error: "Authentication required" });
   }
-  // Check for Seller record in DB (any user can also be a seller)
-  const seller = await prisma.seller.findUnique({
-    where: { userId: req.user.id },
-    select: { status: true },
-  });
-  if (!seller || seller.status !== "APPROVED") {
+
+  // Cache seller status (60s TTL)
+  let sellerStatus: string | null = null;
+  try {
+    const cached = await redis.get(`auth:seller:${req.user.id}`);
+    if (cached) { sellerStatus = cached; }
+  } catch {}
+
+  if (sellerStatus === null) {
+    const seller = await prisma.seller.findUnique({
+      where: { userId: req.user.id },
+      select: { status: true },
+    });
+    sellerStatus = seller?.status || "NONE";
+    try { await redis.set(`auth:seller:${req.user.id}`, sellerStatus, "EX", 60); } catch {}
+  }
+
+  if (sellerStatus !== "APPROVED") {
     return res.status(403).json({
-      error: seller?.status === "PENDING"
+      error: sellerStatus === "PENDING"
         ? "Your seller application is still under review"
         : "Seller access required",
     });

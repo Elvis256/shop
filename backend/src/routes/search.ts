@@ -6,7 +6,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
-// GET /api/search
+// GET /api/search — Uses PostgreSQL full-text search (GIN index) for scalability
 router.get("/", asyncHandler(async (req: Request, res: Response) => {
   try {
     const {
@@ -26,124 +26,120 @@ router.get("/", asyncHandler(async (req: Request, res: Response) => {
     }
 
     const take = Math.min(parseInt(limit as string) || 20, 50);
-    const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
+    const pageNum = Math.max(parseInt(page as string) || 1, 1);
+    const skip = (pageNum - 1) * take;
 
-    // Build fuzzy search: split query into words for OR matching
+    // Build the tsquery from search terms: "vibrator toy" → "vibrator | toy"
     const words = q.trim().split(/\s+/).filter((w) => w.length >= 2);
-    const searchConditions: any[] = [
-      { name: { contains: q, mode: "insensitive" } },
-      { description: { contains: q, mode: "insensitive" } },
-      { tags: { hasSome: [q.toLowerCase()] } },
-    ];
+    const tsQuery = words.map(w => w.replace(/[^a-zA-Z0-9]/g, '')).filter(Boolean).join(" | ");
 
-    // Add per-word partial matching
-    for (const word of words) {
-      if (word !== q) {
-        searchConditions.push({ name: { contains: word, mode: "insensitive" } });
-        searchConditions.push({ description: { contains: word, mode: "insensitive" } });
-        searchConditions.push({ tags: { hasSome: [word.toLowerCase()] } });
-      }
+    // Build SQL filter conditions
+    const conditions: string[] = [`p.status = 'ACTIVE'`];
+    const params: any[] = [];
+
+    // Full-text search condition + tag matching
+    if (tsQuery) {
+      params.push(tsQuery);
+      params.push(q.toLowerCase());
+      conditions.push(`(
+        to_tsvector('english', COALESCE(p.name, '') || ' ' || COALESCE(p.description, '')) @@ to_tsquery('english', $${params.length - 1})
+        OR $${params.length} = ANY(p.tags)
+      )`);
     }
-
-    // Build where clause
-    const where: any = {
-      status: "ACTIVE",
-      OR: searchConditions,
-    };
 
     if (category) {
-      where.category = { slug: category };
+      params.push(category);
+      conditions.push(`c.slug = $${params.length}`);
     }
-
-    if (minPrice || maxPrice) {
-      where.price = {};
-      if (minPrice) where.price.gte = parseFloat(minPrice as string);
-      if (maxPrice) where.price.lte = parseFloat(maxPrice as string);
+    if (minPrice) {
+      params.push(parseFloat(minPrice as string));
+      conditions.push(`p.price >= $${params.length}`);
     }
-
+    if (maxPrice) {
+      params.push(parseFloat(maxPrice as string));
+      conditions.push(`p.price <= $${params.length}`);
+    }
     if (minRating) {
-      where.rating = { gte: parseFloat(minRating as string) };
+      params.push(parseFloat(minRating as string));
+      conditions.push(`p.rating >= $${params.length}`);
     }
-
     if (inStock === "true") {
-      where.stock = { gt: 0 };
+      conditions.push(`p.stock > 0`);
     }
 
-    // Sort order
-    let orderBy: any = {};
-    switch (sort) {
-      case "price_asc":
-        orderBy = { price: "asc" };
-        break;
-      case "price_desc":
-        orderBy = { price: "desc" };
-        break;
-      case "rating":
-        orderBy = { rating: "desc" };
-        break;
-      case "newest":
-        orderBy = { createdAt: "desc" };
-        break;
-      case "popular":
-        orderBy = { reviewCount: "desc" };
-        break;
-      default:
-        orderBy = { rating: "desc" }; // Relevance approximation
-    }
+    const whereClause = conditions.join(" AND ");
 
-    const [products, total] = await Promise.all([
-      prisma.product.findMany({
-        where,
-        orderBy,
-        take,
-        skip,
-        include: {
-          category: { select: { name: true, slug: true } },
-          images: { take: 1, orderBy: { position: "asc" } },
-        },
-      }),
-      prisma.product.count({ where }),
+    // Sort mapping
+    const sortMap: Record<string, string> = {
+      price_asc: "p.price ASC",
+      price_desc: "p.price DESC",
+      rating: "p.rating DESC NULLS LAST",
+      newest: 'p."createdAt" DESC',
+      popular: 'p."reviewCount" DESC NULLS LAST',
+      relevance: tsQuery
+        ? `ts_rank(to_tsvector('english', COALESCE(p.name, '') || ' ' || COALESCE(p.description, '')), to_tsquery('english', $1)) DESC`
+        : "p.rating DESC NULLS LAST",
+    };
+    const orderClause = sortMap[sort as string] || sortMap.relevance;
+
+    // Count query
+    params.push(take);
+    const limitIdx = params.length;
+    params.push(skip);
+    const offsetIdx = params.length;
+
+    const countSql = `SELECT COUNT(*)::int as total FROM "Product" p LEFT JOIN "Category" c ON c.id = p."categoryId" WHERE ${whereClause}`;
+    const dataSql = `
+      SELECT p.id, p.name, p.slug, p.price::float8 as price, p."comparePrice"::float8 as "comparePrice",
+        p.currency, p.rating::float8 as rating, p."reviewCount", p.stock,
+        p."cjProductId", p."aliexpressProductId",
+        p."flashSalePrice"::float8 as "flashSalePrice", p."flashSaleEndsAt",
+        c.name as "categoryName", c.slug as "categorySlug",
+        (SELECT url FROM "ProductImage" pi WHERE pi."productId" = p.id ORDER BY pi.position ASC LIMIT 1) as "imageUrl"
+      FROM "Product" p
+      LEFT JOIN "Category" c ON c.id = p."categoryId"
+      WHERE ${whereClause}
+      ORDER BY ${orderClause}
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
+
+    const [countResult, products] = await Promise.all([
+      prisma.$queryRawUnsafe<[{ total: number }]>(countSql, ...params.slice(0, -2)),
+      prisma.$queryRawUnsafe<any[]>(dataSql, ...params),
     ]);
 
-    // Get facets for filters
-    const [categoryFacets, priceStats] = await Promise.all([
-      prisma.product.groupBy({
-        by: ["categoryId"],
-        where: { status: "ACTIVE" },
-        _count: { categoryId: true },
-      }),
+    const total = countResult[0]?.total || 0;
+
+    // Get price range stats (cached)
+    const priceStats = await cacheGetOrSet("search:pricerange", () =>
       prisma.product.aggregate({
         where: { status: "ACTIVE" },
         _min: { price: true },
         _max: { price: true },
       }),
-    ]);
+      300 // 5 min cache
+    );
 
     // Track search query
     trackSearch(q).catch(() => {});
 
-    // If no results, try removing last character for "did you mean" suggestions
+    // "Did you mean" for zero results
     let didYouMean: string | null = null;
     if (total === 0 && q.length > 3) {
       const truncated = q.slice(0, -1);
-      const altCount = await prisma.product.count({
-        where: {
-          status: "ACTIVE",
-          OR: [
-            { name: { contains: truncated, mode: "insensitive" } },
-            { description: { contains: truncated, mode: "insensitive" } },
-          ],
-        },
-      });
-      if (altCount > 0) {
-        didYouMean = truncated;
+      const truncWords = truncated.split(/\s+/).filter(w => w.length >= 2).map(w => w.replace(/[^a-zA-Z0-9]/g, '')).filter(Boolean).join(" | ");
+      if (truncWords) {
+        const [alt] = await prisma.$queryRaw<[{ cnt: number }]>`
+          SELECT COUNT(*)::int as cnt FROM "Product"
+          WHERE status = 'ACTIVE'
+            AND to_tsvector('english', COALESCE(name, '') || ' ' || COALESCE(description, '')) @@ to_tsquery('english', ${truncWords})`;
+        if (alt?.cnt > 0) didYouMean = truncated;
       }
     }
 
     return res.json({
       query: q,
       didYouMean,
-      products: products.map((p) => ({
+      products: products.map((p: any) => ({
         id: p.id,
         name: p.name,
         slug: p.slug,
@@ -152,12 +148,12 @@ router.get("/", asyncHandler(async (req: Request, res: Response) => {
         currency: p.currency,
         rating: p.rating,
         reviewCount: p.reviewCount,
-        imageUrl: p.images[0]?.url || null,
-        category: p.category?.name || null,
+        imageUrl: p.imageUrl || null,
+        category: p.categoryName || null,
         inStock: p.stock > 0,
         shippingBadge: (p.cjProductId || p.aliexpressProductId) ? "From Abroad" : "Express",
-        flashSalePrice: p.flashSalePrice ? Number(p.flashSalePrice) : null,
-        flashSaleEndsAt: p.flashSaleEndsAt?.toISOString() || null,
+        flashSalePrice: p.flashSalePrice || null,
+        flashSaleEndsAt: p.flashSaleEndsAt?.toISOString?.() || null,
       })),
       facets: {
         priceRange: {
@@ -167,7 +163,7 @@ router.get("/", asyncHandler(async (req: Request, res: Response) => {
       },
       pagination: {
         total,
-        page: Math.floor(skip / take) + 1,
+        page: pageNum,
         limit: take,
         totalPages: Math.ceil(total / take),
       },
@@ -178,29 +174,29 @@ router.get("/", asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
-// GET /api/search/suggestions - Enhanced with images & popular searches
+// GET /api/search/suggestions — uses full-text search for products
 router.get("/suggestions", asyncHandler(async (req: Request, res: Response) => {
   try {
     const { q } = req.query;
 
     if (!q || typeof q !== "string" || q.length < 1) {
-      // Return popular searches when no query
       const popular = await getPopularSearches(8);
       return res.json({ suggestions: { products: [], categories: [], popular } });
     }
 
+    // Use prefix matching for suggestions (fast with GIN index)
+    const tsQuery = q.trim().split(/\s+/).filter(w => w.length >= 1)
+      .map(w => w.replace(/[^a-zA-Z0-9]/g, '') + ":*").filter(Boolean).join(" & ");
+
     const [products, categories] = await Promise.all([
-      prisma.product.findMany({
-        where: {
-          status: "ACTIVE",
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { tags: { hasSome: [q.toLowerCase()] } },
-          ],
-        },
-        select: { name: true, slug: true, price: true, images: { take: 1, orderBy: { position: "asc" } } },
-        take: 6,
-      }),
+      tsQuery ? prisma.$queryRaw<any[]>`
+        SELECT p.name, p.slug, p.price::float8 as price,
+          (SELECT url FROM "ProductImage" pi WHERE pi."productId" = p.id ORDER BY pi.position ASC LIMIT 1) as "imageUrl"
+        FROM "Product" p
+        WHERE p.status = 'ACTIVE'
+          AND (to_tsvector('english', COALESCE(p.name, '')) @@ to_tsquery('english', ${tsQuery})
+            OR ${q.toLowerCase()} = ANY(p.tags))
+        LIMIT 6` : [],
       prisma.category.findMany({
         where: { name: { contains: q, mode: "insensitive" } },
         select: { name: true, slug: true, imageUrl: true, _count: { select: { products: true } } },
@@ -212,11 +208,11 @@ router.get("/suggestions", asyncHandler(async (req: Request, res: Response) => {
 
     return res.json({
       suggestions: {
-        products: products.map((p) => ({
+        products: products.map((p: any) => ({
           name: p.name,
           slug: p.slug,
-          price: Number(p.price),
-          imageUrl: p.images[0]?.url || null,
+          price: p.price,
+          imageUrl: p.imageUrl || null,
           type: "product",
         })),
         categories: categories.map((c) => ({

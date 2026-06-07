@@ -490,6 +490,7 @@ model WishlistItem {
   createdAt      DateTime @default(now())
 
   @@unique([userId, productId, collectionName])
+  @@index([productId])
 }
 
 model Review {
@@ -1196,6 +1197,7 @@ model PageView {
   @@index([createdAt])
   @@index([path])
   @@index([country])
+  @@index([sessionId])
 }
 
 // ─── Affiliate Marketing System ──────────────────────────────────────────────
