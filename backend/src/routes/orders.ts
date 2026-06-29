@@ -9,7 +9,7 @@ import { approveAffiliateConversions } from "../utils/affiliateHelper";
 import { awardPurchasePoints } from "./loyalty";
 import { reserveStock } from "../utils/stockReservation";
 import { parseShippingAddress } from "../utils/shippingAddress";
-import { releaseOrderStock } from "../services/orderConfirmation";
+import { confirmPaidOrder, releaseOrderStock } from "../services/orderConfirmation";
 import redis from "../lib/redis";
 
 const router = Router();
@@ -238,6 +238,158 @@ router.get("/:id/payment-status", optionalAuth, asyncHandler(async (req: AuthReq
     });
   } catch (error) {
     return res.status(500).json({ error: "Failed to check status" });
+  }
+}));
+
+// POST /api/orders/:id/verify-payment — Redirect-based payment verification
+// Called by the confirm page when it has a transaction_id from Flutterwave's redirect.
+// Verifies directly with Flutterwave API and confirms the order if legitimate.
+// This is the primary confirmation path; the webhook serves as a backup.
+router.post("/:id/verify-payment", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { transactionId } = req.body;
+
+    if (!transactionId) {
+      return res.status(400).json({ error: "transactionId is required" });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: {
+        payments: true,
+        items: { include: { product: { select: { aliexpressProductId: true, cjProductId: true } } } },
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Already confirmed — return success immediately
+    if (order.paymentStatus === "SUCCESSFUL") {
+      return res.json({
+        paymentStatus: "SUCCESSFUL",
+        status: order.status,
+        orderNumber: order.orderNumber,
+      });
+    }
+
+    // Verify with Flutterwave API
+    const { verifyFlutterwaveTransaction } = await import("../services/flutterwave");
+    let verification;
+    try {
+      verification = await verifyFlutterwaveTransaction(transactionId);
+    } catch (verifyErr) {
+      logger.error("verify-payment: Flutterwave verification failed", { error: verifyErr, orderId: id });
+      return res.status(502).json({ error: "Payment verification unavailable. Please wait." });
+    }
+
+    const verifiedStatus = verification?.data?.status;
+    const verifiedAmount = verification?.data?.amount;
+    const verifiedCurrency = verification?.data?.currency;
+    const flwRef = verification?.data?.flw_ref;
+
+    if (verifiedStatus !== "successful") {
+      return res.json({
+        paymentStatus: "PENDING",
+        status: order.status,
+        orderNumber: order.orderNumber,
+        message: `Payment status: ${verifiedStatus || "unknown"}`,
+      });
+    }
+
+    // Validate amount and currency
+    if (verifiedCurrency && verifiedCurrency !== order.currency) {
+      logger.warn(`verify-payment: currency mismatch for ${id}: expected ${order.currency}, got ${verifiedCurrency}`);
+      return res.status(400).json({ error: "Currency mismatch" });
+    }
+    if (verifiedAmount !== undefined && verifiedAmount !== Number(order.totalAmount)) {
+      // Check split payment
+      if (order.isSplitPayment) {
+        const halfAmount = Math.ceil(Number(order.totalAmount) / 2);
+        if (verifiedAmount !== halfAmount) {
+          logger.warn(`verify-payment: amount mismatch for split order ${id}`);
+          return res.status(400).json({ error: "Amount mismatch" });
+        }
+      } else {
+        logger.warn(`verify-payment: amount mismatch for ${id}: expected ${order.totalAmount}, got ${verifiedAmount}`);
+        return res.status(400).json({ error: "Amount mismatch" });
+      }
+    }
+
+    // Idempotency: record processed webhook so the actual webhook won't double-process
+    try {
+      await prisma.processedWebhook.create({
+        data: { webhookId: flwRef || transactionId, provider: "flutterwave", eventType: "charge.completed" },
+      });
+    } catch (err: any) {
+      if (err.code === "P2002") {
+        // Already processed (by webhook or a previous verify call)
+        const currentOrder = await prisma.order.findUnique({
+          where: { id },
+          select: { paymentStatus: true, status: true, orderNumber: true },
+        });
+        return res.json({
+          paymentStatus: currentOrder?.paymentStatus || "SUCCESSFUL",
+          status: currentOrder?.status || order.status,
+          orderNumber: currentOrder?.orderNumber || order.orderNumber,
+        });
+      }
+      throw err;
+    }
+
+    // Confirm the order
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
+        where: { orderId: id },
+        data: { status: "SUCCESSFUL", flwTxId: flwRef || transactionId, flwRef: flwRef || null },
+      });
+
+      const hasPendingCod = order.payments.some(p => p.method === "COD" && p.status === "PENDING");
+      if (hasPendingCod) {
+        await tx.order.update({
+          where: { id },
+          data: { status: "CONFIRMED", paymentStatus: "PENDING" },
+        });
+      } else {
+        await confirmPaidOrder(tx, id, { order });
+      }
+    });
+
+    // Post-confirmation: place dropship orders (fire and forget)
+    const hasAliExpress = order.items.some((i: any) => i.product?.aliexpressProductId);
+    const hasCJ = order.items.some((i: any) => i.product?.cjProductId);
+    if (hasAliExpress || hasCJ) {
+      if (!order.dispatchScheduledAt || new Date(order.dispatchScheduledAt) <= new Date()) {
+        if (hasAliExpress) {
+          import("../services/aliexpressOrder").then(m => m.placeAliExpressOrdersForOrder(id)).catch(err =>
+            logger.error(`AliExpress auto-order failed for ${id}`, { error: err.message })
+          );
+        }
+        if (hasCJ) {
+          import("../services/cjOrder").then(m => m.placeCJOrdersForOrder(id)).catch(err =>
+            logger.error(`CJ auto-order failed for ${id}`, { error: err.message })
+          );
+        }
+      }
+    }
+
+    const confirmedOrder = await prisma.order.findUnique({
+      where: { id },
+      select: { paymentStatus: true, status: true, orderNumber: true },
+    });
+
+    logger.info(`verify-payment: Order ${id} confirmed via redirect verification`, { transactionId, flwRef });
+
+    return res.json({
+      paymentStatus: confirmedOrder?.paymentStatus || "SUCCESSFUL",
+      status: confirmedOrder?.status || "CONFIRMED",
+      orderNumber: confirmedOrder?.orderNumber || order.orderNumber,
+    });
+  } catch (error) {
+    logger.error("verify-payment error", { error });
+    return res.status(500).json({ error: "Payment verification failed" });
   }
 }));
 
