@@ -14,7 +14,8 @@ function ConfirmContent() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
   const transactionId = searchParams.get("transaction_id");
-  const [status, setStatus] = useState<"loading" | "success" | "failed" | "pending">("loading");
+  const flwStatus = searchParams.get("status"); // Flutterwave appends status=successful|cancelled|failed
+  const [status, setStatus] = useState<"loading" | "success" | "failed" | "cancelled" | "pending">("loading");
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const { clearCart } = useCart();
   const { user } = useAuth();
@@ -27,7 +28,7 @@ function ConfirmContent() {
       return;
     }
 
-    let cancelled = false;
+    let isCancelled = false;
 
     const handleSuccess = (data: any) => {
       setStatus("success");
@@ -36,9 +37,24 @@ function ConfirmContent() {
     };
 
     const run = async () => {
-      // Step 1: If we have a transaction_id from Flutterwave's redirect,
-      // verify directly with the backend (which calls Flutterwave's API).
-      // This is the primary confirmation path — no need to wait for webhook.
+      // ── Flutterwave returned cancelled/failed status ──
+      // The user cancelled/failed on Flutterwave's payment page.
+      // No transaction_id is provided in this case.
+      // Call the backend cancel endpoint to release stock immediately.
+      if (flwStatus === "cancelled" || flwStatus === "failed") {
+        try {
+          await fetch(`${API_URL}/api/checkout/cancel?orderId=${encodeURIComponent(orderId)}`, {
+            credentials: "include",
+            redirect: "manual", // Don't follow the redirect, we handle UI here
+          });
+        } catch {} // Best-effort; stock reservation cleanup will catch it anyway
+        setStatus(flwStatus === "cancelled" ? "cancelled" : "failed");
+        return;
+      }
+
+      // ── Flutterwave returned successful status ──
+      // Step 1: Verify directly with Flutterwave API via our backend.
+      // This is the primary confirmation path — no webhook dependency.
       if (transactionId) {
         try {
           const res = await fetch(`${API_URL}/api/orders/${orderId}/verify-payment`, {
@@ -49,7 +65,7 @@ function ConfirmContent() {
           });
           const data = await res.json();
 
-          if (cancelled) return;
+          if (isCancelled) return;
 
           if (data.paymentStatus === "SUCCESSFUL" || data.status === "CONFIRMED") {
             handleSuccess(data);
@@ -65,10 +81,9 @@ function ConfirmContent() {
         }
       }
 
-      if (cancelled) return;
+      if (isCancelled) return;
 
-      // Step 2: Fall back to polling payment-status (for cases where
-      // verify-payment returned pending, or no transaction_id was available).
+      // Step 2: Poll payment-status as fallback (webhook may have already processed).
       let attempts = 0;
       const maxAttempts = 20;
 
@@ -86,7 +101,7 @@ function ConfirmContent() {
           const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status${verifyParams}`, { credentials: "include" });
           const data = await res.json();
 
-          if (cancelled) return;
+          if (isCancelled) return;
 
           if (data.paymentStatus === "SUCCESSFUL" || data.status === "CONFIRMED") {
             handleSuccess(data);
@@ -98,14 +113,14 @@ function ConfirmContent() {
           }
 
           attempts++;
-          if (attempts < maxAttempts && !cancelled) {
+          if (attempts < maxAttempts && !isCancelled) {
             setTimeout(checkStatus, 3000);
           } else {
             setStatus("pending");
           }
         } catch {
           attempts++;
-          if (attempts < maxAttempts && !cancelled) {
+          if (attempts < maxAttempts && !isCancelled) {
             setTimeout(checkStatus, 3000);
           } else {
             setStatus("pending");
@@ -118,8 +133,8 @@ function ConfirmContent() {
 
     run();
 
-    return () => { cancelled = true; };
-  }, [orderId, transactionId]);
+    return () => { isCancelled = true; };
+  }, [orderId, transactionId, flwStatus]);
 
   // Manual retry for stuck "pending" state
   const handleRetry = async () => {
@@ -144,7 +159,6 @@ function ConfirmContent() {
       } catch {}
     }
 
-    // Check current status
     try {
       const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status`, { credentials: "include" });
       const data = await res.json();
@@ -169,6 +183,28 @@ function ConfirmContent() {
             Please wait while we confirm your payment...
           </p>
           <p className="text-small text-text-muted">Order ID: {orderId}</p>
+        </div>
+      </Section>
+    );
+  }
+
+  if (status === "cancelled") {
+    return (
+      <Section>
+        <div className="max-w-md mx-auto text-center py-16">
+          <XCircle className="w-16 h-16 mx-auto mb-6 text-yellow-500" />
+          <h2 className="mb-4">Payment Cancelled</h2>
+          <p className="text-text-muted mb-6">
+            You cancelled the payment. No charges were made. You can try again whenever you&apos;re ready.
+          </p>
+          <div className="space-y-4">
+            <Link href="/checkout" className="btn-primary w-full">
+              Return to Checkout
+            </Link>
+            <Link href="/" className="btn-secondary w-full">
+              Continue Shopping
+            </Link>
+          </div>
         </div>
       </Section>
     );
