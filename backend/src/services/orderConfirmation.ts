@@ -189,7 +189,9 @@ export async function confirmPaidOrder(
     await tx.seller.update({
       where: { id: sellerId },
       data: {
-        balance: { increment: earnings.net },
+        // Credit to pendingBalance — released to available balance on delivery
+        // confirmation or escrow auto-release.
+        pendingBalance: { increment: earnings.net },
         totalEarnings: { increment: earnings.net },
         totalSales: { increment: earnings.sales },
       },

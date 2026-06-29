@@ -605,8 +605,15 @@ export default function CheckoutPage() {
 
   const pollPaymentStatus = async (orderId: string) => {
     let attempts = 0;
-    const maxAttempts = 60;
+    const maxAttempts = 40; // ~5 min total with backoff
     pollingCancelRef.current = false;
+
+    // Backoff: 5s for first 6 attempts (30s), 10s for next 12 (~2.5min), then 15s
+    const getInterval = (attempt: number) => {
+      if (attempt < 6) return 5000;
+      if (attempt < 18) return 10000;
+      return 15000;
+    };
 
     const checkStatus = async () => {
       if (pollingCancelRef.current) return;
@@ -631,7 +638,7 @@ export default function CheckoutPage() {
 
         attempts++;
         if (attempts < maxAttempts && !pollingCancelRef.current) {
-          pollingTimeoutRef.current = setTimeout(checkStatus, 5000);
+          pollingTimeoutRef.current = setTimeout(checkStatus, getInterval(attempts));
         } else {
           setPaymentPending(false);
           setError("Payment timeout. Please check your order status.");
@@ -640,7 +647,7 @@ export default function CheckoutPage() {
         console.error("Failed to check payment status:", err);
         attempts++;
         if (attempts < maxAttempts && !pollingCancelRef.current) {
-          pollingTimeoutRef.current = setTimeout(checkStatus, 5000);
+          pollingTimeoutRef.current = setTimeout(checkStatus, getInterval(attempts));
         }
       }
     };

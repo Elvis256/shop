@@ -1114,8 +1114,21 @@ router.get("/orders", authenticate, requireSeller, asyncHandler(async (req: Sell
       prisma.order.count({ where: orderWhere }),
     ]);
 
+    // Strip fields other sellers shouldn't see (email, phone, full total)
+    const sanitizedOrders = orders.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      status: o.status,
+      paymentStatus: o.paymentStatus,
+      deliveryMethod: o.deliveryMethod,
+      createdAt: o.createdAt,
+      customerName: o.customerName,
+      currency: o.currency,
+      items: o.items,
+    }));
+
     return res.json({
-      orders,
+      orders: sanitizedOrders,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
@@ -1148,7 +1161,36 @@ router.get("/orders/:id", authenticate, requireSeller, asyncHandler(async (req: 
       },
     });
 
-    return res.json({ order });
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Only expose seller-relevant fields — hide other sellers' financials and
+    // limit customer PII to what the seller needs for fulfillment.
+    const sellerSubtotal = sellerItems.reduce(
+      (sum, i) => sum + Number(i.price) * i.quantity, 0
+    );
+
+    return res.json({
+      order: {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        deliveryMethod: order.deliveryMethod,
+        trackingNumber: order.trackingNumber,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        // Customer info limited to fulfillment needs
+        customerName: order.customerName,
+        shippingAddress: order.shippingAddress,
+        // Seller-scoped financials
+        sellerSubtotal,
+        currency: order.currency,
+        items: order.items,
+        timeline: order.timeline,
+      },
+    });
   } catch (error) {
     logger.error("Get seller order error", { error });
     return res.status(500).json({ error: "Failed to load order" });

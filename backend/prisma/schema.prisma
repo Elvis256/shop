@@ -1821,6 +1821,7 @@ model Seller {
   // Financial
   commissionRate Decimal? @db.Decimal(5, 2) // Override per-seller, null = use category/default
   balance        Decimal  @default(0) @db.Decimal(12, 2) // Available balance for withdrawal
+  pendingBalance Decimal  @default(0) @db.Decimal(12, 2) // Held until delivery/escrow release
   totalEarnings  Decimal  @default(0) @db.Decimal(12, 2)
   totalSales     Int      @default(0)
 

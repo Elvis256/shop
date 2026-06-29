@@ -240,7 +240,7 @@ router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
           },
         });
 
-        // Credit seller balance
+        // Release seller funds: move pendingBalance → balance
         const escrowAmount = parseFloat(escrow.amount.toString());
         const commissionRate = 0.15; // Default, should compute actual
         const commission = escrowAmount * commissionRate;
@@ -249,8 +249,8 @@ router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
         await prisma.seller.update({
           where: { id: dispute.sellerId },
           data: {
+            pendingBalance: { decrement: sellerAmount },
             balance: { increment: sellerAmount },
-            totalEarnings: { increment: sellerAmount },
           },
         });
       }

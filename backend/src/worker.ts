@@ -249,31 +249,27 @@ async function startWorker() {
             data: { status: "RELEASED", releasedAt: new Date() },
           });
 
-          // Credit seller balances ONLY if payment method was Cash on Delivery (COD).
-          // For cards/momo/paypal/store-credit, the seller was already credited at checkout or webhook capture.
-          const isCod = escrow.order.payments.some(p => p.provider === "cod" || p.method === "COD");
-          if (isCod) {
-            const sellerAmounts: Record<string, number> = {};
-            for (const item of escrow.order.items) {
-              if (item.sellerId) {
-                const itemTotal = parseFloat(item.price.toString()) * item.quantity;
-                const commission = item.commission ? parseFloat(item.commission.toString()) : itemTotal * 0.15;
-                const shippingFeeDeduction = item.shippingFeeCharged ? parseFloat(item.shippingFeeCharged.toString()) : 0;
-                const sellerAmount = itemTotal - commission - shippingFeeDeduction;
-                sellerAmounts[item.sellerId] = (sellerAmounts[item.sellerId] || 0) + sellerAmount;
-              }
+          // Release seller funds: move pendingBalance → balance for all sellers.
+          // Earnings were held in pendingBalance at payment confirmation (or COD collection).
+          const sellerAmounts: Record<string, number> = {};
+          for (const item of escrow.order.items) {
+            if (item.sellerId) {
+              const itemTotal = parseFloat(item.price.toString()) * item.quantity;
+              const commission = item.commission ? parseFloat(item.commission.toString()) : itemTotal * 0.15;
+              const shippingFeeDeduction = item.shippingFeeCharged ? parseFloat(item.shippingFeeCharged.toString()) : 0;
+              const sellerAmount = itemTotal - commission - shippingFeeDeduction;
+              sellerAmounts[item.sellerId] = (sellerAmounts[item.sellerId] || 0) + sellerAmount;
             }
+          }
 
-            for (const [sellerId, amount] of Object.entries(sellerAmounts)) {
-              await tx.seller.update({
-                where: { id: sellerId },
-                data: {
-                  balance: { increment: amount },
-                  totalEarnings: { increment: amount },
-                  totalSales: { increment: 1 },
-                },
-              });
-            }
+          for (const [sellerId, amount] of Object.entries(sellerAmounts)) {
+            await tx.seller.update({
+              where: { id: sellerId },
+              data: {
+                pendingBalance: { decrement: amount },
+                balance: { increment: amount },
+              },
+            });
           }
 
           await tx.orderEvent.create({

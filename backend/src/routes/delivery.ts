@@ -162,7 +162,7 @@ router.post("/verify-otp", authenticate, asyncHandler(async (req: AuthRequest, r
         await tx.seller.update({
           where: { id: sellerId },
           data: {
-            balance: { increment: amount },
+            pendingBalance: { increment: amount },
             totalEarnings: { increment: amount },
             totalSales: { increment: 1 },
           },

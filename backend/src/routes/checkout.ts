@@ -1264,7 +1264,9 @@ router.get("/paypal-return", asyncHandler(async (req: Request, res: Response) =>
       // Verify the paid amount matches the order total (converted to USD)
       const order = await prisma.order.findUnique({
         where: { id: orderId },
-        include: { items: true },
+        include: {
+          items: { include: { product: { select: { aliexpressProductId: true, cjProductId: true } } } },
+        },
       });
       if (!order) {
         return res.redirect(`${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout?error=order_not_found`);
@@ -1297,16 +1299,25 @@ router.get("/paypal-return", asyncHandler(async (req: Request, res: Response) =>
         await confirmPaidOrder(tx, orderId, { order });
       });
 
-      // Auto-place dropshipping orders (respecting hold queue/dispatch delay)
-      if (!order.dispatchScheduledAt || new Date(order.dispatchScheduledAt) <= new Date()) {
-        placeAliExpressOrdersForOrder(orderId).catch((err) =>
-          logger.error(`AliExpress auto-order failed for ${orderId}`, { error: err.message })
-        );
-        placeCJOrdersForOrder(orderId).catch((err) =>
-          logger.error(`CJ auto-order failed for ${orderId}`, { error: err.message })
-        );
-      } else {
-        logger.info(`[Dropship] Delayed dispatch active for PayPal order ${orderId} until ${order.dispatchScheduledAt}. Held in queue.`);
+      // Auto-place dropshipping orders only if order has dropship items
+      const hasAliExpress = order.items.some((i: any) => i.product?.aliexpressProductId);
+      const hasCJ = order.items.some((i: any) => i.product?.cjProductId);
+
+      if (hasAliExpress || hasCJ) {
+        if (!order.dispatchScheduledAt || new Date(order.dispatchScheduledAt) <= new Date()) {
+          if (hasAliExpress) {
+            placeAliExpressOrdersForOrder(orderId).catch((err) =>
+              logger.error(`AliExpress auto-order failed for ${orderId}`, { error: err.message })
+            );
+          }
+          if (hasCJ) {
+            placeCJOrdersForOrder(orderId).catch((err) =>
+              logger.error(`CJ auto-order failed for ${orderId}`, { error: err.message })
+            );
+          }
+        } else {
+          logger.info(`[Dropship] Delayed dispatch active for PayPal order ${orderId} until ${order.dispatchScheduledAt}. Held in queue.`);
+        }
       }
 
       // Clear cart after payment confirmation

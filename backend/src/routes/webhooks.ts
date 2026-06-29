@@ -55,7 +55,10 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
       // Find the order
       const order = await prisma.order.findUnique({
         where: { id: orderId },
-        include: { payments: true, items: true },
+        include: {
+          payments: true,
+          items: { include: { product: { select: { aliexpressProductId: true, cjProductId: true } } } },
+        },
       });
 
       if (!order) {
@@ -250,16 +253,25 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
             });
         }
 
-        // Delay placement if hold queue / dispatch delay is active
-        if (!order.dispatchScheduledAt || new Date(order.dispatchScheduledAt) <= new Date()) {
-          placeAliExpressOrdersForOrder(orderId).catch((err) => {
-            logger.error(`AliExpress auto-order failed for ${orderId}`, { error: err.message });
-          });
-          placeCJOrdersForOrder(orderId).catch((err) => {
-            logger.error(`CJ auto-order failed for ${orderId}`, { error: err.message });
-          });
-        } else {
-          logger.info(`[Dropship] Delayed dispatch active for order ${orderId} until ${order.dispatchScheduledAt}. Order added to hold queue.`);
+        // Only invoke dropship services if the order actually has dropship items
+        const hasAliExpress = order.items.some((i: any) => i.product?.aliexpressProductId);
+        const hasCJ = order.items.some((i: any) => i.product?.cjProductId);
+
+        if (hasAliExpress || hasCJ) {
+          if (!order.dispatchScheduledAt || new Date(order.dispatchScheduledAt) <= new Date()) {
+            if (hasAliExpress) {
+              placeAliExpressOrdersForOrder(orderId).catch((err) => {
+                logger.error(`AliExpress auto-order failed for ${orderId}`, { error: err.message });
+              });
+            }
+            if (hasCJ) {
+              placeCJOrdersForOrder(orderId).catch((err) => {
+                logger.error(`CJ auto-order failed for ${orderId}`, { error: err.message });
+              });
+            }
+          } else {
+            logger.info(`[Dropship] Delayed dispatch active for order ${orderId} until ${order.dispatchScheduledAt}. Order added to hold queue.`);
+          }
         }
       }
     }

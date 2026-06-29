@@ -858,13 +858,28 @@ router.post("/:id/redirect", authenticate, asyncHandler(async (req: AuthRequest,
       data: updateData,
     });
 
+    // Create a pending payment record for the redirect fee so it's tracked financially.
+    // For already-paid orders the fee can be collected via admin mark-paid or next payment.
+    if (feeApplied > 0) {
+      await prisma.payment.create({
+        data: {
+          orderId: id,
+          provider: "redirect_fee",
+          method: "COD",
+          status: "PENDING",
+          amount: feeApplied,
+          currency: order.currency || "UGX",
+        },
+      });
+    }
+
     // Create a new timeline event
     await prisma.orderEvent.create({
       data: {
         orderId: id,
         status: "REDIRECTED",
-        note: `Order redirected to new destination.${feeApplied > 0 ? ` Redirection fee of 5,000 applied.` : ""}`
-      }
+        note: `Order redirected to new destination.${feeApplied > 0 ? ` Redirection fee of ${feeApplied.toLocaleString()} UGX applied.` : ""}`,
+      },
     });
 
     return res.json({
@@ -931,31 +946,28 @@ router.post("/:id/confirm-delivery", authenticate, asyncHandler(async (req: Auth
           },
         });
 
-        // Credit seller balances ONLY if payment method was Cash on Delivery (COD).
-        // For cards/momo/paypal/store-credit, the seller was already credited at checkout or webhook capture.
-        const isCod = order.payments.some(p => p.provider === "cod" || p.method === "COD");
-        if (isCod) {
-          const sellerAmounts: Record<string, number> = {};
-          for (const item of order.items) {
-            if (item.sellerId) {
-              const itemTotal = parseFloat(item.price.toString()) * item.quantity;
-              const commission = item.commission ? parseFloat(item.commission.toString()) : itemTotal * 0.15;
-              const shippingFeeDeduction = item.shippingFeeCharged ? parseFloat(item.shippingFeeCharged.toString()) : 0;
-              const sellerAmount = itemTotal - commission - shippingFeeDeduction;
-              sellerAmounts[item.sellerId] = (sellerAmounts[item.sellerId] || 0) + sellerAmount;
-            }
+        // Release seller funds: move pendingBalance → balance for all sellers.
+        // For non-COD orders, funds were held in pendingBalance at payment confirmation.
+        // For COD orders, funds were credited at COD collection — also held in pendingBalance.
+        const sellerAmounts: Record<string, number> = {};
+        for (const item of order.items) {
+          if (item.sellerId) {
+            const itemTotal = parseFloat(item.price.toString()) * item.quantity;
+            const commission = item.commission ? parseFloat(item.commission.toString()) : itemTotal * 0.15;
+            const shippingFeeDeduction = item.shippingFeeCharged ? parseFloat(item.shippingFeeCharged.toString()) : 0;
+            const sellerAmount = itemTotal - commission - shippingFeeDeduction;
+            sellerAmounts[item.sellerId] = (sellerAmounts[item.sellerId] || 0) + sellerAmount;
           }
+        }
 
-          for (const [sellerId, amount] of Object.entries(sellerAmounts)) {
-            await tx.seller.update({
-              where: { id: sellerId },
-              data: {
-                balance: { increment: amount },
-                totalEarnings: { increment: amount },
-                totalSales: { increment: 1 },
-              },
-            });
-          }
+        for (const [sellerId, amount] of Object.entries(sellerAmounts)) {
+          await tx.seller.update({
+            where: { id: sellerId },
+            data: {
+              pendingBalance: { decrement: amount },
+              balance: { increment: amount },
+            },
+          });
         }
       }
 
