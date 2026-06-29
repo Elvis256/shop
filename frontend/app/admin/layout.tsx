@@ -48,6 +48,8 @@ import {
   Percent,
   Banknote,
   Shield,
+  MapPin,
+  AlertTriangle,
 } from "lucide-react";
 
 interface NavItem {
@@ -55,6 +57,7 @@ interface NavItem {
   icon: typeof LayoutDashboard;
   label: string;
   exact?: boolean;
+  badgeKey?: "failedCheckouts";
 }
 
 interface NavGroup {
@@ -84,6 +87,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/admin/orders", icon: ShoppingCart, label: "Orders" },
       { href: "/admin/abandoned-carts", icon: ShoppingCart, label: "Abandoned Carts" },
+      { href: "/admin/failed-checkouts", icon: AlertTriangle, label: "Failed Checkouts", badgeKey: "failedCheckouts" },
       { href: "/admin/returns", icon: RotateCcw, label: "Returns" },
       { href: "/admin/disputes", icon: Shield, label: "Disputes" },
       { href: "/admin/customers", icon: Users, label: "Customers" },
@@ -119,6 +123,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/aliexpress", icon: ShoppingBag, label: "AliExpress" },
       { href: "/admin/cjdropshipping", icon: Truck, label: "CJ Dropshipping" },
       { href: "/admin/shipping", icon: Truck, label: "Shipping" },
+      { href: "/admin/pickup-points", icon: MapPin, label: "Pickup Points" },
     ],
   },
   {
@@ -141,6 +146,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/webhooks", icon: Webhook, label: "Webhooks" },
       { href: "/admin/api-keys", icon: Key, label: "API Keys" },
       { href: "/admin/permissions", icon: Shield, label: "Roles & Permissions" },
+      { href: "/admin/notifications", icon: Bell, label: "Notification Log" },
       { href: "/admin/settings", icon: Settings, label: "Settings" },
     ],
   },
@@ -154,6 +160,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, isAdmin, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [failedCheckoutCount, setFailedCheckoutCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const isLoginPage = pathname === "/admin/login";
 
@@ -165,8 +172,19 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         .then((data: any) => setPendingCount(data.pagination?.total || 0))
         .catch(() => {});
     };
+    // Fetch failed-checkout unack count
+    const fetchFailedCheckouts = () => {
+      fetch("/api/admin/failed-checkouts/badge", { credentials: "include" })
+        .then((r) => r.ok ? r.json() : { unacknowledged: 0 })
+        .then((d) => setFailedCheckoutCount(d.unacknowledged || 0))
+        .catch(() => {});
+    };
     fetchPending();
-    const interval = setInterval(fetchPending, 60000); // refresh every minute
+    fetchFailedCheckouts();
+    const interval = setInterval(() => {
+      fetchPending();
+      fetchFailedCheckouts();
+    }, 60000); // refresh every minute
     return () => clearInterval(interval);
   }, [isLoginPage, isLoading, user, isAdmin]);
 
@@ -256,6 +274,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                   const isActive = item.exact 
                     ? pathname === item.href 
                     : pathname === item.href || pathname.startsWith(item.href + "/");
+                  const badgeCount = item.badgeKey === "failedCheckouts" ? failedCheckoutCount : 0;
                   return (
                     <Link
                       key={item.href}
@@ -270,7 +289,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     >
                       <item.icon className={`w-5 h-5 ${isActive ? "text-primary" : "text-gray-400"}`} />
                       <span className="text-sm">{item.label}</span>
-                      {isActive && (
+                      {badgeCount > 0 && (
+                        <span className="ml-auto min-w-[20px] h-5 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5">
+                          {badgeCount > 99 ? "99+" : badgeCount}
+                        </span>
+                      )}
+                      {isActive && !badgeCount && (
                         <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
                       )}
                     </Link>

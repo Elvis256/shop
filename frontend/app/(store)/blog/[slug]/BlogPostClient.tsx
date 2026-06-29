@@ -8,7 +8,7 @@ import DOMPurify from "isomorphic-dompurify";
 import Section from "@/components/Section";
 import { Calendar, User, Tag, ArrowLeft, Share2, Facebook, Twitter } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface BlogPost {
   id: string;

@@ -6,7 +6,10 @@
     "dev": "NODE_OPTIONS='--max-old-space-size=4096' next dev -p 5000 -H 0.0.0.0",
     "build": "NODE_OPTIONS='--max-old-space-size=4096' next build",
     "start": "NODE_OPTIONS='--max-old-space-size=4096' next start -p 5000 -H 0.0.0.0",
-    "lint": "next lint"
+    "lint": "next lint",
+    "lint:fix": "next lint --fix",
+    "lint:strict": "next lint --max-warnings=0",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.6",
@@ -26,7 +29,7 @@
     "framer-motion": "^12.36.0",
     "isomorphic-dompurify": "^3.3.0",
     "lucide-react": "^0.323.0",
-    "next": "^15.3.2",
+    "next": "^15.5.19",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^3.7.0"
@@ -36,11 +39,14 @@
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.18",
     "autoprefixer": "^10.4.17",
-    "postcss": "^8.4.35",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.15",
+    "postcss": "^8.5.10",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3"
   },
   "overrides": {
-    "serialize-javascript": ">=7.0.5"
+    "serialize-javascript": ">=7.0.5",
+    "postcss": "^8.5.10"
   }
 }

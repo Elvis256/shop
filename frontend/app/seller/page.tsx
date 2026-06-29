@@ -14,6 +14,15 @@ import {
   ShieldAlert,
   Circle,
   ArrowRight,
+  Award,
+  Star,
+  Percent,
+  ShieldCheck,
+  PlusCircle,
+  Sparkles,
+  Settings,
+  RotateCcw,
+  Tag,
 } from "lucide-react";
 import Link from "next/link";
 import { ResponsiveContainer, Area, ComposedChart, Tooltip } from "recharts";
@@ -23,6 +32,8 @@ interface DashboardStats {
   totalOrders: number;
   totalEarnings: number;
   balance: number;
+  totalSales: number;
+  rating?: number | string;
   tier?: "BRONZE" | "SILVER" | "GOLD";
   recentOrders: Array<{
     id: string;
@@ -144,65 +155,165 @@ export default function SellerDashboard() {
     },
   ];
 
+  const getTierProgress = (tier: string = "BRONZE", totalSales: number = 0, rating: number = 0) => {
+    const currentSales = totalSales;
+    const currentRating = rating;
+
+    if (tier === "BRONZE" || !tier) {
+      const orderProgress = Math.min((currentSales / 10) * 100, 100);
+      const ratingProgress = Math.min((currentRating / 4.0) * 100, 100);
+      const progress = Math.round((orderProgress + ratingProgress) / 2);
+      return {
+        currentTier: "Bronze",
+        nextTier: "Silver Seller",
+        ordersNeeded: Math.max(10 - currentSales, 0),
+        ratingNeeded: 4.0,
+        progress,
+        reqString: `Complete ${currentSales}/10 sales and maintain a 4.0+ rating.`,
+      };
+    } else if (tier === "SILVER") {
+      const orderProgress = Math.min((currentSales / 50) * 100, 100);
+      const ratingProgress = Math.min((currentRating / 4.5) * 100, 100);
+      const progress = Math.round((orderProgress + ratingProgress) / 2);
+      return {
+        currentTier: "Silver",
+        nextTier: "Gold Seller",
+        ordersNeeded: Math.max(50 - currentSales, 0),
+        ratingNeeded: 4.5,
+        progress,
+        reqString: `Complete ${currentSales}/50 sales and maintain a 4.5+ rating.`,
+      };
+    } else {
+      return {
+        currentTier: "Gold",
+        nextTier: "Max Level Reached",
+        ordersNeeded: 0,
+        ratingNeeded: 5.0,
+        progress: 100,
+        reqString: "You are a top-performing Gold Seller! Keep up the excellent work.",
+      };
+    }
+  };
+
+  const getRecommendations = (rating: number, fulfillmentRate: number, returnRate: number, totalProducts: number) => {
+    const recs = [];
+    
+    if (rating === 0) {
+      recs.push({
+        id: "rating-init",
+        title: "No ratings yet",
+        description: "Focus on delivery speed and customer service for your first orders to build a strong 5-star profile.",
+        impact: "HIGH",
+        icon: Star,
+        color: "text-amber-500 bg-amber-50 dark:bg-amber-500/10",
+      });
+    } else if (rating < 4.0) {
+      recs.push({
+        id: "rating-low",
+        title: "Improve customer rating",
+        description: "Your seller rating is below 4.0. Focus on response speed in chats and offering premium, plain discreet packaging.",
+        impact: "CRITICAL",
+        icon: Star,
+        color: "text-red-500 bg-red-50 dark:bg-red-500/10",
+      });
+    }
+
+    if (fulfillmentRate < 95) {
+      recs.push({
+        id: "fulfillment-low",
+        title: "Optimize stock accuracy",
+        description: "Fulfillment is below 95%. Update inventory quantities regularly to avoid cancelling customer orders.",
+        impact: "HIGH",
+        icon: Package,
+        color: "text-orange-500 bg-orange-50 dark:bg-orange-500/10",
+      });
+    }
+
+    if (returnRate > 5) {
+      recs.push({
+        id: "return-high",
+        title: "Enhance product detail quality",
+        description: "High return rate detected. Add size guides, clarify descriptions, and use high-quality images to reduce client returns.",
+        impact: "MEDIUM",
+        icon: RotateCcw,
+        color: "text-blue-500 bg-blue-50 dark:bg-blue-500/10",
+      });
+    }
+
+    if (totalProducts === 0) {
+      recs.push({
+        id: "no-products",
+        title: "Catalog is empty",
+        description: "Upload your first wellness product to start attracting Ugandan buyers on the platform.",
+        impact: "CRITICAL",
+        icon: PlusCircle,
+        color: "text-indigo-500 bg-indigo-50 dark:bg-indigo-500/10",
+      });
+    }
+
+    if (recs.length === 0) {
+      recs.push({
+        id: "general-grow",
+        title: "Launch a promotional offer",
+        description: "All metrics are excellent! Create a discount coupon or buy-one-get-one deal to boost conversion rates.",
+        impact: "MEDIUM",
+        icon: Tag,
+        color: "text-green-500 bg-green-50 dark:bg-green-500/10",
+      });
+    }
+
+    return recs;
+  };
+
+  const quickActions = [
+    {
+      label: "Add Product",
+      description: "List a new item",
+      href: "/seller/products?action=new",
+      icon: PlusCircle,
+      bg: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400",
+    },
+    {
+      label: "View Orders",
+      description: "Manage sales",
+      href: "/seller/orders",
+      icon: ShoppingCart,
+      bg: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400",
+    },
+    {
+      label: "Create Coupon",
+      description: "Launch discounts",
+      href: "/seller/promotions?action=new",
+      icon: Percent,
+      bg: "bg-pink-50 text-pink-600 dark:bg-pink-500/10 dark:text-pink-400",
+    },
+    {
+      label: "Earnings",
+      description: "Payout details",
+      href: "/seller/earnings",
+      icon: Wallet,
+      bg: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
+    },
+    {
+      label: "Settings",
+      description: "Store profile & logo",
+      href: "/seller/settings",
+      icon: Settings,
+      bg: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400",
+    },
+  ];
+
+
   const tierConfig = {
     BRONZE: { label: "Bronze Seller", bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-300" },
     SILVER: { label: "Silver Seller", bg: "bg-gray-100", text: "text-gray-700", border: "border-gray-300" },
     GOLD: { label: "Gold Seller", bg: "bg-yellow-100", text: "text-yellow-700", border: "border-yellow-400" },
   };
 
+  const tierProgress = getTierProgress(stats.tier, stats.totalSales, stats.rating ? Number(stats.rating) : 0);
+
   return (
     <div className="space-y-6">
-      {/* Tier Badge */}
-      {stats.tier && (
-        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border ${tierConfig[stats.tier].bg} ${tierConfig[stats.tier].text} ${tierConfig[stats.tier].border}`}>
-          <span className="text-sm font-semibold">{tierConfig[stats.tier].label}</span>
-          {stats.tier === "GOLD" && <span>★</span>}
-          {stats.tier === "SILVER" && <span>✦</span>}
-        </div>
-      )}
-
-      {/* Onboarding Checklist */}
-      {onboarding && !onboarding.isComplete && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Getting Started</h3>
-            <span className="text-sm font-medium text-primary">{onboarding.progress}% complete</span>
-          </div>
-          {/* Progress Bar */}
-          <div className="w-full bg-gray-200 rounded-full h-2.5 mb-5">
-            <div
-              className="bg-primary h-2.5 rounded-full transition-all duration-500"
-              style={{ width: `${onboarding.progress}%` }}
-            />
-          </div>
-          {/* Checklist */}
-          <div className="space-y-3">
-            {onboarding.steps.map((step) => (
-              <div key={step.key} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {step.completed ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
-                  ) : (
-                    <Circle className="w-5 h-5 text-gray-300 flex-shrink-0" />
-                  )}
-                  <span className={`text-sm ${step.completed ? "text-gray-500 line-through" : "text-gray-900 font-medium"}`}>
-                    {step.label}
-                  </span>
-                </div>
-                {!step.completed && (
-                  <Link
-                    href={step.link}
-                    className="text-xs font-medium text-primary hover:text-primary/80 flex items-center gap-1"
-                  >
-                    Do this <ArrowRight className="w-3 h-3" />
-                  </Link>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Warning Banner */}
       {warnings.filter((w: any) => !w.acknowledgedAt && (!w.expiresAt || new Date(w.expiresAt) > new Date())).length > 0 && (
         <div className="space-y-2">
@@ -233,6 +344,132 @@ export default function SellerDashboard() {
         </div>
       )}
 
+      {/* Upper Management Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Onboarding Checklist */}
+        {onboarding && !onboarding.isComplete && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" /> Getting Started
+                </h3>
+                <span className="text-xs font-semibold text-indigo-600 px-2 py-0.5 bg-indigo-50 rounded-lg">{onboarding.progress}% complete</span>
+              </div>
+              {/* Progress Bar */}
+              <div className="w-full bg-gray-100 rounded-full h-1.5 mb-4">
+                <div
+                  className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500"
+                  style={{ width: `${onboarding.progress}%` }}
+                />
+              </div>
+              {/* Checklist */}
+              <div className="space-y-2.5">
+                {onboarding.steps.map((step) => (
+                  <div key={step.key} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      {step.completed ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      ) : (
+                        <Circle className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                      )}
+                      <span className={`text-xs ${step.completed ? "text-gray-400 line-through" : "text-gray-700 font-medium"}`}>
+                        {step.label}
+                      </span>
+                    </div>
+                    {!step.completed && (
+                      <Link
+                        href={step.link}
+                        className="text-xs font-semibold text-primary hover:text-primary/80 flex items-center gap-0.5"
+                      >
+                        Do this <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Link
+              href="/seller/onboarding"
+              className="mt-4 block text-center py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition-all"
+            >
+              Complete Setup Wizard
+            </Link>
+          </div>
+        )}
+
+        {/* Tier & Growth Card */}
+        {tierProgress && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <Award className="w-4 h-4 text-amber-500" /> Seller Level
+                </h3>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${tierConfig[stats.tier || "BRONZE"].bg} ${tierConfig[stats.tier || "BRONZE"].text}`}>
+                  {tierConfig[stats.tier || "BRONZE"].label}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">
+                Increase sales and rating to rank up, unlocking lower platform fees and higher search priority.
+              </p>
+              {/* Requirements Progress */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-gray-600">Next Level: <b>{tierProgress.nextTier}</b></span>
+                  <span className="font-semibold text-gray-900">{tierProgress.progress}%</span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-1.5">
+                  <div
+                    className="bg-amber-500 h-1.5 rounded-full transition-all duration-500"
+                    style={{ width: `${tierProgress.progress}%` }}
+                  />
+                </div>
+                <p className="text-[11px] leading-relaxed text-gray-600 bg-amber-50/50 p-2 rounded-lg border border-amber-100/30">
+                  ⚡ <b>Target:</b> {tierProgress.reqString}
+                </p>
+              </div>
+            </div>
+            <div className="text-[10px] text-gray-400 mt-3 text-center">
+              Commissions: Bronze (15%) • Silver (12%) • Gold (8%)
+            </div>
+          </div>
+        )}
+
+        {/* Performance Optimizer */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-500" /> CX Optimizer
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Actionable advice based on customer satisfaction metrics:
+            </p>
+            <div className="space-y-2.5">
+              {getRecommendations(
+                stats.rating ? Number(stats.rating) : 0,
+                scorecard?.fulfillmentRate ?? 100,
+                scorecard?.returnRate ?? 0,
+                stats.totalProducts
+              ).map((rec, index) => {
+                const IconComponent = rec.icon;
+                return (
+                  <div key={index} className="flex gap-2.5 items-start bg-gray-50/50 p-2.5 rounded-xl border border-gray-100/40">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${rec.color}`}>
+                      <IconComponent className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-900">{rec.title}</h4>
+                      <p className="text-[10px] text-gray-500 mt-0.5 leading-normal">{rec.description}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((card) => (
@@ -249,6 +486,33 @@ export default function SellerDashboard() {
             <p className="text-sm text-gray-600 mt-1">{card.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* Quick Action Shortcuts Hub */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h3 className="text-sm font-bold text-gray-900 mb-3">Quick Actions</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={action.label}
+                href={action.href}
+                className="hover:border-primary/30 border border-gray-100 rounded-2xl p-4 shadow-sm transition-all duration-200 flex items-center gap-3 group bg-gray-50/20"
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${action.bg}`}>
+                  <Icon className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-gray-900 group-hover:text-primary transition-colors">
+                    {action.label}
+                  </h4>
+                  <p className="text-[9px] text-gray-500 mt-0.5">{action.description}</p>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       {/* 7-Day Sales Sparkline */}

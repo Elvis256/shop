@@ -11,9 +11,9 @@ interface ContactInfo {
 }
 
 const DEFAULTS: ContactInfo = {
-  email: "support@adultstore.com",
-  phone: "+256 700 000 000",
-  whatsapp: "256700000000",
+  email: "support@pleasurezone.ug",
+  phone: "+256 777 123 456",
+  whatsapp: "256777123456",
   hours: "Mon-Sat, 9am-6pm EAT",
 };
 

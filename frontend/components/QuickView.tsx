@@ -7,7 +7,7 @@ import { useCart } from "@/lib/hooks/useCart";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import ProductImage from "@/components/ProductImage";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface QuickViewProduct {
   id: string;

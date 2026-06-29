@@ -1,0 +1,104 @@
+# PleasureZone Uganda — Full Documentation
+
+## Overview
+PleasureZone Uganda (ugsex.com) is a full-stack e-commerce marketplace for intimate wellness products, serving customers across Uganda. The platform supports both platform-owned and third-party seller products, with features including flash sales, subscription boxes, loyalty rewards, gift orders, and multiple payment methods including Mobile Money.
+
+## Product Catalog
+
+### Categories
+1. **Vibrators & Toys** — Personal massagers, bullet vibrators, rabbit vibrators, wand massagers
+2. **Lingerie & Apparel** — Bras, panties, bodysuits, corsets, robes, stockings
+3. **Lubricants & Personal Care** — Water-based, silicone-based, flavored lubricants, massage oils
+4. **Couples Toys** — Products designed for partner use, intimacy enhancers
+5. **Sexual Wellness** — Health supplements, kegel exercisers, intimate hygiene
+6. **Accessories** — Storage, cleaning products, bedroom accessories
+
+### Product Features
+- Detailed product descriptions and specifications
+- Customer reviews and ratings (1-5 stars)
+- Multiple product images
+- Size guides where applicable
+- Related product recommendations
+- Flash sale pricing with countdown timers
+- "Back in stock" notifications
+- Price drop alerts
+- Product Q&A section
+
+## Shopping Experience
+
+### Search & Discovery
+- Full-text product search with suggestions
+- Category browsing with subcategories
+- Advanced filters: price range, rating, stock status
+- Sort by: featured, price, rating, newest
+- Trending products and bestsellers
+- Personalized recommendations
+- Daily deals
+
+### Cart & Checkout
+- Persistent cart (syncs across devices when logged in)
+- Guest checkout available
+- Multiple payment methods:
+  - Mobile Money (MTN Uganda, Airtel Money)
+  - Credit/Debit Cards (Visa, Mastercard)
+  - PayPal
+  - Cash on Delivery
+  - Store Credit
+  - Gift Cards
+  - Installment plans (buy now, pay later)
+  - Layaway plans
+- Coupon/promo code support
+- Gift wrapping and gift messaging
+- Pickup point delivery option
+
+### Delivery
+- Same-day delivery in Kampala
+- 1-3 day delivery nationwide in Uganda
+- Discreet, plain packaging (no branding)
+- Anonymous billing name on statements
+- Real-time order tracking with delivery OTP
+- Multiple delivery time slot options
+- Pickup points available
+
+## Customer Features
+- User accounts with order history
+- Wishlist with collections
+- Loyalty points program
+- Referral rewards
+- Subscription boxes (monthly curated boxes)
+- Price drop alerts
+- Back-in-stock notifications
+- Gift cards (purchase and redeem)
+- Daily check-in rewards
+- Order returns and refunds
+
+## Marketplace
+- Third-party seller storefronts
+- Seller ratings and badges (New, Verified, Trusted, Top)
+- Escrow payment protection
+- Dispute resolution system
+- Seller-specific coupons
+
+## Content
+- Blog with wellness guides, product reviews, and relationship tips
+- Beginner's guide to intimate wellness
+- FAQ section
+- Couples curated collections
+
+## Technical Details
+- Progressive Web App (installable)
+- Mobile-responsive design
+- Dark mode support
+- Multi-currency display
+- Service worker for offline browsing
+- Fast page loads with ISR (Incremental Static Regeneration)
+
+## Privacy & Discretion
+PleasureZone Uganda prioritizes customer privacy:
+- All packages ship in plain, unmarked boxes
+- Billing statements show a neutral business name
+- Discreet mode available (changes app appearance)
+- Guest checkout (no account required)
+- Automatic guest data deletion after configurable period
+- Encrypted customer data (names, phones, addresses)
+- Stealth PWA manifests available (app can appear as calculator or notes app)

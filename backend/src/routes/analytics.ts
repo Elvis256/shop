@@ -339,12 +339,21 @@ router.get("/", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest
     };
 
     // ─── Payments ─────────────────────────────────────────────────────────
-    const payments = await prisma.payment.groupBy({
-      by: ["method"],
-      where: { status: "SUCCESSFUL", createdAt: { gte: startDate } },
-      _count: { id: true },
-      _sum: { amount: true },
-    });
+    const payments = await prisma.$queryRaw<Array<{
+      method: string;
+      count: number;
+      amount: number;
+    }>>`
+      SELECT
+        p.method,
+        COUNT(DISTINCT p."orderId")::int as count,
+        COALESCE(SUM(p.amount::numeric), 0)::float8 as amount
+      FROM "Payment" p
+      JOIN "Order" o ON p."orderId" = o.id
+      WHERE o."createdAt" >= ${startDate}
+        AND o."status" NOT IN ('CANCELLED', 'REFUNDED')
+        AND p.amount > 0
+      GROUP BY p.method`;
 
     const hourlyAgg: Array<{ hour: number; cnt: bigint }> =
       await prisma.$queryRaw`
@@ -488,7 +497,7 @@ router.get("/", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest
           visitors: { current: lastWeekVisitors, previous: prevWeekVisitors, change: prevWeekVisitors > 0 ? ((lastWeekVisitors - prevWeekVisitors) / prevWeekVisitors) * 100 : 0 },
         },
       },
-      paymentMethods: payments.map((p) => ({ name: p.method || "Other", count: p._count.id, amount: Number(p._sum.amount) || 0 })),
+      paymentMethods: payments.map((p) => ({ name: p.method || "Other", count: p.count, amount: Number(p.amount) || 0 })),
       hourlyOrders,
       insights,
     });
@@ -524,6 +533,167 @@ router.post("/track", asyncHandler(async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch {
     return res.status(204).send();
+  }
+}));
+
+// GET /api/analytics/investor - Investor BI metrics (LTV, CAC, cohort retention, MRR)
+router.get("/investor", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { period = "30", marketingSpend = "2000000" } = req.query;
+    const days = parseInt(period as string) || 30;
+    const spend = parseFloat(marketingSpend as string) || 2000000;
+
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - days);
+
+    // 1. Calculate Monthly Recurring Revenue (MRR) from Active Subscriptions
+    const activeSubscriptions = await prisma.subscription.findMany({
+      where: { status: "ACTIVE" },
+      include: { product: true }
+    });
+
+    let mrr = 0;
+    for (const sub of activeSubscriptions) {
+      const price = Number(sub.product.price);
+      const discountPercentage = Number(sub.discount) || 0;
+      const effectivePrice = price * (1 - discountPercentage / 100);
+      const intervalDays = sub.intervalDays || 30;
+      
+      // Calculate monthly equivalent revenue
+      const monthlyFactor = 30 / intervalDays;
+      mrr += effectivePrice * sub.quantity * monthlyFactor;
+    }
+
+    // 2. Customer Acquisition Cost (CAC)
+    // Count new customers registered in the period
+    const newCustomers = await prisma.user.count({
+      where: {
+        role: "CUSTOMER",
+        createdAt: { gte: startDate }
+      }
+    });
+    const cac = newCustomers > 0 ? Math.round(spend / newCustomers) : 0;
+
+    // 3. Customer Lifetime Value (LTV) - Empirical baseline
+    // Total Successful Revenue
+    const revenueAgg = await prisma.order.aggregate({
+      where: { paymentStatus: "SUCCESSFUL" },
+      _sum: { totalAmount: true }
+    });
+    const totalSuccessfulRevenue = Number(revenueAgg._sum.totalAmount) || 0;
+
+    // Unique Successful Customers
+    const uniqueCustomersAgg = await prisma.order.groupBy({
+      by: ["userId"],
+      where: { paymentStatus: "SUCCESSFUL", userId: { not: null } },
+      _count: { id: true }
+    });
+    const uniqueSuccessfulCustomersCount = uniqueCustomersAgg.length;
+
+    // AOV & LTV calculation
+    const totalSuccessfulOrders = await prisma.order.count({
+      where: { paymentStatus: "SUCCESSFUL" }
+    });
+    
+    const aov = totalSuccessfulOrders > 0 ? Math.round(totalSuccessfulRevenue / totalSuccessfulOrders) : 0;
+    const ltv = uniqueSuccessfulCustomersCount > 0 ? Math.round(totalSuccessfulRevenue / uniqueSuccessfulCustomersCount) : 0;
+
+    // 4. Cohort Retention Matrix
+    const users = await prisma.user.findMany({
+      where: { role: "CUSTOMER" },
+      select: { id: true, createdAt: true },
+    });
+
+    const orders = await prisma.order.findMany({
+      where: { paymentStatus: "SUCCESSFUL" },
+      select: { userId: true, createdAt: true },
+    });
+
+    // Group users by cohort month: "YYYY-MM"
+    const cohorts: Record<string, string[]> = {};
+    const userCohortMap: Record<string, string> = {};
+    for (const u of users) {
+      const month = u.createdAt.toISOString().slice(0, 7);
+      if (!cohorts[month]) cohorts[month] = [];
+      cohorts[month].push(u.id);
+      userCohortMap[u.id] = month;
+    }
+
+    // cohortMonth -> Record<number, Set<string>> (offsetMonth -> set of userIds)
+    const cohortActivity: Record<string, Record<number, Set<string>>> = {};
+
+    for (const o of orders) {
+      if (!o.userId) continue;
+      const cohortMonth = userCohortMap[o.userId];
+      if (!cohortMonth) continue;
+
+      const registrationDate = new Date(cohortMonth + "-01");
+      const orderDate = new Date(o.createdAt);
+
+      const diffMonths = (orderDate.getFullYear() - registrationDate.getFullYear()) * 12 +
+        (orderDate.getMonth() - registrationDate.getMonth());
+
+      if (diffMonths < 0) continue;
+
+      if (!cohortActivity[cohortMonth]) cohortActivity[cohortMonth] = {};
+      if (!cohortActivity[cohortMonth][diffMonths]) cohortActivity[cohortMonth][diffMonths] = new Set();
+      
+      cohortActivity[cohortMonth][diffMonths].add(o.userId);
+    }
+
+    const cohortMonths = Object.keys(cohorts).sort().reverse().slice(0, 12); // Last 12 cohorts
+    const cohortMatrix = cohortMonths.map((cohortMonth) => {
+      const cohortSize = cohorts[cohortMonth].length;
+      const activity = cohortActivity[cohortMonth] || {};
+      
+      const retention = [0, 1, 2, 3, 4, 5].map((monthOffset) => {
+        const activeUsersCount = activity[monthOffset]?.size || 0;
+        const rate = cohortSize > 0 ? (activeUsersCount / cohortSize) * 100 : 0;
+        return {
+          monthOffset,
+          activeUsers: activeUsersCount,
+          rate: Math.round(rate * 10) / 10,
+        };
+      });
+
+      return {
+        cohort: cohortMonth,
+        size: cohortSize,
+        retention,
+      };
+    });
+
+    // 5. Overall Subscription Churn Proxy (Monthly Cancellation Rate)
+    const totalActiveSubs = await prisma.subscription.count({ where: { status: "ACTIVE" } });
+    const cancelledSubsInPeriod = await prisma.subscription.count({
+      where: {
+        status: "CANCELLED",
+        updatedAt: { gte: startDate }
+      }
+    });
+    
+    // Monthly subscription churn rate estimate
+    const churnDenominator = totalActiveSubs + cancelledSubsInPeriod;
+    const churnRate = churnDenominator > 0 ? Math.round((cancelledSubsInPeriod / churnDenominator) * 100 * 10) / 10 : 0;
+
+    return res.json({
+      metrics: {
+        mrr: Math.round(mrr),
+        cac,
+        ltv,
+        aov,
+        newCustomersAcquired: newCustomers,
+        totalRevenuePeriod: totalSuccessfulRevenue,
+        totalCustomersBase: uniqueSuccessfulCustomersCount,
+        subscriptionChurnRate: churnRate,
+        ltvToCacRatio: cac > 0 ? Math.round((ltv / cac) * 10) / 10 : 0,
+      },
+      cohortMatrix,
+    });
+  } catch (error) {
+    logger.error("Investor analytics error", { error });
+    return res.status(500).json({ error: "Failed to load investor analytics" });
   }
 }));
 

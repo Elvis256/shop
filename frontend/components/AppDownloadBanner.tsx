@@ -18,7 +18,8 @@ export default function AppDownloadBanner() {
     return () => clearTimeout(timer);
   }, []);
 
-  if (dismissed || !visible) return null;
+  const showApk = process.env.NEXT_PUBLIC_SHOW_APK === "true";
+if (dismissed || !visible || !showApk) return null;
 
   const handleDismiss = () => {
     setDismissed(true);

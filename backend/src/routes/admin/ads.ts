@@ -37,7 +37,7 @@ router.get("/stats", asyncHandler(async (_req: AuthRequest, res: Response) => {
 
     return res.json({
       totalRevenue: Number(debitTxns._sum.amount || 0),
-      totalCampaigns: debitTxns._count,
+      totalTransactions: debitTxns._count,
       activeCampaigns,
       monthlyRevenue: Number(monthlyRevenue._sum.amount || 0),
       revenueByTier: tierBreakdown.map((t) => ({

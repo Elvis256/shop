@@ -7,7 +7,7 @@ import { Search, X, Loader2, TrendingUp, Tag } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import ProductImage from "@/components/ProductImage";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface SearchProduct {
   name: string;
@@ -149,11 +149,14 @@ export default function SearchBar({ autoFocus = false, onNavigate, initialQuery 
 
   return (
     <div ref={wrapperRef} className="relative w-full">
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} role="search">
         <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" aria-hidden="true" />
+          <label htmlFor="site-search" className="sr-only">Search products</label>
           <input
-            type="text"
+            id="site-search"
+            type="search"
+            name="q"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => {
@@ -161,6 +164,7 @@ export default function SearchBar({ autoFocus = false, onNavigate, initialQuery 
               else loadPopularSearches();
             }}
             placeholder="Search products..."
+            aria-label="Search products"
             className={`w-full pl-10 pr-10 text-sm border-0 rounded-full placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all ${
               variant === "page" ? "h-12 bg-white border border-gray-200 shadow-sm" : "h-10 bg-surface-secondary"
             }`}

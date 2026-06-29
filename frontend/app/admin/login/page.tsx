@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Eye, EyeOff, Loader2, ShieldCheck, Lock } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 async function getCsrfToken(): Promise<string> {
   // Try cookie first
@@ -181,7 +182,7 @@ export default function AdminLoginPage() {
 
         <p className="text-center text-xs text-text-muted mt-6">
           Not an admin?{" "}
-          <a href="/" className="text-primary hover:underline">Go to store</a>
+          <Link href="/" className="text-primary hover:underline">Go to store</Link>
         </p>
       </div>
     </div>

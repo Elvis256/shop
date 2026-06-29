@@ -65,6 +65,10 @@ interface ProductFormData {
   metaDescription: string;
   flashSalePrice: string;
   flashSaleEndsAt: string;
+  allowedDeliveryMethods: string[];
+  codAllowed: boolean;
+  shippingFee: string;
+  sizeGuideId: string;
 }
 
 interface SpecRow {
@@ -142,6 +146,7 @@ export default function EditProductPage() {
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [specifications, setSpecifications] = useState<SpecRow[]>([]);
   const [priceTiers, setPriceTiers] = useState<Array<{ id: string; minQty: string; discount: string; label: string }>>([]);
+  const [sizeGuides, setSizeGuides] = useState<Array<{ id: string; name: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -171,6 +176,10 @@ export default function EditProductPage() {
     metaDescription: "",
     flashSalePrice: "",
     flashSaleEndsAt: "",
+    allowedDeliveryMethods: [],
+    codAllowed: true,
+    shippingFee: "",
+    sizeGuideId: "",
   });
 
   const [flashSaleEnabled, setFlashSaleEnabled] = useState(false);
@@ -213,11 +222,14 @@ export default function EditProductPage() {
     setNotFound(false);
 
     try {
-      const [productData, categoriesData, tiersData]: [any, any, any] = await Promise.all([
+      const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
+      const [productData, categoriesData, tiersData, sizeGuidesData]: [any, any, any, any] = await Promise.all([
         api.admin.getProduct(productId),
         api.admin.getCategories(),
         api.admin.getPriceTiers(productId).catch(() => ({ tiers: [] })),
+        fetch(`${API_URL}/api/admin/size-guides`, { credentials: "include" }).then((r) => r.json()).catch(() => ({ guides: [] })),
       ]);
+      if (sizeGuidesData?.guides) setSizeGuides(sizeGuidesData.guides);
 
       setCategories(
         Array.isArray(categoriesData) ? categoriesData : categoriesData.categories || [],
@@ -251,6 +263,10 @@ export default function EditProductPage() {
         metaDescription: p.metaDescription || "",
         flashSalePrice: p.flashSalePrice ? String(Number(p.flashSalePrice)) : "",
         flashSaleEndsAt: p.flashSaleEndsAt ? new Date(p.flashSaleEndsAt).toISOString().slice(0, 16) : "",
+        allowedDeliveryMethods: Array.isArray(p.allowedDeliveryMethods) ? p.allowedDeliveryMethods : [],
+        codAllowed: p.codAllowed !== false,
+        shippingFee: p.shippingFee != null ? String(Number(p.shippingFee)) : "",
+        sizeGuideId: p.sizeGuide?.id || p.sizeGuideId || "",
       });
 
       if (p.flashSalePrice || p.flashSaleEndsAt) {
@@ -471,6 +487,12 @@ export default function EditProductPage() {
         payload.flashSalePrice = null;
         payload.flashSaleEndsAt = null;
       }
+
+      // Delivery options
+      payload.allowedDeliveryMethods = formData.allowedDeliveryMethods;
+      payload.codAllowed = formData.codAllowed;
+      payload.shippingFee = formData.shippingFee ? parseFloat(formData.shippingFee) : null;
+      payload.sizeGuideId = formData.sizeGuideId || null;
 
       await api.admin.updateProduct(productId, payload);
 
@@ -965,6 +987,83 @@ export default function EditProductPage() {
             <p className="text-sm text-gray-400">
               Enable flash sale to set a limited-time discounted price.
             </p>
+          )}
+        </div>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* 3c. Delivery Options                                                */}
+        {/* ------------------------------------------------------------------ */}
+        <div className={cardClass}>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Delivery Options</h2>
+          <p className="text-sm text-gray-500 mb-4">Select allowed delivery methods. Leave all unchecked to allow all methods.</p>
+          <div className="space-y-3">
+            {[
+              { value: "HOME_DELIVERY", label: "Home Delivery" },
+              { value: "PICKUP", label: "Platform Pickup Point" },
+              { value: "SELLER_PICKUP", label: "Seller Pickup" },
+            ].map((method) => (
+              <label key={method.value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.allowedDeliveryMethods.includes(method.value)}
+                  onChange={(e) => {
+                    const methods = e.target.checked
+                      ? [...formData.allowedDeliveryMethods, method.value]
+                      : formData.allowedDeliveryMethods.filter((m) => m !== method.value);
+                    setFormData((prev) => ({ ...prev, allowedDeliveryMethods: methods }));
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                />
+                <span className="text-sm text-gray-700">{method.label}</span>
+              </label>
+            ))}
+            {formData.allowedDeliveryMethods.length === 0 ? (
+              <p className="text-xs text-green-600 mt-2 bg-green-50 p-2.5 rounded border border-green-200">
+                💡 Currently, <strong>all delivery methods are allowed</strong> for this product because none are explicitly checked.
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600 mt-2 bg-amber-50 p-2.5 rounded border border-amber-200">
+                ⚠️ Only the checked delivery method(s) will be available for this product at checkout. All other methods are restricted.
+              </p>
+            )}
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.codAllowed}
+                onChange={(e) => setFormData((prev) => ({ ...prev, codAllowed: e.target.checked }))}
+                className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+              />
+              <span className="text-sm text-gray-700">Allow Cash on Delivery</span>
+            </label>
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Platform Shipping Fee (UGX)</label>
+            <input
+              type="number"
+              value={formData.shippingFee}
+              onChange={(e) => setFormData((prev) => ({ ...prev, shippingFee: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-gray-900 focus:border-gray-900"
+              placeholder="0"
+              min="0"
+            />
+            <p className="text-xs text-gray-500 mt-1">Fee deducted from seller payout per order of this item</p>
+          </div>
+          {sizeGuides.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Size Guide</label>
+              <select
+                value={formData.sizeGuideId}
+                onChange={(e) => setFormData((prev) => ({ ...prev, sizeGuideId: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-gray-900 focus:border-gray-900"
+              >
+                <option value="">None</option>
+                {sizeGuides.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
           )}
         </div>
 

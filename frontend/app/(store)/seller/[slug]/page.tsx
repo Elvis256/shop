@@ -13,7 +13,10 @@ import {
   ChevronRight,
   Loader2,
   Store,
+  MessageSquare,
+  Send,
 } from "lucide-react";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 interface SellerInfo {
   id: string;
@@ -46,9 +49,18 @@ interface Product {
   flashSaleEndsAt?: string | null;
 }
 
+interface SellerReview {
+  id: string;
+  userName: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+}
+
 export default function SellerStorePage() {
   const params = useParams();
   const slug = params.slug as string;
+  const { user } = useAuth();
   const [seller, setSeller] = useState<SellerInfo | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,8 +69,16 @@ export default function SellerStorePage() {
   const [totalPages, setTotalPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
+  // Reviews
+  const [reviews, setReviews] = useState<SellerReview[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+
   useEffect(() => {
-    if (slug) loadSeller();
+    if (slug) { loadSeller(); loadReviews(); }
   }, [slug]);
 
   useEffect(() => {
@@ -86,6 +106,37 @@ export default function SellerStorePage() {
       setProducts([]);
     } finally {
       setProductsLoading(false);
+    }
+  };
+
+  const loadReviews = async () => {
+    setReviewsLoading(true);
+    try {
+      const data = await apiFetch(`/api/seller/store/${slug}/reviews`);
+      setReviews(data.reviews || []);
+    } catch {
+      setReviews([]);
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
+
+  const submitReview = async () => {
+    setReviewSubmitting(true);
+    setReviewError("");
+    try {
+      await apiFetch(`/api/seller/store/${slug}/reviews`, {
+        method: "POST",
+        body: JSON.stringify({ rating: reviewRating, comment: reviewComment }),
+      });
+      setReviewComment("");
+      setReviewRating(5);
+      loadReviews();
+      loadSeller(); // refresh rating
+    } catch (err: any) {
+      setReviewError(err?.message || "Failed to submit review");
+    } finally {
+      setReviewSubmitting(false);
     }
   };
 
@@ -225,6 +276,77 @@ export default function SellerStorePage() {
           )}
         </>
       )}
+
+      {/* Reviews Section */}
+      <div className="mt-12">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <MessageSquare className="w-5 h-5" />
+          Customer Reviews
+          {seller.reviewCount > 0 && <span className="text-gray-400 font-normal">({seller.reviewCount})</span>}
+        </h2>
+
+        {/* Submit Review Form */}
+        {user && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+            <h3 className="text-sm font-medium text-gray-900 mb-3">Write a Review</h3>
+            <div className="flex items-center gap-1 mb-3">
+              {[1, 2, 3, 4, 5].map((s) => (
+                <button key={s} type="button" onClick={() => setReviewRating(s)}>
+                  <Star className={`w-6 h-6 ${s <= reviewRating ? "fill-yellow-400 text-yellow-400" : "text-gray-300"}`} />
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={reviewComment}
+              onChange={(e) => setReviewComment(e.target.value)}
+              placeholder="Share your experience with this seller..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              maxLength={2000}
+            />
+            {reviewError && <p className="text-sm text-red-600 mt-1">{reviewError}</p>}
+            <button
+              onClick={submitReview}
+              disabled={reviewSubmitting}
+              className="mt-2 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50 flex items-center gap-2"
+            >
+              {reviewSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Submit Review
+            </button>
+          </div>
+        )}
+
+        {/* Reviews List */}
+        {reviewsLoading ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          </div>
+        ) : reviews.length === 0 ? (
+          <div className="text-center py-10 text-gray-500 text-sm">
+            No reviews yet. Be the first to review this seller!
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {reviews.map((review) => (
+              <div key={review.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm text-gray-900">{review.userName}</span>
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Star key={s} className={`w-3.5 h-3.5 ${s <= review.rating ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
+                      ))}
+                    </div>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {new Date(review.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </span>
+                </div>
+                {review.comment && <p className="text-sm text-gray-700">{review.comment}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

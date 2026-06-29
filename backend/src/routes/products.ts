@@ -234,6 +234,107 @@ router.get("/", asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
+// GET /api/products/feed/google-merchant — Google Merchant Center product feed
+router.get("/feed/google-merchant", asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const products = await prisma.product.findMany({
+      where: { status: "ACTIVE" },
+      include: {
+        category: true,
+        images: { take: 5, orderBy: { position: "asc" } }
+      }
+    });
+
+    const siteUrl = process.env.BASE_URL || "https://ugsex.com";
+    const escapeXml = (unsafe: string): string => {
+      return unsafe.replace(/[<>&'"]/g, (c) => {
+        switch (c) {
+          case "<": return "&lt;";
+          case ">": return "&gt;";
+          case "&": return "&amp;";
+          case "'": return "&apos;";
+          case "\"": return "&quot;";
+          default: return c;
+        }
+      });
+    };
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">\n  <channel>\n    <title>PleasureZone Uganda</title>\n    <link>${siteUrl}</link>\n    <description>Uganda's #1 online store for intimate wellness. Discreet delivery nationwide.</description>\n`;
+
+    const now = new Date();
+    for (const p of products) {
+      const title = escapeXml(p.name);
+      const description = escapeXml(p.description?.replace(/<[^>]*>/g, "").slice(0, 1000) || p.name);
+      const link = `${siteUrl}/product/${p.slug}`;
+      
+      let imageLink = p.images?.[0]?.url || "";
+      if (imageLink && imageLink.startsWith("/")) {
+        imageLink = `${siteUrl}${imageLink}`;
+      }
+      if (!imageLink) {
+        imageLink = `${siteUrl}/logo.png`;
+      }
+
+      const additionalImages = p.images?.slice(1) || [];
+      
+      const price = `${Math.round(Number(p.price))} UGX`;
+      const flashActive = p.flashSalePrice && p.flashSaleEndsAt && p.flashSaleEndsAt > now;
+      const salePrice = flashActive ? `${Math.round(Number(p.flashSalePrice))} UGX` : null;
+
+      const availability = p.stock > 0 ? "in_stock" : "out_of_stock";
+      const brand = "PleasureZone";
+      const condition = "new";
+      const gtin = p.barcode ? escapeXml(p.barcode) : null;
+      const mpn = p.sku ? escapeXml(p.sku) : null;
+      const identifierExists = (gtin || mpn) ? "yes" : "no";
+
+      xml += `    <item>\n`;
+      xml += `      <g:id>${p.id}</g:id>\n`;
+      xml += `      <g:title>${title}</g:title>\n`;
+      xml += `      <g:description>${description}</g:description>\n`;
+      xml += `      <g:link>${link}</g:link>\n`;
+      xml += `      <g:image_link>${escapeXml(imageLink)}</g:image_link>\n`;
+      
+      for (const img of additionalImages) {
+        let addImgUrl = img.url;
+        if (addImgUrl.startsWith("/")) {
+          addImgUrl = `${siteUrl}${addImgUrl}`;
+        }
+        xml += `      <g:additional_image_link>${escapeXml(addImgUrl)}</g:additional_image_link>\n`;
+      }
+
+      xml += `      <g:price>${price}</g:price>\n`;
+      if (salePrice) {
+        xml += `      <g:sale_price>${salePrice}</g:sale_price>\n`;
+      }
+      xml += `      <g:availability>${availability}</g:availability>\n`;
+      xml += `      <g:condition>${condition}</g:condition>\n`;
+      xml += `      <g:brand>${brand}</g:brand>\n`;
+      if (gtin) {
+        xml += `      <g:gtin>${gtin}</g:gtin>\n`;
+      }
+      if (mpn) {
+        xml += `      <g:mpn>${mpn}</g:mpn>\n`;
+      }
+      xml += `      <g:identifier_exists>${identifierExists}</g:identifier_exists>\n`;
+      xml += `      <g:adult>yes</g:adult>\n`;
+      if (p.category) {
+        xml += `      <g:google_product_category>${escapeXml(p.category.name)}</g:google_product_category>\n`;
+        xml += `      <g:product_type>${escapeXml(p.category.name)}</g:product_type>\n`;
+      }
+      xml += `    </item>\n`;
+    }
+
+    xml += `  </channel>\n</rss>`;
+
+    res.setHeader("Content-Type", "application/xml");
+    return res.send(xml);
+  } catch (error) {
+    logger.error("Failed to generate Google Merchant feed", { error });
+    return res.status(500).json({ error: "Failed to generate feed" });
+  }
+}));
+
 // GET /api/products/:slug
 router.get("/:slug", asyncHandler(async (req: Request, res: Response) => {
   try {
@@ -246,6 +347,7 @@ router.get("/:slug", asyncHandler(async (req: Request, res: Response) => {
           category: { select: { id: true, name: true, slug: true } },
           images: { orderBy: { position: 'asc' } },
           variants: true,
+          sizeGuide: { select: { id: true, name: true, content: true } },
         },
       });
       if (!p) return null;
@@ -283,6 +385,7 @@ router.get("/:slug", asyncHandler(async (req: Request, res: Response) => {
         averageRating: p.rating,
         sku: p.sku,
         status: p.status,
+        sizeGuide: p.sizeGuide || null,
       };
     }, LONG_TTL);
 

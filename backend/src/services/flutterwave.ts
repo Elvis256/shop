@@ -1,6 +1,7 @@
 import axios from "axios";
 import { withRetryAndCircuitBreaker } from "../utils/retry";
 import { logger } from "../lib/logger";
+import prisma from "../lib/prisma";
 
 type CreatePaymentInput = {
   tx_ref: string;
@@ -65,17 +66,37 @@ function getAuthHeaders(): Record<string, string> {
 export async function createFlutterwavePayment(
   input: CreatePaymentInput
 ): Promise<FlutterwaveResponse> {
+  let billingName = "PleasureZone";
+  try {
+    const setting = await prisma.setting.findUnique({ where: { key: "STEALTH_BILLING_NAME" } });
+    if (setting?.value) {
+      billingName = setting.value;
+    }
+  } catch (err) {
+    logger.warn("Failed to fetch STEALTH_BILLING_NAME setting, falling back to default", { error: err });
+  }
+
+  let customerEmail = input.customer.email || "";
+  if (!customerEmail || !customerEmail.includes("@")) {
+    const phoneDigits = customerEmail.replace(/[^0-9]/g, "");
+    if (phoneDigits.length >= 7) {
+      customerEmail = `${phoneDigits}@noreply.ugsex.com`;
+    } else {
+      customerEmail = "noreply@ugsex.com";
+    }
+  }
+
   const payload: Record<string, any> = {
     tx_ref: input.tx_ref,
     amount: input.amount,
     currency: input.currency,
     redirect_url: input.redirect_url,
     customer: {
-      email: input.customer.email,
-      name: input.customer.name,
+      email: customerEmail,
+      name: input.customer.name || "Customer",
     },
     customizations: {
-      title: "PleasureZone",
+      title: billingName,
       description: "Order Payment",
     },
   };
@@ -215,5 +236,43 @@ export async function refundFlutterwaveTransaction(
   } catch (error: any) {
     logger.error("Flutterwave refund error", { error: error.response?.data || error.message });
     throw new Error("Refund failed. Please try again or contact Flutterwave support.");
+  }
+}
+
+export async function chargeMobileMoneyUganda(input: {
+  tx_ref: string;
+  amount: number;
+  currency: string;
+  email: string;
+  phone_number: string;
+  network: "MTN" | "AIRTEL";
+  fullname: string;
+}): Promise<{ status: string; message: string; data?: { id?: number; flw_ref?: string; status?: string } }> {
+  const payload = {
+    amount: input.amount,
+    currency: input.currency || "UGX",
+    email: input.email,
+    tx_ref: input.tx_ref,
+    phone_number: input.phone_number,
+    network: input.network.toUpperCase(),
+    fullname: input.fullname,
+  };
+
+  try {
+    return await withRetryAndCircuitBreaker(
+      "flutterwave-momo-uganda-charge",
+      async () => {
+        const response = await axios.post(
+          `${FLW_BASE_URL}/charges?type=mobile_money_uganda`,
+          payload,
+          { headers: getAuthHeaders(), timeout: 35000 }
+        );
+        return response.data;
+      },
+      FLUTTERWAVE_RETRY_OPTIONS
+    );
+  } catch (error: any) {
+    logger.error("Flutterwave direct momo charge error", { error: error.response?.data || error.message });
+    throw new Error(error.response?.data?.message || "Mobile Money charge initiation failed. Please try again.");
   }
 }

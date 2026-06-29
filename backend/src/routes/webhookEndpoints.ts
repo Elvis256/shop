@@ -124,6 +124,88 @@ router.post("/:id/test", asyncHandler(async (req: AuthRequest, res: Response) =>
   }
 }));
 
+// GET /api/webhooks/endpoints/retries — List webhook retries (admin)
+// NOTE: mounted at /api/webhooks/retries in index.ts via separate mount
+// but also accessible here for direct access
+router.get("/retries", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { search, page = "1", limit = "20" } = req.query;
+    const take = Math.min(parseInt(limit as string) || 20, 100);
+    const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
+
+    const where: any = {};
+    if (search) {
+      where.OR = [
+        { provider: { contains: search as string, mode: "insensitive" } },
+        { eventType: { contains: search as string, mode: "insensitive" } },
+        { lastError: { contains: search as string, mode: "insensitive" } },
+      ];
+    }
+
+    const [retries, total] = await Promise.all([
+      prisma.webhookRetry.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take,
+        skip,
+      }),
+      prisma.webhookRetry.count({ where }),
+    ]);
+
+    return res.json({
+      retries,
+      pagination: {
+        total,
+        page: Math.floor(skip / take) + 1,
+        limit: take,
+        totalPages: Math.ceil(total / take),
+      },
+    });
+  } catch (error) {
+    logger.error("List webhook retries error", { error });
+    return res.status(500).json({ error: "Failed to fetch webhook retries" });
+  }
+}));
+
+// POST /api/webhooks/endpoints/retries/:id/retry — Force retry a webhook
+router.post("/retries/:id/retry", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const retry = await prisma.webhookRetry.findUnique({ where: { id: req.params.id } });
+    if (!retry) return res.status(404).json({ error: "Retry not found" });
+
+    await prisma.webhookRetry.update({
+      where: { id: retry.id },
+      data: {
+        nextRetryAt: new Date(),
+        lastError: "Manual retry queued",
+      },
+    });
+
+    return res.json({ message: "Retry queued" });
+  } catch (error) {
+    logger.error("Force retry webhook error", { error });
+    return res.status(500).json({ error: "Failed to queue retry" });
+  }
+}));
+
+// POST /api/webhooks/endpoints/retries/:id/resolve — Mark a retry as resolved
+router.post("/retries/:id/resolve", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const retry = await prisma.webhookRetry.findUnique({ where: { id: req.params.id } });
+    if (!retry) return res.status(404).json({ error: "Retry not found" });
+
+    await prisma.webhookRetry.update({
+      where: { id: retry.id },
+      data: { resolved: true, resolvedAt: new Date(), lastError: "Manually resolved" },
+    });
+
+    return res.json({ message: "Retry resolved" });
+  } catch (error) {
+    logger.error("Resolve webhook retry error", { error });
+    return res.status(500).json({ error: "Failed to resolve retry" });
+  }
+}));
+
 /**
  * Dispatch a webhook event to all active endpoints subscribed to this event.
  * Signs the payload with HMAC-SHA256 using the endpoint's secret.

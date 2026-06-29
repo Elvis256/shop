@@ -4,6 +4,7 @@ import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { logger } from "../../lib/logger";
 import { asyncHandler } from "../../middleware/errorHandler";
+import { createFlutterwaveTransfer } from "../../services/flutterwave";
 
 const router = Router();
 router.use(authenticate, requireAdmin);
@@ -258,6 +259,9 @@ router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
     const data = z.object({
       status: z.enum(["PENDING", "APPROVED", "REJECTED", "SUSPENDED"]).optional(),
       commissionRate: z.number().min(0).max(100).optional(),
+      paymentPhone: z.string().nullable().optional(),
+      paymentProvider: z.string().nullable().optional(),
+      paymentName: z.string().nullable().optional(),
     }).parse(req.body);
 
     const affiliate = await prisma.affiliate.update({ where: { id: req.params.id }, data: data as any });
@@ -284,26 +288,105 @@ router.post("/:id/payout", asyncHandler(async (req: AuthRequest, res: Response) 
       return res.status(400).json({ error: "Payout amount exceeds pending balance" });
     }
 
-    await prisma.$transaction([
-      prisma.affiliatePayout.create({
-        data: { affiliateId: affiliate.id, amount, method, reference, notes },
-      }),
-      prisma.affiliate.update({
-        where: { id: affiliate.id },
+    let transferRef = reference || `aff-payout-${Date.now()}`;
+    let flwNotes = "";
+
+    // Automated Mobile Money payout via Flutterwave
+    if (method === "mobile_money") {
+      if (!affiliate.paymentPhone || !affiliate.paymentProvider) {
+        return res.status(400).json({
+          error: "Affiliate payment details are not fully configured. Please configure their Phone Number and Network Provider.",
+        });
+      }
+
+      let accountBank = "";
+      const provider = affiliate.paymentProvider.toUpperCase().trim();
+      if (provider.includes("MTN")) {
+        accountBank = "MPS"; // MTN Uganda Mobile Money bank code
+      } else if (provider.includes("AIR")) {
+        accountBank = "AIR"; // Airtel Uganda Mobile Money bank code
+      } else {
+        accountBank = provider; // fallback
+      }
+
+      try {
+        const transferResult = await createFlutterwaveTransfer({
+          reference: transferRef,
+          amount,
+          narration: notes || `Automated affiliate payout to ${affiliate.name}`,
+          beneficiary: {
+            account_bank: accountBank,
+            account_number: affiliate.paymentPhone,
+            beneficiary_name: affiliate.paymentName || affiliate.name,
+          },
+        });
+        flwNotes = `Flutterwave transfer initiated. FLW ID: ${transferResult.data?.id || "pending"}.`;
+      } catch (err: any) {
+        logger.error("Flutterwave affiliate payout failed", { error: err.message, affiliateId: affiliate.id });
+        return res.status(500).json({ error: `Flutterwave mobile money transfer failed: ${err.message}` });
+      }
+    }
+
+    // Process payout inside database transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const aff = await tx.affiliate.findUnique({ where: { id: req.params.id } });
+      if (!aff) throw new Error("NOT_FOUND");
+      if (Number(aff.pendingPayout) < amount) throw new Error("INSUFFICIENT_BALANCE");
+
+      await tx.affiliatePayout.create({
+        data: {
+          affiliateId: aff.id,
+          amount,
+          method,
+          reference: transferRef,
+          notes: notes ? `${notes} ${flwNotes}`.trim() : flwNotes,
+        },
+      });
+
+      await tx.affiliate.update({
+        where: { id: aff.id },
         data: {
           pendingPayout: { decrement: amount },
           totalPaid: { increment: amount },
         },
-      }),
-      prisma.affiliateConversion.updateMany({
-        where: { affiliateId: affiliate.id, status: "APPROVED" },
-        data: { status: "PAID", paidAt: new Date() },
-      }),
-    ]);
+      });
 
-    return res.json({ message: "Payout processed" });
-  } catch (error) {
+      // Only mark conversions as paid up to the payout amount (oldest first)
+      const conversions = await tx.affiliateConversion.findMany({
+        where: { affiliateId: aff.id, status: "APPROVED" },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, commission: true },
+      });
+
+      let remaining = amount;
+      const conversionIds: string[] = [];
+      for (const c of conversions) {
+        if (remaining <= 0) break;
+        conversionIds.push(c.id);
+        remaining -= Number(c.commission);
+      }
+
+      if (conversionIds.length > 0) {
+        await tx.affiliateConversion.updateMany({
+          where: { id: { in: conversionIds } },
+          data: { status: "PAID", paidAt: new Date() },
+        });
+      }
+
+      return { paid: conversionIds.length };
+    });
+
+    return res.json({
+      message: method === "mobile_money" ? "Automated Mobile Money transfer initiated" : "Manual payout processed",
+      conversionsPaid: result.paid,
+      reference: transferRef,
+    });
+  } catch (error: any) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed" });
+    if (error?.message === "NOT_FOUND") return res.status(404).json({ error: "Affiliate not found" });
+    if (error?.message === "INSUFFICIENT_BALANCE") {
+      return res.status(400).json({ error: "Payout amount exceeds pending balance" });
+    }
     logger.error("Payout error", { error });
     return res.status(500).json({ error: "Failed to process payout" });
   }

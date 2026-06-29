@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
-import { AuthRequest, authenticate } from "../middleware/auth";
+import { AuthRequest, authenticate, optionalAuth } from "../middleware/auth";
 import crypto from "crypto";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -147,6 +147,47 @@ router.get("/price-slash/my", authenticate, asyncHandler(async (req: AuthRequest
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch price slashes" });
+  }
+}));
+
+// GET /api/social/price-slash/product/:productId - Get current user's active price slash for a product
+router.get("/price-slash/product/:productId", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.json({ priceSlash: null });
+    }
+    const { productId } = req.params;
+
+    const priceSlash = await prisma.priceSlash.findFirst({
+      where: {
+        productId,
+        initiatorId: userId,
+        status: "active",
+        expiresAt: { gt: new Date() },
+      },
+      include: {
+        product: { select: { name: true, slug: true, price: true, images: { select: { url: true }, take: 1 } } },
+        slashers: { select: { slashedAt: true } },
+      },
+    });
+
+    if (!priceSlash) {
+      return res.json({ priceSlash: null });
+    }
+
+    res.json({
+      priceSlash: {
+        ...priceSlash,
+        savings: Number(priceSlash.originalPrice) - Number(priceSlash.currentPrice),
+        savingsPercent: Math.round((1 - Number(priceSlash.currentPrice) / Number(priceSlash.originalPrice)) * 100),
+        slashesRemaining: priceSlash.maxSlashes - priceSlash.currentSlashes,
+        isExpired: priceSlash.expiresAt < new Date(),
+      },
+    });
+  } catch (err) {
+    logger.error("Fetch active price slash error", { error: err });
+    res.status(500).json({ error: "Failed to fetch price slash" });
   }
 }));
 

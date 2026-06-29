@@ -1,11 +1,12 @@
 import prisma from "../lib/prisma";
 import { sendEmail } from "../lib/email";
+import { sendPushToUser } from "./push";
 import { logger } from "../lib/logger";
 
 /**
  * Auto Review Request Job
  * Finds delivered orders (3+ days ago) where no review exists
- * and sends an email requesting a review.
+ * and sends an email + push notification requesting a review.
  */
 export async function checkAndSendReviewRequests(): Promise<void> {
   try {
@@ -33,6 +34,7 @@ export async function checkAndSendReviewRequests(): Promise<void> {
       },
     });
 
+    let sent = 0;
     for (const order of deliveredOrders) {
       if (!order.user) continue;
 
@@ -57,14 +59,25 @@ export async function checkAndSendReviewRequests(): Promise<void> {
         continue;
       }
 
-      // Send review request email
+      // Calculate days since delivery
+      const deliveryEvent = await prisma.orderEvent.findFirst({
+        where: { orderId: order.id, status: "DELIVERED" },
+        orderBy: { createdAt: "desc" },
+      });
+      const daysAgo = deliveryEvent
+        ? Math.floor((Date.now() - deliveryEvent.createdAt.getTime()) / (1000 * 60 * 60 * 24))
+        : 3;
+
+      // Send review request email using the dedicated template
       try {
         await sendEmail({
           to: order.user.email,
-          template: "order-delivered",
+          template: "review-prompt",
           data: {
-            customerName: order.user.name || order.customerName,
+            name: order.user.name || order.customerName,
             orderNumber: order.orderNumber,
+            orderId: order.id,
+            daysAgo,
             items: order.items.map((i) => ({
               name: i.product.name,
               slug: i.product.slug,
@@ -75,10 +88,26 @@ export async function checkAndSendReviewRequests(): Promise<void> {
         logger.error(`Failed to send review request email for order ${order.orderNumber}`, { error: emailErr });
       }
 
+      // Send push notification
+      try {
+        await sendPushToUser(order.user.id, {
+          title: "How was your order?",
+          body: `Your order #${order.orderNumber} was delivered ${daysAgo} days ago. Leave a review!`,
+          url: `/account/orders/${order.id}`,
+        });
+      } catch (pushErr) {
+        logger.warn("Failed to send review push", { error: (pushErr as any).message });
+      }
+
       // Track that we sent the request
       await prisma.setting.create({
         data: { key: settingKey, value: new Date().toISOString() },
       });
+      sent++;
+    }
+
+    if (sent > 0) {
+      logger.info("review_requests_sent", { count: sent });
     }
   } catch (error) {
     logger.error("Review request job error", { error });

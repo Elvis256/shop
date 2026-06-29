@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { X, Mail, Gift } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;

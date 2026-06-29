@@ -9,7 +9,7 @@ import Link from "next/link";
 import { ShoppingBag, X } from "lucide-react";
 import ProductImage from "@/components/ProductImage";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 const DISPLAY_INTERVAL = 15000;
 const DISMISS_DELAY = 5000;
 const LS_KEY = "live_feed_hidden";

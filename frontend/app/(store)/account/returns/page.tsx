@@ -49,7 +49,7 @@ export default function ReturnsPage() {
 
   const fetchReturns = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/returns`, {
+      const res = await fetch(`/api/returns`, {
         credentials: "include",
       });
       if (res.ok) {

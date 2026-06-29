@@ -18,9 +18,9 @@ const config: Config = {
     },
     extend: {
       fontFamily: {
-        sans: ["-apple-system", "BlinkMacSystemFont", "var(--font-inter)", "Inter", "system-ui", "sans-serif"],
-        head: ["-apple-system", "BlinkMacSystemFont", "var(--font-inter)", "SF Pro Display", "Inter", "sans-serif"],
-        body: ["-apple-system", "BlinkMacSystemFont", "var(--font-inter)", "SF Pro Text", "Inter", "sans-serif"],
+        sans: ["var(--font-inter)", "-apple-system", "BlinkMacSystemFont", "system-ui", "sans-serif"],
+        head: ["var(--font-outfit)", "var(--font-inter)", "-apple-system", "BlinkMacSystemFont", "system-ui", "sans-serif"],
+        body: ["var(--font-inter)", "-apple-system", "BlinkMacSystemFont", "system-ui", "sans-serif"],
       },
       colors: {
         bg: "rgb(var(--bg-rgb) / <alpha-value>)",

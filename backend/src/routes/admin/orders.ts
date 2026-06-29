@@ -2,13 +2,17 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
-import { sendShippingNotification, sendProcessingNotification, sendDeliveredNotification, sendCancelledNotification } from "../../lib/email";
 import { refundFlutterwaveTransaction } from "../../services/flutterwave";
-import { sendWhatsApp, sendOrderConfirmationWhatsApp, sendShippingUpdateWhatsApp, sendDeliveryConfirmationWhatsApp } from "../../services/whatsapp";
-import { sendSMS, sendOrderConfirmationSMS, sendShippingUpdateSMS } from "../../services/sms";
+import { confirmPaidOrder, releaseOrderStock } from "../../services/orderConfirmation";
+import { sendWhatsApp } from "../../services/whatsapp";
+import { sendSMS } from "../../services/sms";
+import { enqueueNotification } from "../../services/notificationDispatcher";
 import { logger } from "../../lib/logger";
 import { asyncHandler } from "../../middleware/errorHandler";
 import crypto from "crypto";
+import { awardPurchasePoints } from "../loyalty";
+import { approveAffiliateConversions } from "../../utils/affiliateHelper";
+import { parseShippingAddress } from "../../utils/shippingAddress";
 
 const router = Router();
 
@@ -80,6 +84,10 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
         include: {
           items: { select: { quantity: true } },
           payments: { select: { method: true, status: true } },
+          stockReservations: {
+            where: { released: false },
+            select: { expiresAt: true },
+          },
         },
       }),
       prisma.order.count({ where }),
@@ -102,6 +110,10 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
         giftAddressSet: o.giftAddressSet,
         giftMessage: o.giftMessage,
         giftRecipientPhone: o.giftRecipientPhone,
+        isSplitPayment: o.isSplitPayment,
+        splitPartnerPaid: o.splitPartnerPaid,
+        splitPaidAmount: o.splitPaidAmount,
+        expiresAt: o.stockReservations?.[0]?.expiresAt || null,
         createdAt: o.createdAt,
       })),
       pagination: {
@@ -114,6 +126,67 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   } catch (error) {
     logger.error("Admin get orders error", { error });
     return res.status(500).json({ error: "Failed to fetch orders" });
+  }
+}));
+
+// GET /api/admin/orders/export/csv — CSV export of orders
+router.get("/export/csv", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { status, paymentStatus, dateFrom, dateTo, sellerId } = req.query;
+    const where: any = {};
+    if (status) where.status = status;
+    if (paymentStatus) where.paymentStatus = paymentStatus;
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) where.createdAt.gte = new Date(dateFrom as string);
+      if (dateTo) where.createdAt.lte = new Date(dateTo as string);
+    }
+    if (sellerId) where.items = { some: { sellerId: sellerId as string } };
+
+    const MAX_CSV_EXPORT = 1000;
+    const orders = await prisma.order.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: MAX_CSV_EXPORT,
+      include: {
+        items: { select: { name: true, quantity: true, price: true, sellerId: true } },
+        payments: { select: { method: true, status: true } },
+      },
+    });
+
+    if (orders.length === MAX_CSV_EXPORT) {
+      res.setHeader("X-Export-Truncated", "true");
+      res.setHeader("X-Export-Limit", String(MAX_CSV_EXPORT));
+    }
+
+    const escape = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const header = "Order Number,Date,Customer Name,Email,Phone,Status,Payment Status,Payment Method,Items,Subtotal,Shipping,Tax,Total,Currency,Delivery Method,City";
+    const rows = orders.map((o) => [
+      escape(o.orderNumber),
+      o.createdAt.toISOString(),
+      escape(o.customerName),
+      escape(o.customerEmail),
+      escape(o.customerPhone || ""),
+      o.status,
+      o.paymentStatus,
+      o.payments[0]?.method || "",
+      o.items.map((i) => `${i.name} x${i.quantity}`).join("; "),
+      Number(o.totalAmount) - Number(o.shippingCost || 0) - Number(o.tax || 0),
+      Number(o.shippingCost || 0),
+      Number(o.tax || 0),
+      Number(o.totalAmount),
+      o.currency,
+      o.deliveryMethod || "home",
+      escape((o.shippingAddress || "").split("\n")[0]),
+    ].join(","));
+
+    const csv = [header, ...rows].join("\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="orders-${new Date().toISOString().split("T")[0]}.csv"`);
+    return res.send(csv);
+  } catch (error) {
+    logger.error("Admin export orders error", { error });
+    return res.status(500).json({ error: "Failed to export orders" });
   }
 }));
 
@@ -134,6 +207,10 @@ router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
         timeline: { orderBy: { createdAt: "desc" } },
         user: { select: { id: true, email: true, name: true } },
         coupon: { select: { code: true, type: true, value: true } },
+        stockReservations: {
+          where: { released: false },
+          select: { expiresAt: true },
+        },
       },
     });
 
@@ -141,11 +218,7 @@ router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "Order not found" });
     }
 
-    // Parse shippingAddress if stored as JSON string
-    let shippingAddress: any = order.shippingAddress;
-    if (typeof shippingAddress === "string") {
-      try { shippingAddress = JSON.parse(shippingAddress); } catch { /* keep as-is */ }
-    }
+    const shippingAddress = parseShippingAddress(order.shippingAddress);
 
     return res.json({
       id: order.id,
@@ -161,6 +234,12 @@ router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
       currency: order.currency,
       discreet: order.discreet,
       trackingNumber: order.trackingNumber,
+      isSplitPayment: order.isSplitPayment,
+      splitShowItems: order.splitShowItems,
+      splitPaidAmount: order.splitPaidAmount,
+      splitPartnerPhone: order.splitPartnerPhone,
+      splitPartnerPaid: order.splitPartnerPaid,
+      expiresAt: order.stockReservations?.[0]?.expiresAt || null,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       customer: order.user
@@ -203,7 +282,7 @@ router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
 router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, note, trackingNumber } = z
+    const { status, note, trackingNumber, force } = z
       .object({
         status: z.enum([
           "PENDING",
@@ -216,16 +295,26 @@ router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) =
         ]),
         note: z.string().optional(),
         trackingNumber: z.string().optional(),
+        // FIX M1: force flag allows admin to explicitly override payment checks
+        force: z.boolean().optional().default(false),
       })
       .parse(req.body);
 
     const order = await prisma.order.findUnique({
       where: { id },
-      include: { items: true },
+      include: { items: true, coupon: true },
     });
 
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
+    }
+
+    // FIX M1: Guard PENDING→CONFIRMED without payment verification
+    if (status === "CONFIRMED" && order.paymentStatus !== "SUCCESSFUL" && !force) {
+      return res.status(400).json({
+        error: `Cannot confirm an unpaid order (paymentStatus: ${order.paymentStatus}). Pass force=true to override.`,
+        requiresForce: true,
+      });
     }
 
     // Validate state transition — prevent invalid status changes
@@ -266,6 +355,35 @@ router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) =
         },
       });
 
+      // Refund store credit if order is CANCELLED or REFUNDED
+      if (status === "CANCELLED" || status === "REFUNDED") {
+        const { refundStoreCreditForOrder } = await import("../../utils/storeCredit");
+        await refundStoreCreditForOrder(tx, id);
+      }
+
+      // FIX C1: Decrement coupon usedCount when order is cancelled
+      if ((status === "CANCELLED") && order.couponId) {
+        await tx.coupon.update({
+          where: { id: order.couponId },
+          data: { usedCount: { decrement: 1 } },
+        });
+      }
+
+      // FIX C2: Restore gift card balance when order is cancelled
+      if (status === "CANCELLED") {
+        const gcRedemption = await tx.giftCardRedemption.findFirst({
+          where: { orderId: id },
+        });
+        if (gcRedemption) {
+          await tx.giftCard.update({
+            where: { id: gcRedemption.giftCardId },
+            data: { currentValue: { increment: Number(gcRedemption.amount) }, isActive: true },
+          });
+          await tx.giftCardRedemption.delete({ where: { id: gcRedemption.id } });
+          logger.info("gift_card_restored_on_admin_cancel", { orderId: id, giftCardId: gcRedemption.giftCardId, amount: gcRedemption.amount });
+        }
+      }
+
       // Create escrow when order is CONFIRMED (payment verified)
       if (status === "CONFIRMED" && order.paymentStatus === "SUCCESSFUL") {
         const existingEscrow = await tx.escrowTransaction.findUnique({ where: { orderId: id } });
@@ -291,57 +409,54 @@ router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) =
             data: { releaseDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
           });
         }
+        await approveAffiliateConversions(id, tx);
       }
     });
 
-    // Send shipping notification if shipped
-    if (status === "SHIPPED") {
-      const updatedOrder = await prisma.order.findUnique({
-        where: { id },
-        include: { items: true },
-      });
+    // Dispatch notifications via centralized dispatcher
+    const eventMap: Record<string, string> = {
+      PROCESSING: "ORDER_PROCESSING",
+      SHIPPED: "ORDER_SHIPPED",
+      DELIVERED: "ORDER_DELIVERED",
+      CONFIRMED: "ORDER_RECEIVED",
+    };
+    const notifEvent = eventMap[status];
+    if (notifEvent) {
+      const updatedOrder = status === "SHIPPED"
+        ? await prisma.order.findUnique({ where: { id }, include: { items: true } })
+        : order;
       if (updatedOrder) {
-        sendShippingNotification(updatedOrder);
+        enqueueNotification({
+          event: notifEvent as any,
+          recipientEmail: updatedOrder.customerEmail || undefined,
+          recipientPhone: updatedOrder.customerPhone || undefined,
+          recipientUserId: updatedOrder.userId || undefined,
+          orderId: id,
+          data: {
+            customerName: updatedOrder.customerName,
+            orderNumber: updatedOrder.orderNumber,
+            orderId: id,
+            total: Number(updatedOrder.totalAmount),
+            currency: updatedOrder.currency || "UGX",
+            trackingNumber: (updatedOrder as any).trackingNumber || trackingNumber,
+            estimatedDelivery: "2-3 business days",
+          },
+        }).catch((err) => logger.error("Notification dispatch failed", { error: err }));
       }
     }
 
-    // Send processing notification
-    if (status === "PROCESSING") {
-      sendProcessingNotification(order).catch(err => logger.error('send_processing_notification_failed', { error: err }));
-    }
-
-    // Send delivered notification
-    if (status === "DELIVERED") {
-      sendDeliveredNotification(order).catch(err => logger.error('send_delivered_notification_failed', { error: err }));
-    }
-
-    // WhatsApp & SMS notifications (fire-and-forget)
-    if (order.customerPhone) {
-      if (status === "CONFIRMED") {
-        sendOrderConfirmationWhatsApp(order.customerPhone, order.orderNumber, order.totalAmount.toString()).catch(() => {});
-        sendOrderConfirmationSMS(order.customerPhone, order.orderNumber, order.totalAmount.toString()).catch(() => {});
-      }
-      if (status === "SHIPPED") {
-        sendShippingUpdateWhatsApp(order.customerPhone, order.orderNumber, order.trackingNumber || undefined).catch(() => {});
-        sendShippingUpdateSMS(order.customerPhone, order.orderNumber).catch(() => {});
-
-        // Auto-generate delivery OTP for COD (unpaid) orders
-        if (order.paymentStatus === "PENDING") {
-          const otp = crypto.randomInt(100000, 999999).toString();
-          const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
-          prisma.order.update({
-            where: { id },
-            data: { deliveryOtp: otp, deliveryOtpExpiry: expiry },
-          }).then(() => {
-            const msg = `Your delivery verification code for order ${order.orderNumber} is: ${otp}. Share this with the delivery agent upon receipt. Valid for 24 hours.`;
-            sendWhatsApp({ to: order.customerPhone!, text: msg }).catch(() => {});
-            sendSMS(order.customerPhone!, msg).catch(() => {});
-          }).catch(err => logger.error("Auto OTP generation failed", { error: err }));
-        }
-      }
-      if (status === "DELIVERED") {
-        sendDeliveryConfirmationWhatsApp(order.customerPhone, order.orderNumber).catch(() => {});
-      }
+    // Auto-generate delivery OTP for COD (unpaid) orders when shipped
+    if (status === "SHIPPED" && order.customerPhone && order.paymentStatus === "PENDING") {
+      const otp = crypto.randomInt(100000, 999999).toString();
+      const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      prisma.order.update({
+        where: { id },
+        data: { deliveryOtp: otp, deliveryOtpExpiry: expiry },
+      }).then(() => {
+        const msg = `Your delivery verification code for order ${order.orderNumber} is: ${otp}. Share this with the delivery agent upon receipt. Valid for 24 hours.`;
+        sendWhatsApp({ to: order.customerPhone!, text: msg }).catch(() => {});
+        sendSMS(order.customerPhone!, msg).catch(() => {});
+      }).catch(err => logger.error("Auto OTP generation failed", { error: err }));
     }
 
     // Restore inventory if cancelled
@@ -363,28 +478,37 @@ router.put("/:id/status", asyncHandler(async (req: AuthRequest, res: Response) =
         // are released below.
         if (order.paymentStatus === "SUCCESSFUL") {
           for (const item of order.items) {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: { stock: { increment: item.quantity } },
-            });
+            if (item.variantId) {
+              await tx.productVariant.update({
+                where: { id: item.variantId },
+                data: { stock: { increment: item.quantity } },
+              });
+            } else {
+              await tx.product.update({
+                where: { id: item.productId },
+                data: { stock: { increment: item.quantity } },
+              });
+            }
           }
         }
-        // Release stock reservations
-        const reservations = await tx.stockReservation.findMany({
-          where: { orderId: id, released: false },
-        });
-        for (const reservation of reservations) {
-          await tx.product.update({
-            where: { id: reservation.productId },
-            data: { reservedStock: { decrement: reservation.quantity } },
-          });
-          await tx.stockReservation.update({
-            where: { id: reservation.id },
-            data: { released: true },
-          });
-        }
+        // Release stock reservations (handles variants)
+        await releaseOrderStock(tx, id);
       });
-      sendCancelledNotification(order, note).catch(err => logger.error('send_cancelled_notification_failed', { error: err }));
+      enqueueNotification({
+        event: "ORDER_CANCELLED",
+        recipientEmail: order.customerEmail || undefined,
+        recipientPhone: order.customerPhone || undefined,
+        recipientUserId: order.userId || undefined,
+        orderId: id,
+        data: {
+          customerName: order.customerName,
+          orderNumber: order.orderNumber,
+          orderId: id,
+          total: Number(order.totalAmount),
+          currency: order.currency || "UGX",
+          reason: note,
+        },
+      }).catch(err => logger.error('notification_dispatch_cancelled_failed', { error: err }));
     }
 
     return res.json({ message: "Order status updated" });
@@ -412,23 +536,29 @@ router.post("/:id/mark-paid", asyncHandler(async (req: AuthRequest, res: Respons
       return res.status(400).json({ error: "Payment is already marked as successful" });
     }
 
-    await prisma.$transaction([
-      prisma.order.update({
-        where: { id },
-        data: { paymentStatus: "SUCCESSFUL" },
-      }),
-      prisma.payment.updateMany({
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
         where: { orderId: id },
         data: { status: "SUCCESSFUL" },
-      }),
-      prisma.orderEvent.create({
+      });
+
+      await confirmPaidOrder(tx, id);
+
+      await tx.orderEvent.create({
         data: {
           orderId: id,
           status: "PAYMENT_RECEIVED",
           note: "Payment received and confirmed by admin",
         },
-      }),
-    ]);
+      });
+    });
+
+
+    // Award loyalty points to the customer
+    if (order.userId) {
+      awardPurchasePoints(order.userId, Number(order.totalAmount), order.id)
+        .catch(err => logger.error("Failed to award purchase points on mark-paid", { error: err }));
+    }
 
     return res.json({ message: "Payment marked as successful" });
   } catch (error) {
@@ -525,14 +655,39 @@ router.post("/:id/refund", asyncHandler(async (req: AuthRequest, res: Response) 
         },
       });
 
-      // Restore inventory inside transaction
-      for (const item of order.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        });
+      // FIX C3: Only restore inventory on full refunds to prevent phantom inventory.
+      // Partial refunds (amount < order total) must not restore stock, because
+      // we cannot know which specific items are being returned.
+      const isFullRefund = !amount || refundAmount >= Number(order.totalAmount);
+      if (isFullRefund) {
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+      } else {
+        logger.info("partial_refund_stock_not_restored", { orderId: id, refundAmount, orderTotal: Number(order.totalAmount) });
       }
     });
+
+    // Notify customer about refund
+    enqueueNotification({
+      event: "ORDER_REFUNDED",
+      recipientEmail: order.customerEmail || undefined,
+      recipientPhone: order.customerPhone || undefined,
+      recipientUserId: order.userId || undefined,
+      orderId: id,
+      data: {
+        customerName: order.customerName,
+        orderNumber: order.orderNumber,
+        orderId: id,
+        refundAmount: refundAmount,
+        total: Number(order.totalAmount),
+        currency: order.currency || "UGX",
+        reason,
+      },
+    }).catch(err => logger.error("Refund notification failed", { error: err }));
 
     // Log admin activity
     await prisma.activityLog.create({

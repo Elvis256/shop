@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
@@ -11,7 +11,44 @@ import {
 } from "lucide-react";
 
 import type { OrderListItem } from "@/lib/types/api";
-type Order = OrderListItem;
+
+interface Order extends OrderListItem {
+  isSplitPayment?: boolean;
+  splitPartnerPaid?: boolean;
+  splitPaidAmount?: number | string;
+  expiresAt?: string | null;
+}
+
+function ReservationCountdown({ expiresAt }: { expiresAt: string }) {
+  const [timeLeft, setTimeLeft] = useState<string>("");
+
+  useEffect(() => {
+    const update = () => {
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeLeft("Expired");
+        return;
+      }
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${mins}m ${secs}s`);
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [expiresAt]);
+
+  if (timeLeft === "Expired") {
+    return <span className="text-red-500 font-medium text-xs mt-0.5">Timeout</span>;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100 mt-1">
+      <Clock className="w-3 h-3 shrink-0" />
+      {timeLeft}
+    </span>
+  );
+}
 
 const statusConfig: Record<string, { bg: string; dot: string }> = {
   DELIVERED: { bg: "bg-green-50 text-green-700 border-green-200", dot: "bg-green-500" },
@@ -47,6 +84,9 @@ export default function AdminOrdersPage() {
   const [dateTo, setDateTo] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState("");
+  // FIX H9: Track bulk confirmation state
+  const [bulkConfirming, setBulkConfirming] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ success: number; failed: number } | null>(null);
   const [pagination, setPagination] = useState({ total: 0, page: 1, totalPages: 1 });
   const [giftFilter, setGiftFilter] = useState(false);
   const [quickActing, setQuickActing] = useState<string | null>(null);
@@ -84,34 +124,61 @@ export default function AdminOrdersPage() {
     };
     const newStatus = statusMap[bulkAction];
     if (!newStatus) return;
-    await Promise.all(selectedIds.map((id) => api.admin.updateOrderStatus(id, newStatus)));
+
+    // FIX H9: Show confirmation before executing bulk action
+    if (!bulkConfirming) {
+      setBulkConfirming(true);
+      return;
+    }
+
+    // FIX H9: Per-order error handling instead of fire-and-forget Promise.all
+    setBulkConfirming(false);
+    setBulkResult(null);
+    let success = 0;
+    let failed = 0;
+    for (const id of selectedIds) {
+      try {
+        await api.admin.updateOrderStatus(id, newStatus);
+        success++;
+      } catch {
+        failed++;
+      }
+    }
+    setBulkResult({ success, failed });
     setSelectedIds([]);
     setBulkAction("");
     loadOrders();
   };
 
-  const exportCSV = () => {
-    const rows = [
-      ["Order #", "Customer", "Email", "Items", "Total", "Currency", "Status", "Payment Status", "Payment Method", "Date"],
-      ...orders.map((o) => [
-        o.orderNumber,
-        o.customerName,
-        o.customerEmail,
-        String(o.itemCount),
-        String(o.totalAmount),
-        o.currency || "UGX",
-        o.status,
-        o.paymentStatus,
-        o.paymentMethod || "",
-        new Date(o.createdAt).toLocaleDateString(),
-      ]),
-    ];
-    const csv = rows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `orders-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
+  const exportCSV = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter) params.set("status", statusFilter);
+      const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
+      const resp = await fetch(`${API_URL}/api/admin/orders/export/csv?${params.toString()}`, { credentials: "include" });
+      if (!resp.ok) throw new Error("Export failed");
+      const blob = await resp.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `orders-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+    } catch {
+      // Fallback to client-side export of current page
+      const rows = [
+        ["Order #", "Customer", "Email", "Items", "Total", "Currency", "Status", "Payment Status", "Payment Method", "Date"],
+        ...orders.map((o) => [
+          o.orderNumber, o.customerName, o.customerEmail, String(o.itemCount),
+          String(o.totalAmount), o.currency || "UGX", o.status, o.paymentStatus,
+          o.paymentMethod || "", new Date(o.createdAt).toLocaleDateString(),
+        ]),
+      ];
+      const csv = rows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `orders-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -268,25 +335,50 @@ export default function AdminOrdersPage() {
 
       {/* Bulk Actions */}
       {selectedIds.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-4">
-          <span className="text-sm text-blue-700 font-medium">{selectedIds.length} selected</span>
-          <select
-            className="input w-48 text-sm"
-            value={bulkAction}
-            onChange={(e) => setBulkAction(e.target.value)}
-          >
-            <option value="">Bulk Action</option>
-            <option value="confirmed">Mark as Confirmed</option>
-            <option value="processing">Mark as Processing</option>
-            <option value="shipped">Mark as Shipped</option>
-            <option value="delivered">Mark as Delivered</option>
-          </select>
-          <button onClick={applyBulkAction} disabled={!bulkAction} className="btn-primary text-sm py-1.5">
-            Apply
-          </button>
-          <button onClick={() => setSelectedIds([])} className="text-sm text-blue-600 hover:underline ml-auto">
-            Clear
-          </button>
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex flex-col gap-2">
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-blue-700 font-medium">{selectedIds.length} selected</span>
+            <select
+              className="input w-48 text-sm"
+              value={bulkAction}
+              onChange={(e) => { setBulkAction(e.target.value); setBulkConfirming(false); }}
+            >
+              <option value="">Bulk Action</option>
+              <option value="confirmed">Mark as Confirmed</option>
+              <option value="processing">Mark as Processing</option>
+              <option value="shipped">Mark as Shipped</option>
+              <option value="delivered">Mark as Delivered</option>
+            </select>
+            {/* FIX H9: Two-step confirmation */}
+            {bulkConfirming ? (
+              <span className="flex items-center gap-2">
+                <span className="text-sm text-orange-700 font-semibold">
+                  Update {selectedIds.length} orders to {bulkAction.toUpperCase()}?
+                </span>
+                <button onClick={applyBulkAction} className="btn-primary text-sm py-1.5 bg-orange-600">
+                  Confirm
+                </button>
+                <button onClick={() => { setBulkConfirming(false); setBulkAction(""); }} className="text-sm text-gray-600 hover:underline">
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button onClick={applyBulkAction} disabled={!bulkAction} className="btn-primary text-sm py-1.5">
+                Apply
+              </button>
+            )}
+            <button onClick={() => { setSelectedIds([]); setBulkConfirming(false); }} className="text-sm text-blue-600 hover:underline ml-auto">
+              Clear
+            </button>
+          </div>
+          {/* FIX H9: Show per-order result summary */}
+          {bulkResult && (
+            <div className={`text-xs px-3 py-2 rounded-lg border flex items-center gap-2 ${bulkResult.failed > 0 ? "bg-red-50 border-red-200 text-red-700" : "bg-green-50 border-green-200 text-green-700"}`}>
+              ✓ {bulkResult.success} updated successfully
+              {bulkResult.failed > 0 && ` · ✗ ${bulkResult.failed} failed (check order status constraints)`}
+              <button onClick={() => setBulkResult(null)} className="ml-auto text-current opacity-60 hover:opacity-100">✕</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -349,9 +441,14 @@ export default function AdminOrdersPage() {
                   </td>
                   <td className="p-4">
                     <Link href={`/admin/orders/${order.id}`} className="hover:text-primary transition-colors">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="font-medium text-sm">#{order.orderNumber.split("-").slice(-1)[0]}</p>
                         {order.isGift && <span title="Gift order"><Gift className="w-3.5 h-3.5 text-pink-500" /></span>}
+                        {order.isSplitPayment && (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 font-semibold" title="Split Payment">
+                            SPLIT
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-gray-400">{order.itemCount} item{order.itemCount !== 1 ? "s" : ""}</p>
                     </Link>
@@ -376,7 +473,12 @@ export default function AdminOrdersPage() {
                     )}
                   </td>
                   <td className="p-4">
-                    {getStatusBadge(order.status)}
+                    <div className="flex flex-col items-start gap-1">
+                      {getStatusBadge(order.status)}
+                      {order.status === "PENDING" && order.expiresAt && (
+                        <ReservationCountdown expiresAt={order.expiresAt} />
+                      )}
+                    </div>
                   </td>
                   <td className="p-4 text-xs text-gray-400">
                     {new Date(order.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}

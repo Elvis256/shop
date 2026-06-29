@@ -16,7 +16,7 @@ import {
   Loader2,
 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface Category {
   id: string;
@@ -375,7 +375,7 @@ export default function CategoriesPage() {
                     {imagePreview ? (
                       <div className="relative group">
                         <img
-                          src={imagePreview.startsWith("data:") ? imagePreview : `${API_URL}${imagePreview}`}
+                          src={imagePreview.startsWith("data:") || imagePreview.startsWith("http") ? imagePreview : `${API_URL}${imagePreview}`}
                           alt="Preview"
                           className="w-full h-40 object-cover rounded-lg border border-gray-200"
                         />

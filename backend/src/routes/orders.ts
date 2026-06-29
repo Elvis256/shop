@@ -1,15 +1,47 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, optionalAuth } from "../middleware/auth";
-import { sendCancelledNotification } from "../lib/email";
+import { enqueueNotification } from "../services/notificationDispatcher";
 import { Decimal } from "@prisma/client/runtime/library";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { approveAffiliateConversions } from "../utils/affiliateHelper";
+import { reserveStock } from "../utils/stockReservation";
+import { parseShippingAddress } from "../utils/shippingAddress";
+import { releaseOrderStock } from "../services/orderConfirmation";
+import redis from "../lib/redis";
 
 const router = Router();
 
+// Redis-backed rate limiter for public order tracking (30 req/min per IP)
+// Falls back to in-memory if Redis is unavailable
+const trackRateLimitFallback = new Map<string, { count: number; resetAt: number }>();
+async function trackRateLimit(req: Request, res: Response, next: NextFunction) {
+  const ip = (req.headers["x-forwarded-for"] as string || req.ip || "").split(",")[0].trim();
+  const key = `rl:track:${ip}`;
+
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) await redis.expire(key, 60);
+    if (count > 30) {
+      return res.status(429).json({ error: "Too many requests. Please wait a moment before trying again." });
+    }
+  } catch {
+    // Fallback to in-memory if Redis is unavailable
+    const now = Date.now();
+    const entry = trackRateLimitFallback.get(ip) || { count: 0, resetAt: now + 60_000 };
+    if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + 60_000; }
+    entry.count++;
+    trackRateLimitFallback.set(ip, entry);
+    if (entry.count > 30) {
+      return res.status(429).json({ error: "Too many requests. Please wait a moment before trying again." });
+    }
+  }
+  next();
+}
+
 // GET /api/orders/track/:orderNumber - Track order (requires email for verification)
-router.get("/track/:orderNumber", asyncHandler(async (req: Request, res: Response) => {
+router.get("/track/:orderNumber", trackRateLimit, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { orderNumber } = req.params;
     const email = (req.query.email as string || "").toLowerCase().trim();
@@ -60,11 +92,7 @@ router.get("/track/:orderNumber", asyncHandler(async (req: Request, res: Respons
 
     const currentStatusIndex = statusSteps.findIndex((s) => s.status === order.status);
 
-    // Parse shippingAddress if stored as JSON string
-    let shippingAddress: any = order.shippingAddress;
-    if (typeof shippingAddress === "string") {
-      try { shippingAddress = JSON.parse(shippingAddress); } catch { /* keep as-is */ }
-    }
+    const shippingAddress = parseShippingAddress(order.shippingAddress);
 
     const paymentMethodLabels: Record<string, string> = {
       CARD: "Credit/Debit Card",
@@ -84,13 +112,20 @@ router.get("/track/:orderNumber", asyncHandler(async (req: Request, res: Respons
       customerName: order.customerName?.split(" ")[0] || "Customer",
       trackingNumber: order.trackingNumber,
       discreet: order.discreet,
-      items: order.items.map((item) => ({
-        name: item.name,
-        productSlug: item.product.slug,
-        quantity: item.quantity,
-        price: item.price,
-        imageUrl: item.product.images?.[0]?.url || null,
-      })),
+      items: order.items.map((item) => {
+        const isMasked = (order as any).receiptMasked;
+        return {
+          name: isMasked 
+            ? `Discreet Wellness Item (PZ-${(item.productId || item.id).substring(0, 4).toUpperCase()})` 
+            : item.name,
+          productSlug: isMasked 
+            ? `discreet-item-${(item.productId || item.id).substring(0, 4)}` 
+            : item.product.slug,
+          quantity: item.quantity,
+          price: item.price,
+          imageUrl: isMasked ? null : (item.product.images?.[0]?.url || null),
+        };
+      }),
       subtotal: order.subtotal,
       shipping: order.shippingCost,
       discount: order.discount,
@@ -114,26 +149,87 @@ router.get("/track/:orderNumber", asyncHandler(async (req: Request, res: Respons
   }
 }));
 
+// GET /api/orders/by-ref/:txRef — Resolve a Flutterwave tx_ref to an order summary
+// Used by the checkout success page when the customer returns from Flutterwave.
+router.get("/by-ref/:txRef", asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { txRef } = req.params;
+    if (!txRef) {
+      return res.status(400).json({ error: "Transaction reference required" });
+    }
+
+    // Some tx_refs are stored as flwRef on the Payment record.
+    const payment = await prisma.payment.findFirst({
+      where: { flwRef: txRef },
+      select: { orderId: true },
+    });
+
+    let orderId: string | null = payment?.orderId || null;
+
+    // Fallback: parse well-known tx_ref prefixes to extract the order id.
+    if (!orderId) {
+      if (txRef.startsWith("split-init-") || txRef.startsWith("split-part-")) {
+        // format: prefix-{orderId}
+        orderId = txRef.split("-").slice(2).join("-");
+      } else {
+        // Normal checkout uses the order id directly as tx_ref.
+        orderId = txRef;
+      }
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        paymentStatus: true,
+        totalAmount: true,
+        currency: true,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    return res.json(order);
+  } catch (error) {
+    logger.error("Resolve order by ref error", { error });
+    return res.status(500).json({ error: "Failed to resolve order" });
+  }
+}));
+
 // GET /api/orders/:id/payment-status — Poll payment status (auth + ownership)
+// GET /api/orders/:id/payment-status
+// FIX C4: Require email/phone verification for guest orders to prevent IDOR via semi-predictable CUIDs.
 router.get("/:id/payment-status", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const order = await prisma.order.findUnique({
       where: { id: req.params.id },
-      select: { paymentStatus: true, status: true, orderNumber: true, userId: true, customerEmail: true },
+      select: { paymentStatus: true, status: true, orderNumber: true, userId: true, customerEmail: true, customerPhone: true },
     });
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
     }
-    // Verify ownership: user must own the order or match the email.
-    // For guest checkouts (no user), allow access by order ID (UUIDs are unguessable)
-    // since the caller just created the order and has the ID.
     const user = req.user;
     const isOwner = user && (order.userId === user.id || order.customerEmail === user.email);
     const isAdmin = user && (user.role === "ADMIN" || user.role === "MANAGER");
-    const isGuestOrder = !order.userId;
-    if (!isOwner && !isAdmin && !isGuestOrder) {
-      return res.status(404).json({ error: "Order not found" });
+
+    if (!isOwner && !isAdmin) {
+      // FIX C4: Guest order — require email or phone verification token
+      const verifyEmail = ((req.query.email as string) || "").toLowerCase().trim();
+      const verifyPhone = ((req.query.phone as string) || "").replace(/\s+/g, "");
+      const emailMatch = verifyEmail && order.customerEmail.toLowerCase() === verifyEmail;
+      const phoneMatch = verifyPhone && order.customerPhone &&
+        order.customerPhone.replace(/\s+/g, "") === verifyPhone;
+
+      if (!emailMatch && !phoneMatch) {
+        // Return 404 rather than 403 to avoid confirming the order exists
+        return res.status(404).json({ error: "Order not found" });
+      }
     }
+
     return res.json({
       paymentStatus: order.paymentStatus,
       status: order.status,
@@ -144,8 +240,8 @@ router.get("/:id/payment-status", optionalAuth, asyncHandler(async (req: AuthReq
   }
 }));
 
-// GET /api/orders/:id — requires authentication + ownership check
-router.get("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+// GET /api/orders/:id — authenticated owners, admins, or verified guests
+router.get("/:id", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -179,19 +275,27 @@ router.get("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Resp
       return res.status(404).json({ error: "Order not found" });
     }
 
-    // Verify ownership: user must own the order or be an admin
+    // Verify ownership: user must own the order, be an admin, or pass guest verification
     const user = req.user;
     const isOwner = user && (order.userId === user.id || order.customerEmail === user.email);
     const isAdmin = user && (user.role === "ADMIN" || user.role === "MANAGER");
+    let isVerifiedGuest = false;
+
     if (!isOwner && !isAdmin) {
-      return res.status(403).json({ error: "Not authorized to view this order" });
+      const verifyEmail = ((req.query.email as string) || "").toLowerCase().trim();
+      const verifyPhone = ((req.query.phone as string) || "").replace(/\s+/g, "");
+      const emailMatch = verifyEmail && order.customerEmail.toLowerCase() === verifyEmail;
+      const phoneMatch = verifyPhone && order.customerPhone &&
+        order.customerPhone.replace(/\s+/g, "") === verifyPhone;
+
+      if (!emailMatch && !phoneMatch) {
+        // Return 404 rather than 403 to avoid confirming the order exists
+        return res.status(404).json({ error: "Order not found" });
+      }
+      isVerifiedGuest = true;
     }
 
-    // Parse shippingAddress if stored as JSON string
-    let shippingAddress = order.shippingAddress;
-    if (typeof shippingAddress === "string") {
-      try { shippingAddress = JSON.parse(shippingAddress); } catch { /* keep as-is */ }
-    }
+    const shippingAddress = parseShippingAddress(order.shippingAddress);
 
     return res.json({
       id: order.id,
@@ -207,16 +311,28 @@ router.get("/:id", authenticate, asyncHandler(async (req: AuthRequest, res: Resp
       trackingNumber: order.trackingNumber,
       customerName: order.customerName,
       customerEmail: order.customerEmail,
+      deliveryMethod: (order as any).deliveryMethod || null,
       shippingAddress,
-      items: order.items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        productName: item.name || item.product.name,
-        productSlug: item.product.slug,
-        quantity: item.quantity,
-        price: item.price,
-        imageUrl: item.product.images?.[0]?.url || null,
-      })),
+      isSplitPayment: order.isSplitPayment,
+      splitPaidAmount: order.splitPaidAmount,
+      splitPartnerPhone: order.splitPartnerPhone,
+      splitPartnerPaid: order.splitPartnerPaid,
+      items: order.items.map((item) => {
+        const isMasked = (order as any).receiptMasked;
+        return {
+          id: item.id,
+          productId: item.productId,
+          productName: isMasked 
+            ? `Discreet Wellness Item (PZ-${(item.productId || item.id).substring(0, 4).toUpperCase()})` 
+            : (item.name || item.product.name),
+          productSlug: isMasked 
+            ? `discreet-item-${(item.productId || item.id).substring(0, 4)}` 
+            : item.product.slug,
+          quantity: item.quantity,
+          price: item.price,
+          imageUrl: isMasked ? null : (item.product.images?.[0]?.url || null),
+        };
+      }),
       payments: order.payments,
       events: order.timeline.map((e) => ({
         id: e.id,
@@ -303,9 +419,9 @@ router.post("/:id/reorder", authenticate, asyncHandler(async (req: AuthRequest, 
     // Add each order item to the cart
     for (const item of order.items) {
       await prisma.cartItem.upsert({
-        where: { cartId_productId: { cartId: cart.id, productId: item.productId } },
+        where: { cartId_productId_variantId: { cartId: cart.id, productId: item.productId, variantId: item.variantId || null } },
         update: { quantity: { increment: item.quantity } },
-        create: { cartId: cart.id, productId: item.productId, quantity: item.quantity },
+        create: { cartId: cart.id, productId: item.productId, variantId: item.variantId || null, quantity: item.quantity },
       });
     }
 
@@ -359,7 +475,7 @@ router.post("/:id/cancel", authenticate, asyncHandler(async (req: AuthRequest, r
 
     const order = await prisma.order.findUnique({
       where: { id },
-      include: { items: true },
+      include: { items: true, coupon: true },
     });
 
     if (!order) {
@@ -385,6 +501,30 @@ router.post("/:id/cancel", authenticate, asyncHandler(async (req: AuthRequest, r
         data: { status: "CANCELLED", paymentStatus: order.paymentStatus === "SUCCESSFUL" ? "REFUNDED" : "FAILED" },
       });
 
+      const { refundStoreCreditForOrder } = await import("../utils/storeCredit");
+      await refundStoreCreditForOrder(tx, id);
+
+      // FIX C1: Decrement coupon usedCount on cancellation
+      if (order.couponId) {
+        await tx.coupon.update({
+          where: { id: order.couponId },
+          data: { usedCount: { decrement: 1 } },
+        });
+      }
+
+      // FIX C2: Restore gift card balance on cancellation
+      const gcRedemption = await tx.giftCardRedemption.findFirst({
+        where: { orderId: id },
+      });
+      if (gcRedemption) {
+        const restoredGc = await tx.giftCard.update({
+          where: { id: gcRedemption.giftCardId },
+          data: { currentValue: { increment: Number(gcRedemption.amount) }, isActive: true },
+        });
+        await tx.giftCardRedemption.delete({ where: { id: gcRedemption.id } });
+        logger.info("gift_card_restored_on_cancel", { orderId: id, giftCardId: gcRedemption.giftCardId, amount: gcRedemption.amount });
+      }
+
       // Update payment status
       await tx.payment.updateMany({
         where: { orderId: id },
@@ -403,31 +543,40 @@ router.post("/:id/cancel", authenticate, asyncHandler(async (req: AuthRequest, r
       // Restore stock only if it was actually decremented (paid orders)
       if (order.paymentStatus === "SUCCESSFUL") {
         for (const item of order.items) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
-          });
+          if (item.variantId) {
+            await tx.productVariant.update({
+              where: { id: item.variantId },
+              data: { stock: { increment: item.quantity } },
+            });
+          } else {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
+          }
         }
       }
 
-      // Release stock reservations
-      const reservations = await tx.stockReservation.findMany({
-        where: { orderId: id, released: false },
-      });
-      for (const reservation of reservations) {
-        await tx.product.update({
-          where: { id: reservation.productId },
-          data: { reservedStock: { decrement: reservation.quantity } },
-        });
-        await tx.stockReservation.update({
-          where: { id: reservation.id },
-          data: { released: true },
-        });
-      }
+      // Release stock reservations (handles variants)
+      await releaseOrderStock(tx, id);
     });
 
-    // Send cancellation email
-    sendCancelledNotification(order, "Cancelled by customer").catch(err => logger.error('send_cancelled_notification_failed', { error: err }));
+    // Send cancellation notifications (email + SMS + WhatsApp + push)
+    enqueueNotification({
+      event: "ORDER_CANCELLED",
+      recipientEmail: order.customerEmail || undefined,
+      recipientPhone: order.customerPhone || undefined,
+      recipientUserId: order.userId || undefined,
+      orderId: id,
+      data: {
+        customerName: order.customerName,
+        orderNumber: order.orderNumber,
+        orderId: id,
+        total: Number(order.totalAmount),
+        currency: order.currency || "UGX",
+        reason: "Cancelled by customer",
+      },
+    }).catch(err => logger.error('cancel_notification_failed', { error: err }));
 
     return res.json({ message: "Order cancelled successfully" });
   } catch (error) {
@@ -487,13 +636,20 @@ router.put("/:id/modify", authenticate, asyncHandler(async (req: AuthRequest, re
         // Release stock reservations for removed items
         for (const item of removedItems) {
           const reservation = await tx.stockReservation.findFirst({
-            where: { orderId: id, productId: item.productId, released: false },
+            where: { orderId: id, productId: item.productId, variantId: item.variantId || null, released: false },
           });
           if (reservation) {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: { reservedStock: { decrement: reservation.quantity } },
-            });
+            if (reservation.variantId) {
+              await tx.productVariant.update({
+                where: { id: reservation.variantId },
+                data: { reservedStock: { decrement: reservation.quantity } },
+              });
+            } else {
+              await tx.product.update({
+                where: { id: item.productId },
+                data: { reservedStock: { decrement: reservation.quantity } },
+              });
+            }
             await tx.stockReservation.update({
               where: { id: reservation.id },
               data: { released: true },
@@ -507,43 +663,47 @@ router.put("/:id/modify", authenticate, asyncHandler(async (req: AuthRequest, re
         for (const item of addItems) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) continue;
+
+          // FIX H4: Reject archived, draft, or pending-review products
+          const allowedStatuses = ["ACTIVE", "PUBLISHED"];
+          if (!allowedStatuses.includes(product.status)) {
+            throw new Error(`"${product.name}" is not available for purchase (status: ${product.status}).`);
+          }
+
           const qty = item.quantity;
           if (!qty || qty < 1 || !Number.isInteger(qty)) {
             throw new Error(`Invalid quantity for "${product.name}". Must be a positive integer.`);
           }
 
-          // Check available stock before adding
-          if (product.trackInventory && !product.allowBackorder) {
-            const available = product.stock - (product.reservedStock || 0);
-            if (available < qty) {
-              throw new Error(`Insufficient stock for "${product.name}". Available: ${available}`);
-            }
+          const variant = item.variantId
+            ? await tx.productVariant.findUnique({ where: { id: item.variantId } })
+            : null;
+          if (item.variantId && (!variant || variant.productId !== product.id)) {
+            throw new Error(`Selected variant for "${product.name}" is not available.`);
           }
 
           await tx.orderItem.create({
             data: {
               orderId: id,
               productId: item.productId,
-              name: product.name,
-              price: product.price,
+              variantId: item.variantId || null,
+              name: variant ? `${product.name} — ${variant.name}` : product.name,
+              price: variant?.price ?? product.price,
               quantity: qty,
             },
           });
 
-          // Create stock reservation for added item
+          // Atomically reserve stock using the shared helper
           if (product.trackInventory && !product.allowBackorder) {
-            await tx.stockReservation.create({
-              data: {
-                orderId: id,
-                productId: item.productId,
-                quantity: qty,
-                expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 min, consistent with checkout
-              },
-            });
-            await tx.product.update({
-              where: { id: item.productId },
-              data: { reservedStock: { increment: qty } },
-            });
+            const reserveResult = await reserveStock(tx, [{
+              productId: item.productId,
+              variantId: item.variantId || null,
+              quantity: qty,
+              product: { name: product.name },
+            }], id);
+            if (!reserveResult.success) {
+              throw new Error(reserveResult.error);
+            }
           }
         }
       }
@@ -554,8 +714,46 @@ router.put("/:id/modify", authenticate, asyncHandler(async (req: AuthRequest, re
         (sum, item) => sum + Number(item.price) * item.quantity,
         0
       );
-      const currentOrder = await tx.order.findUnique({ where: { id } });
+      const currentOrder = await tx.order.findUnique({ where: { id }, include: { coupon: true, payments: true } });
       const totalAmount = subtotal - Number(currentOrder!.discount) + Number(currentOrder!.shippingCost) + Number(currentOrder!.tax);
+
+      // Re-validate checkout rules after item changes
+      const productIds = updatedItems.map((i) => i.productId);
+      const products = await tx.product.findMany({ where: { id: { in: productIds } } });
+      const productMap = new Map(products.map((p) => [p.id, p]));
+
+      // 1. Delivery method eligibility
+      const ALL_DELIVERY_METHODS = ["HOME_DELIVERY", "PICKUP", "SELLER_PICKUP"];
+      let allowedMethods: string[] = ALL_DELIVERY_METHODS;
+      for (const item of updatedItems) {
+        const product = productMap.get(item.productId);
+        if (!product) continue;
+        const methods = product.allowedDeliveryMethods?.length > 0
+          ? product.allowedDeliveryMethods
+          : ALL_DELIVERY_METHODS;
+        allowedMethods = allowedMethods.filter((m) => methods.includes(m));
+      }
+      if (!allowedMethods.includes(currentOrder!.deliveryMethod)) {
+        throw new Error(`Current delivery method is no longer valid for the items in this order.`);
+      }
+
+      // 2. COD eligibility
+      const hasCodPayment = currentOrder!.payments.some((p) => p.method === "COD" || p.provider === "cod");
+      if (hasCodPayment) {
+        const allAllowCod = products.every((p) => p.codAllowed !== false);
+        if (!allAllowCod) {
+          throw new Error("Cash on Delivery is no longer available for one or more items in your order.");
+        }
+      }
+
+      // 3. Coupon minimum order
+      if (currentOrder!.coupon) {
+        const coupon = currentOrder!.coupon;
+        const minOrder = Number(coupon.minOrderAmount || 0);
+        if (subtotal < minOrder) {
+          throw new Error(`Coupon "${coupon.code}" requires a minimum subtotal of ${minOrder}. Current subtotal: ${subtotal}.`);
+        }
+      }
 
       await tx.order.update({
         where: { id },
@@ -589,6 +787,97 @@ router.put("/:id/modify", authenticate, asyncHandler(async (req: AuthRequest, re
   }
 }));
 
+// POST /api/orders/:id/redirect — Redirect order in transit
+router.post("/:id/redirect", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+    const { shippingAddress, deliveryMethod, pickupPointId } = req.body;
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    if (order.userId !== userId && order.customerEmail !== req.user!.email) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+    
+    // Check if order is already delivered or cancelled
+    if (["DELIVERED", "CANCELLED", "REFUNDED"].includes(order.status)) {
+      return res.status(400).json({ error: `Cannot redirect order with status "${order.status}"` });
+    }
+
+    const updateData: any = {};
+    let feeApplied = 0;
+    
+    // If order has been shipped or is processing, apply a fee
+    if (["SHIPPED", "PROCESSING"].includes(order.status)) {
+      feeApplied = 5000; // 5,000 UGX redirect fee
+    }
+
+    if (deliveryMethod === "pickup" && pickupPointId) {
+      const pickupPoint = await prisma.pickupPoint.findUnique({
+        where: { id: pickupPointId }
+      });
+      if (!pickupPoint) {
+        return res.status(400).json({ error: "Pickup point not found" });
+      }
+      updateData.deliveryMethod = "pickup";
+      updateData.pickupPointId = pickupPointId;
+      updateData.shippingAddress = JSON.stringify({
+        address: pickupPoint.address,
+        city: pickupPoint.city,
+        county: pickupPoint.county,
+        country: "Uganda",
+        name: pickupPoint.name,
+        phone: pickupPoint.phone
+      });
+      updateData.latitude = pickupPoint.lat || null;
+      updateData.longitude = pickupPoint.lng || null;
+    } else if (shippingAddress) {
+      updateData.deliveryMethod = "home";
+      updateData.pickupPointId = null;
+      updateData.shippingAddress = typeof shippingAddress === "string" ? shippingAddress : JSON.stringify(shippingAddress);
+      if (typeof shippingAddress === "object") {
+        updateData.latitude = shippingAddress.latitude || null;
+        updateData.longitude = shippingAddress.longitude || null;
+      }
+    } else {
+      return res.status(400).json({ error: "New shipping address or pickup point is required" });
+    }
+
+    if (feeApplied > 0) {
+      updateData.totalAmount = { increment: feeApplied };
+    }
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: updateData,
+    });
+
+    // Create a new timeline event
+    await prisma.orderEvent.create({
+      data: {
+        orderId: id,
+        status: "REDIRECTED",
+        note: `Order redirected to new destination.${feeApplied > 0 ? ` Redirection fee of 5,000 applied.` : ""}`
+      }
+    });
+
+    return res.json({
+      message: "Order redirected successfully",
+      feeApplied,
+      order: updated
+    });
+  } catch (error) {
+    logger.error("Redirect order error", { error });
+    return res.status(500).json({ error: "Failed to redirect order" });
+  }
+}));
+
 // POST /api/orders/:id/confirm-delivery — Buyer confirms delivery (releases escrow)
 router.post("/:id/confirm-delivery", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
@@ -599,7 +888,8 @@ router.post("/:id/confirm-delivery", authenticate, asyncHandler(async (req: Auth
       where: { id },
       include: {
         escrow: true,
-        items: { select: { sellerId: true, price: true, quantity: true, commission: true } },
+        payments: { select: { provider: true, method: true } },
+        items: { select: { sellerId: true, price: true, quantity: true, commission: true, shippingFeeCharged: true } },
       },
     });
 
@@ -615,6 +905,10 @@ router.post("/:id/confirm-delivery", authenticate, asyncHandler(async (req: Auth
       return res.status(400).json({ error: "Order must be shipped or delivered to confirm" });
     }
 
+    if (order.deliveryConfirmedAt) {
+      return res.status(400).json({ error: "Delivery has already been confirmed" });
+    }
+
     await prisma.$transaction(async (tx) => {
       // Update order status to DELIVERED
       if (order.status !== "DELIVERED") {
@@ -622,6 +916,7 @@ router.post("/:id/confirm-delivery", authenticate, asyncHandler(async (req: Auth
           where: { id },
           data: { status: "DELIVERED" },
         });
+        await approveAffiliateConversions(id, tx);
       }
 
       // Release escrow if exists
@@ -636,26 +931,31 @@ router.post("/:id/confirm-delivery", authenticate, asyncHandler(async (req: Auth
           },
         });
 
-        // Credit seller balances
-        const sellerAmounts: Record<string, number> = {};
-        for (const item of order.items) {
-          if (item.sellerId) {
-            const itemTotal = parseFloat(item.price.toString()) * item.quantity;
-            const commission = item.commission ? parseFloat(item.commission.toString()) : itemTotal * 0.15;
-            const sellerAmount = itemTotal - commission;
-            sellerAmounts[item.sellerId] = (sellerAmounts[item.sellerId] || 0) + sellerAmount;
+        // Credit seller balances ONLY if payment method was Cash on Delivery (COD).
+        // For cards/momo/paypal/store-credit, the seller was already credited at checkout or webhook capture.
+        const isCod = order.payments.some(p => p.provider === "cod" || p.method === "COD");
+        if (isCod) {
+          const sellerAmounts: Record<string, number> = {};
+          for (const item of order.items) {
+            if (item.sellerId) {
+              const itemTotal = parseFloat(item.price.toString()) * item.quantity;
+              const commission = item.commission ? parseFloat(item.commission.toString()) : itemTotal * 0.15;
+              const shippingFeeDeduction = item.shippingFeeCharged ? parseFloat(item.shippingFeeCharged.toString()) : 0;
+              const sellerAmount = itemTotal - commission - shippingFeeDeduction;
+              sellerAmounts[item.sellerId] = (sellerAmounts[item.sellerId] || 0) + sellerAmount;
+            }
           }
-        }
 
-        for (const [sellerId, amount] of Object.entries(sellerAmounts)) {
-          await tx.seller.update({
-            where: { id: sellerId },
-            data: {
-              balance: { increment: amount },
-              totalEarnings: { increment: amount },
-              totalSales: { increment: 1 },
-            },
-          });
+          for (const [sellerId, amount] of Object.entries(sellerAmounts)) {
+            await tx.seller.update({
+              where: { id: sellerId },
+              data: {
+                balance: { increment: amount },
+                totalEarnings: { increment: amount },
+                totalSales: { increment: 1 },
+              },
+            });
+          }
         }
       }
 
@@ -668,6 +968,21 @@ router.post("/:id/confirm-delivery", authenticate, asyncHandler(async (req: Auth
         },
       });
     });
+
+    enqueueNotification({
+      event: "ORDER_DELIVERED",
+      recipientEmail: order.customerEmail || undefined,
+      recipientPhone: order.customerPhone || undefined,
+      recipientUserId: order.userId || undefined,
+      orderId: id,
+      data: {
+        customerName: order.customerName,
+        orderNumber: order.orderNumber,
+        orderId: id,
+        total: Number(order.totalAmount),
+        currency: order.currency || "UGX",
+      },
+    }).catch((err) => logger.error("Failed to enqueue delivery notification", { error: err }));
 
     return res.json({ message: "Delivery confirmed. Payment has been released to the seller." });
   } catch (error) {

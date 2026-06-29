@@ -126,6 +126,9 @@ async function syncPricesAndStock(): Promise<void> {
       aliexpressProductId: { not: null },
       aliexpressAutoSync: true,
     },
+    orderBy: {
+      lastSyncedAt: "asc",
+    },
     take: 100,
   });
 

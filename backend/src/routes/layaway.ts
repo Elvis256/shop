@@ -248,7 +248,7 @@ export async function handleLayawayPayment(planId: string, paymentId: string, st
     const plan = await prisma.layawayPlan.findUnique({
       where: { id: planId },
       include: {
-        product: { select: { id: true, name: true, price: true, stock: true, sellerId: true } },
+        product: { select: { id: true, name: true, price: true, stock: true, sellerId: true, allowBackorder: true } },
         user: { select: { id: true, name: true, email: true, phone: true } },
       },
     });
@@ -277,51 +277,73 @@ export async function handleLayawayPayment(planId: string, paymentId: string, st
       });
 
       // Auto-create order when plan completes
-      if (isCompleted && plan.product.stock > 0) {
-        const orderNumber = `LAY-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+      if (isCompleted) {
+        const canFulfill = plan.product.stock > 0 || plan.product.allowBackorder;
+        if (canFulfill) {
+          const orderNumber = `LAY-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
 
-        const order = await tx.order.create({
-          data: {
-            orderNumber,
-            userId: plan.userId,
-            customerName: plan.user.name || "",
-            customerEmail: plan.user.email,
-            customerPhone: plan.user.phone || "",
-            shippingAddress: "{}",
-            subtotal: Number(plan.targetAmount),
-            totalAmount: Number(plan.targetAmount),
-            currency: "UGX",
-            status: "CONFIRMED",
-            paymentStatus: "SUCCESSFUL",
-            items: {
-              create: {
-                productId: plan.product.id,
-                name: plan.product.name,
-                price: Number(plan.product.price),
-                quantity: 1,
-                sellerId: plan.product.sellerId,
+          const order = await tx.order.create({
+            data: {
+              orderNumber,
+              userId: plan.userId,
+              customerName: plan.user.name || "",
+              customerEmail: plan.user.email,
+              customerPhone: plan.user.phone || "",
+              shippingAddress: "{}",
+              subtotal: Number(plan.targetAmount),
+              totalAmount: Number(plan.targetAmount),
+              currency: "UGX",
+              status: "CONFIRMED",
+              paymentStatus: "SUCCESSFUL",
+              items: {
+                create: {
+                  productId: plan.product.id,
+                  name: plan.product.name,
+                  price: Number(plan.product.price),
+                  quantity: 1,
+                  sellerId: plan.product.sellerId,
+                },
               },
             },
-          },
-        });
+          });
 
-        await tx.layawayPlan.update({
-          where: { id: planId },
-          data: { orderId: order.id },
-        });
+          await tx.layawayPlan.update({
+            where: { id: planId },
+            data: { orderId: order.id },
+          });
 
-        // Decrement stock
-        await tx.product.update({
-          where: { id: plan.product.id },
-          data: { stock: { decrement: 1 } },
-        });
+          // Decrement stock
+          await tx.product.update({
+            where: { id: plan.product.id },
+            data: { stock: { decrement: 1 } },
+          });
 
-        // Notify customer
-        if (plan.user.phone) {
-          sendWhatsApp({
-            to: plan.user.phone,
-            text: `🎉 Congratulations! Your layaway plan for ${plan.product.name} is complete! Order ${orderNumber} has been created. We'll be in touch about delivery.`,
-          }).catch(() => {});
+          // Notify customer
+          if (plan.user.phone) {
+            sendWhatsApp({
+              to: plan.user.phone,
+              text: `🎉 Congratulations! Your layaway plan for ${plan.product.name} is complete! Order ${orderNumber} has been created. We'll be in touch about delivery.`,
+            }).catch(() => {});
+          }
+        } else {
+          // Out of stock and backorders disabled: refund full amount to store credit and cancel plan
+          await tx.layawayPlan.update({
+            where: { id: planId },
+            data: { status: "CANCELLED" },
+          });
+
+          await tx.storeCredit.upsert({
+            where: { userId: plan.userId },
+            update: { balance: { increment: newPaidAmount } },
+            create: { userId: plan.userId, balance: newPaidAmount },
+          });
+
+          if (plan.user.phone) {
+            sendWhatsApp({
+              to: plan.user.phone,
+              text: `⚠️ Your layaway plan for ${plan.product.name} has been completed, but the item is currently out of stock. We have refunded the paid amount of UGX ${newPaidAmount.toLocaleString()} to your store credit.`,
+            }).catch(() => {});
+          }
         }
       }
     });

@@ -64,7 +64,7 @@ export default function SupportPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets`, {
+      const res = await fetch(`/api/tickets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -96,7 +96,7 @@ export default function SupportPage() {
     setLookupError("");
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/tickets/lookup/${lookupNumber}?email=${encodeURIComponent(lookupEmail)}`,
+        `/api/tickets/lookup/${lookupNumber}?email=${encodeURIComponent(lookupEmail)}`,
         { credentials: "include" }
       );
 
@@ -117,7 +117,7 @@ export default function SupportPage() {
     setReplying(true);
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/tickets/${ticket.id}/messages`,
+        `/api/tickets/${ticket.id}/messages`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

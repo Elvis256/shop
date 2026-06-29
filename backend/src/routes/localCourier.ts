@@ -18,6 +18,7 @@ import { sendSMS } from "../services/sms";
 import axios from "axios";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { approveAffiliateConversions } from "../utils/affiliateHelper";
 
 const router = Router();
 
@@ -128,6 +129,8 @@ const BookSchema = z.object({
   recipientPhone: z.string(),
   notes: z.string().optional(),
   preferredCourier: z.enum(["safeboda", "sendy", "internal", "auto"]).default("auto"),
+  riderName: z.string().optional(),
+  riderPhone: z.string().optional(),
 });
 
 // GET /api/courier/available
@@ -249,6 +252,12 @@ router.post("/book", asyncHandler(async (req: Request, res: Response) => {
       courierUsed = "internal";
     }
 
+    // Prepare note content with rider assignment details
+    let updatedNotes = `${order.notes || ""}\nCourier: ${courierUsed} | Ref: ${bookingRef}${trackingUrl ? ` | Track: ${trackingUrl}` : ""}`.trim();
+    if (courierUsed === "internal" && body.riderName) {
+      updatedNotes += `\nAssigned Rider: ${body.riderName}${body.riderPhone ? ` (${body.riderPhone})` : ""}`;
+    }
+
     // Update order with courier info
     await prisma.order.update({
       where: { id: body.orderId },
@@ -256,7 +265,7 @@ router.post("/book", asyncHandler(async (req: Request, res: Response) => {
         trackingNumber: bookingRef,
         shippingMethod: courierUsed,
         status: "SHIPPED",
-        notes: `${order.notes || ""}\nCourier: ${courierUsed} | Ref: ${bookingRef}${trackingUrl ? ` | Track: ${trackingUrl}` : ""}`.trim(),
+        notes: updatedNotes,
       },
     });
 
@@ -264,9 +273,47 @@ router.post("/book", asyncHandler(async (req: Request, res: Response) => {
     if (body.recipientPhone) {
       const msg = trackingUrl
         ? `📦 PleasureZone: Your order ${order.orderNumber} has been dispatched!\n\nTrack your delivery: ${trackingUrl}\n\nPlain packaging 🔒`
-        : `📦 PleasureZone: Your order ${order.orderNumber} is on the way! Our rider will call you shortly. Ref: ${bookingRef}`;
+        : (courierUsed === "internal" && body.riderName)
+          ? `📦 PleasureZone: Your order ${order.orderNumber} is on the way! Our rider ${body.riderName} (${body.riderPhone || ""}) will call you shortly. Ref: ${bookingRef}`
+          : `📦 PleasureZone: Your order ${order.orderNumber} is on the way! Our rider will call you shortly. Ref: ${bookingRef}`;
       await sendWhatsApp({ to: body.recipientPhone, text: msg }).catch(() => {});
       await sendSMS(body.recipientPhone, `PleasureZone: Order ${order.orderNumber} dispatched. Ref: ${bookingRef}`).catch(() => {});
+    }
+
+    // Notify assigned in-house rider via WhatsApp/SMS
+    if (courierUsed === "internal" && body.riderPhone) {
+      const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(body.deliveryArea)}`;
+      
+      // Fetch latest order details to determine payment mode and get/generate delivery OTP
+      const freshOrder = await prisma.order.findUnique({
+        where: { id: body.orderId },
+        select: { paymentStatus: true, totalAmount: true, deliveryOtp: true },
+      });
+      
+      const isCod = freshOrder?.paymentStatus === "PENDING";
+      const paymentMode = isCod 
+        ? `COD (Collect Cash: UGX ${Number(freshOrder?.totalAmount || 0).toLocaleString()})`
+        : "PREPAID (Do NOT collect money)";
+
+      let otpText = "";
+      if (isCod) {
+        let otp = freshOrder?.deliveryOtp;
+        if (!otp) {
+          const crypto = await import("crypto");
+          otp = crypto.randomInt(100000, 999999).toString();
+          const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+          await prisma.order.update({
+            where: { id: body.orderId },
+            data: { deliveryOtp: otp, deliveryOtpExpiry: expiry },
+          });
+        }
+        otpText = `\n\n🔑 Verify delivery in portal using Customer OTP code.`;
+      }
+
+      const riderMsg = `🏍️ PleasureZone Rider Delivery Task!\n\nOrder: ${order.orderNumber}\nCustomer: ${body.recipientName}\nPhone: ${body.recipientPhone}\nAddress: ${body.deliveryArea}\nMaps: ${mapsLink}\nPayment: ${paymentMode}\n\nDiscreet packaging 🔒. Call customer before arriving.${otpText}`;
+      
+      await sendWhatsApp({ to: body.riderPhone, text: riderMsg }).catch(() => {});
+      await sendSMS(body.riderPhone, `PleasureZone Rider: Delivery task for order ${order.orderNumber} assigned. Address: ${body.deliveryArea}. See WhatsApp.`).catch(() => {});
     }
 
     return res.json({
@@ -322,6 +369,10 @@ router.post("/webhook", asyncHandler(async (req: Request, res: Response) => {
         where: { id: order.id },
         data: { status: orderStatus as any },
       });
+
+      if (status === "delivered") {
+        await approveAffiliateConversions(order.id);
+      }
 
       if (status === "delivered" && order.customerPhone) {
         await sendWhatsApp({

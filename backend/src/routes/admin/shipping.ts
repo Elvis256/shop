@@ -8,6 +8,11 @@ import { asyncHandler } from "../../middleware/errorHandler";
 const router = Router();
 router.use(authenticate, requireAdmin);
 
+const weightTierSchema = z.object({
+  maxKg: z.number().positive().nullable(),
+  rate: z.number().min(0),
+});
+
 const zoneSchema = z.object({
   name: z.string().min(1),
   countries: z.array(z.string()).default([]),
@@ -16,6 +21,7 @@ const zoneSchema = z.object({
   currency: z.string().default("UGX"),
   freeAbove: z.number().nullable().optional(),
   estimatedDays: z.string().nullable().optional(),
+  weightTiers: z.array(weightTierSchema).nullable().optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -79,7 +85,13 @@ router.patch("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const data = zoneSchema.partial().parse(req.body);
-    const zone = await prisma.shippingZone.update({ where: { id }, data });
+    const updateData: any = { ...data };
+    // Prisma requires DbNull for JSON null
+    if (data.weightTiers === null) {
+      const { Prisma } = await import("@prisma/client");
+      updateData.weightTiers = Prisma.DbNull;
+    }
+    const zone = await prisma.shippingZone.update({ where: { id }, data: updateData });
     return res.json({ zone });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -99,6 +111,51 @@ router.delete("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
   } catch (error) {
     logger.error("Delete shipping zone error", { error });
     return res.status(500).json({ error: "Failed to delete shipping zone" });
+  }
+}));
+
+// POST /api/admin/shipping-zones/calculate — Calculate shipping rate by weight + zone
+router.post("/calculate", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { city, country, weightKg } = req.body;
+    const zones = await prisma.shippingZone.findMany({ where: { isActive: true } });
+
+    // Find best matching zone (city match > country match > first active)
+    let zone = zones.find((z) =>
+      z.cities.some((c) => c.toLowerCase() === (city || "").toLowerCase())
+    );
+    if (!zone) {
+      zone = zones.find((z) =>
+        z.countries.some((c) => c.toLowerCase() === (country || "").toLowerCase())
+      );
+    }
+    if (!zone && zones.length > 0) {
+      zone = zones[0];
+    }
+    if (!zone) {
+      return res.json({ rate: 0, zone: null });
+    }
+
+    let rate = Number(zone.rate);
+
+    // Apply weight tiers if configured and weight provided
+    if (zone.weightTiers && weightKg && weightKg > 0) {
+      const tiers = zone.weightTiers as Array<{ maxKg: number | null; rate: number }>;
+      const sorted = [...tiers].sort((a, b) => (a.maxKg ?? Infinity) - (b.maxKg ?? Infinity));
+      const matchedTier = sorted.find((t) => t.maxKg === null || weightKg <= t.maxKg);
+      if (matchedTier) {
+        rate = matchedTier.rate;
+      }
+    }
+
+    return res.json({
+      rate,
+      zone: { id: zone.id, name: zone.name, estimatedDays: zone.estimatedDays },
+      freeAbove: zone.freeAbove ? Number(zone.freeAbove) : null,
+    });
+  } catch (error) {
+    logger.error("Calculate shipping error", { error });
+    return res.status(500).json({ error: "Failed to calculate shipping" });
   }
 }));
 

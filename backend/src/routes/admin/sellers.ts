@@ -306,7 +306,19 @@ router.put("/payouts/:id", asyncHandler(async (req: AuthRequest, res: Response) 
 
       if (seller.payoutMethod === "MOBILE_MONEY" || seller.payoutMethod === "FLUTTERWAVE") {
         // MTN Uganda = "MPS", Airtel Uganda = "AIR"
-        accountBank = "MPS"; // Default to MTN; could be enhanced with network field
+        const cleanPhone = (seller.payoutPhone || "").replace(/\D/g, "");
+        let localPhone = cleanPhone;
+        if (cleanPhone.startsWith("256") && cleanPhone.length === 12) {
+          localPhone = cleanPhone.slice(3);
+        } else if (cleanPhone.startsWith("0") && cleanPhone.length === 10) {
+          localPhone = cleanPhone.slice(1);
+        }
+        const prefix2 = localPhone.slice(0, 2);
+        if (["70", "75", "74", "20"].includes(prefix2)) {
+          accountBank = "AIR"; // Airtel Uganda
+        } else {
+          accountBank = "MPS"; // MTN Uganda (default / fallback)
+        }
         accountNumber = seller.payoutPhone || "";
       } else if (seller.payoutMethod === "BANK_TRANSFER") {
         accountBank = seller.bankName || "";

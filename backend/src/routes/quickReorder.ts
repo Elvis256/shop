@@ -5,10 +5,18 @@ import { authenticate, AuthRequest } from "../middleware/auth";
 import { createFlutterwavePayment } from "../services/flutterwave";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { reserveStock } from "../utils/stockReservation";
 import crypto from "crypto";
 
 const router = Router();
 const TOKEN_TTL = 72 * 60 * 60; // 72 hours
+
+class StockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StockError";
+  }
+}
 
 interface ReorderData {
   userId: string;
@@ -134,59 +142,67 @@ router.post("/:token/confirm", asyncHandler(async (req: Request, res: Response) 
 
   const data: ReorderData = JSON.parse(raw);
 
-  // Verify product is still available
+  // Verify product still exists
   const product = await prisma.product.findUnique({
     where: { id: data.productId },
-    select: { id: true, name: true, price: true, stock: true, sellerId: true },
+    select: { id: true, name: true, price: true, sellerId: true },
   });
 
-  if (!product || product.stock < data.quantity) {
-    return res.status(400).json({ error: "Product is out of stock" });
+  if (!product) {
+    return res.status(404).json({ error: "Product no longer available" });
   }
 
   const totalAmount = Number(product.price) * data.quantity;
   const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
 
-  // Create order
-  const order = await prisma.order.create({
-    data: {
-      orderNumber,
-      userId: data.userId,
-      customerName: data.customerName,
-      customerEmail: data.customerEmail,
-      customerPhone: data.customerPhone,
-      shippingAddress: data.address,
-      subtotal: totalAmount,
-      totalAmount,
-      currency: data.currency,
-      status: "PENDING",
-      paymentStatus: "PENDING",
-      items: {
-        create: {
-          productId: product.id,
-          name: product.name,
-          price: Number(product.price),
-          quantity: data.quantity,
-          sellerId: product.sellerId,
+  // Create order and reserve stock atomically to prevent overselling
+  let order: { id: string };
+  try {
+    order = await prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          orderNumber,
+          userId: data.userId,
+          customerName: data.customerName,
+          customerEmail: data.customerEmail,
+          customerPhone: data.customerPhone,
+          shippingAddress: data.address,
+          subtotal: totalAmount,
+          totalAmount,
+          currency: data.currency,
+          status: "PENDING",
+          paymentStatus: "PENDING",
+          items: {
+            create: {
+              productId: product.id,
+              name: product.name,
+              price: Number(product.price),
+              quantity: data.quantity,
+              sellerId: product.sellerId,
+            },
+          },
         },
-      },
-    },
-  });
+      });
 
-  // Reserve stock
-  await prisma.stockReservation.create({
-    data: {
-      orderId: order.id,
-      productId: product.id,
-      quantity: data.quantity,
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min
-    },
-  });
+      const reserveResult = await reserveStock(
+        tx,
+        [{ productId: product.id, quantity: data.quantity, product: { name: product.name } }],
+        created.id,
+        30 * 60 * 1000 // 30 min reservation for quick reorders
+      );
 
-  await prisma.product.update({
-    where: { id: product.id },
-    data: { reservedStock: { increment: data.quantity } },
-  });
+      if (!reserveResult.success) {
+        throw new StockError(reserveResult.error || "Stock reservation failed");
+      }
+
+      return created;
+    });
+  } catch (error) {
+    if (error instanceof StockError) {
+      return res.status(400).json({ error: error.message });
+    }
+    throw error;
+  }
 
   // Delete the reorder token
   try { await redis.del(`reorder:${token}`); } catch {}

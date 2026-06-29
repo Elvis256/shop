@@ -56,6 +56,10 @@ interface ProductFormData {
   metaDescription: string;
   flashSalePrice: string;
   flashSaleEndsAt: string;
+  allowedDeliveryMethods: string[];
+  codAllowed: boolean;
+  shippingFee: string;
+  sizeGuideId: string;
 }
 
 interface SpecRow {
@@ -131,6 +135,10 @@ export default function NewProductPage() {
     metaDescription: "",
     flashSalePrice: "",
     flashSaleEndsAt: "",
+    allowedDeliveryMethods: [],
+    codAllowed: true,
+    shippingFee: "",
+    sizeGuideId: "",
   });
 
   const [flashSaleEnabled, setFlashSaleEnabled] = useState(false);
@@ -140,8 +148,16 @@ export default function NewProductPage() {
     [variants],
   );
 
+  const [sizeGuides, setSizeGuides] = useState<Array<{ id: string; name: string }>>([]);
+
   useEffect(() => {
     loadCategories();
+    // Load size guides
+    const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
+    fetch(`${API_URL}/api/admin/size-guides`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => { if (d.guides) setSizeGuides(d.guides); })
+      .catch(() => {});
   }, []);
 
   const addFiles = useCallback((files: File[]) => {
@@ -307,6 +323,12 @@ export default function NewProductPage() {
         payload.flashSalePrice = null;
         payload.flashSaleEndsAt = null;
       }
+
+      // Delivery options
+      payload.allowedDeliveryMethods = formData.allowedDeliveryMethods;
+      payload.codAllowed = formData.codAllowed;
+      payload.shippingFee = formData.shippingFee ? parseFloat(formData.shippingFee) : null;
+      payload.sizeGuideId = formData.sizeGuideId || null;
 
       const product = await api.admin.createProduct(payload);
 
@@ -665,6 +687,81 @@ export default function NewProductPage() {
             <p className="text-sm text-gray-400">
               Enable flash sale to set a limited-time discounted price.
             </p>
+          )}
+        </section>
+
+        {/* ── 3c. Delivery Options ── */}
+        <section className="bg-white rounded-lg border border-gray-200 p-6">
+          <h2 className="text-base font-semibold text-gray-900 mb-4">Delivery Options</h2>
+          <p className="text-sm text-gray-500 mb-4">Select allowed delivery methods. Leave all unchecked to allow all methods.</p>
+          <div className="space-y-3">
+            {[
+              { value: "HOME_DELIVERY", label: "Home Delivery" },
+              { value: "PICKUP", label: "Platform Pickup Point" },
+              { value: "SELLER_PICKUP", label: "Seller Pickup" },
+            ].map((method) => (
+              <label key={method.value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.allowedDeliveryMethods.includes(method.value)}
+                  onChange={(e) => {
+                    const methods = e.target.checked
+                      ? [...formData.allowedDeliveryMethods, method.value]
+                      : formData.allowedDeliveryMethods.filter((m) => m !== method.value);
+                    setFormData((prev) => ({ ...prev, allowedDeliveryMethods: methods }));
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                />
+                <span className="text-sm text-gray-700">{method.label}</span>
+              </label>
+            ))}
+            {formData.allowedDeliveryMethods.length === 0 ? (
+              <p className="text-xs text-green-600 mt-2 bg-green-50 p-2.5 rounded border border-green-200">
+                💡 Currently, <strong>all delivery methods are allowed</strong> for this product because none are explicitly checked.
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600 mt-2 bg-amber-50 p-2.5 rounded border border-amber-200">
+                ⚠️ Only the checked delivery method(s) will be available for this product at checkout. All other methods are restricted.
+              </p>
+            )}
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.codAllowed}
+                onChange={(e) => setFormData((prev) => ({ ...prev, codAllowed: e.target.checked }))}
+                className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+              />
+              <span className="text-sm text-gray-700">Allow Cash on Delivery</span>
+            </label>
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Platform Shipping Fee (UGX)</label>
+            <input
+              type="number"
+              value={formData.shippingFee}
+              onChange={(e) => setFormData((prev) => ({ ...prev, shippingFee: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-gray-900 focus:border-gray-900"
+              placeholder="0"
+              min="0"
+            />
+            <p className="text-xs text-gray-500 mt-1">Fee deducted from seller payout per order of this item</p>
+          </div>
+          {sizeGuides.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Size Guide</label>
+              <select
+                value={formData.sizeGuideId}
+                onChange={(e) => setFormData((prev) => ({ ...prev, sizeGuideId: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-gray-900 focus:border-gray-900"
+              >
+                <option value="">None</option>
+                {sizeGuides.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
           )}
         </section>
 

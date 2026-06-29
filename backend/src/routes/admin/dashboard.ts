@@ -29,12 +29,12 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
         totalProducts, lowStockProducts,
         recentOrders, topProducts, ordersByStatus,
       ] = await Promise.all([
-        prisma.order.count(),
-        prisma.order.count({ where: { createdAt: { gte: startOfMonth } } }),
-        prisma.order.count({ where: { createdAt: { gte: startOfLastMonth, lte: endOfLastMonth } } }),
-        prisma.order.aggregate({ where: { paymentStatus: "SUCCESSFUL" }, _sum: { totalAmount: true } }),
-        prisma.order.aggregate({ where: { paymentStatus: "SUCCESSFUL", createdAt: { gte: startOfMonth } }, _sum: { totalAmount: true } }),
-        prisma.order.aggregate({ where: { paymentStatus: "SUCCESSFUL", createdAt: { gte: startOfLastMonth, lte: endOfLastMonth } }, _sum: { totalAmount: true } }),
+        prisma.order.count({ where: { status: { notIn: ["CANCELLED", "REFUNDED"] } } }),
+        prisma.order.count({ where: { status: { notIn: ["CANCELLED", "REFUNDED"] }, createdAt: { gte: startOfMonth } } }),
+        prisma.order.count({ where: { status: { notIn: ["CANCELLED", "REFUNDED"] }, createdAt: { gte: startOfLastMonth, lte: endOfLastMonth } } }),
+        prisma.order.aggregate({ where: { status: { notIn: ["CANCELLED", "REFUNDED"] } }, _sum: { totalAmount: true } }),
+        prisma.order.aggregate({ where: { status: { notIn: ["CANCELLED", "REFUNDED"] }, createdAt: { gte: startOfMonth } }, _sum: { totalAmount: true } }),
+        prisma.order.aggregate({ where: { status: { notIn: ["CANCELLED", "REFUNDED"] }, createdAt: { gte: startOfLastMonth, lte: endOfLastMonth } }, _sum: { totalAmount: true } }),
         prisma.user.count({ where: { role: "CUSTOMER" } }),
         prisma.user.count({ where: { role: "CUSTOMER", createdAt: { gte: startOfMonth } } }),
         prisma.product.count({ where: { status: "ACTIVE" } }),
@@ -43,7 +43,13 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
           take: 10, orderBy: { createdAt: "desc" },
           select: { id: true, orderNumber: true, customerName: true, totalAmount: true, status: true, paymentStatus: true, createdAt: true },
         }),
-        prisma.orderItem.groupBy({ by: ["productId"], _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 5 }),
+        prisma.orderItem.groupBy({
+          by: ["productId"],
+          where: { order: { status: { notIn: ["CANCELLED", "REFUNDED"] } } },
+          _sum: { quantity: true },
+          orderBy: { _sum: { quantity: "desc" } },
+          take: 5
+        }),
         prisma.order.groupBy({ by: ["status"], _count: { status: true } }),
       ]);
 
@@ -69,9 +75,9 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
             COALESCE(SUM(oi.price * oi.quantity), 0) as total,
             COALESCE(SUM(CASE WHEN o."createdAt" >= ${startOfMonth} THEN oi.price * oi.quantity ELSE 0 END), 0) as month
           FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
-          WHERE oi."sellerId" IS NULL AND o."paymentStatus" = 'SUCCESSFUL'`,
-        prisma.orderItem.aggregate({ where: { sellerId: { not: null }, commission: { not: null } }, _sum: { commission: true, price: true } }),
-        prisma.orderItem.aggregate({ where: { sellerId: { not: null }, commission: { not: null }, order: { createdAt: { gte: startOfMonth } } }, _sum: { commission: true, price: true } }),
+          WHERE oi."sellerId" IS NULL AND o."status" NOT IN ('CANCELLED', 'REFUNDED')`,
+        prisma.orderItem.aggregate({ where: { sellerId: { not: null }, commission: { not: null }, order: { status: { notIn: ["CANCELLED", "REFUNDED"] } } }, _sum: { commission: true, price: true } }),
+        prisma.orderItem.aggregate({ where: { sellerId: { not: null }, commission: { not: null }, order: { status: { notIn: ["CANCELLED", "REFUNDED"] }, createdAt: { gte: startOfMonth } } }, _sum: { commission: true, price: true } }),
         prisma.sellerPayout.aggregate({ where: { status: { in: ["PENDING", "PROCESSING"] } }, _sum: { amount: true }, _count: true }),
         prisma.seller.count({ where: { status: "APPROVED" } }),
         prisma.seller.count({ where: { status: "PENDING" } }),
@@ -297,22 +303,27 @@ router.get("/analytics", asyncHandler(async (req: AuthRequest, res: Response) =>
       allOrdersByStatus.forEach((s) => { funnel[s.status] = { count: s._count.id, value: Number(s._sum.totalAmount) || 0 }; });
 
       // ── Payment methods ────────────────────────────────────────
-      const paymentsByMethod = await prisma.payment.groupBy({
-        by: ["method"],
-        where: { createdAt: { gte: startDate }, status: "SUCCESSFUL" },
-        _count: true, _sum: { amount: true },
-      });
-      const codStats = await prisma.$queryRaw<[{ count: number; amount: number }]>`
-        SELECT COUNT(*)::int as count, COALESCE(SUM("totalAmount"::numeric), 0)::float8 as amount
-        FROM "Order" o
+      const paymentsByMethod = await prisma.$queryRaw<Array<{
+        method: string;
+        count: number;
+        amount: number;
+      }>>`
+        SELECT
+          p.method,
+          COUNT(DISTINCT p."orderId")::int as count,
+          COALESCE(SUM(p.amount::numeric), 0)::float8 as amount
+        FROM "Payment" p
+        JOIN "Order" o ON p."orderId" = o.id
         WHERE o."createdAt" >= ${startDate}
-          AND o."status" NOT IN ('CANCELLED','REFUNDED')
-          AND NOT EXISTS (SELECT 1 FROM "Payment" p WHERE p."orderId" = o.id)`;
+          AND o."status" NOT IN ('CANCELLED', 'REFUNDED')
+          AND p.amount > 0
+        GROUP BY p.method`;
 
-      const paymentMethods = [
-        ...paymentsByMethod.map((p) => ({ name: p.method || "Unknown", count: p._count, amount: Number(p._sum?.amount) || 0 })),
-        ...(codStats[0]?.count > 0 ? [{ name: "COD", count: codStats[0].count, amount: codStats[0].amount }] : []),
-      ];
+      const paymentMethods = paymentsByMethod.map((p) => ({
+        name: p.method || "Unknown",
+        count: p.count,
+        amount: Number(p.amount) || 0,
+      }));
 
       // ── Customer stats ────────────────────────────────────────
       const thisMonthStart = new Date(); thisMonthStart.setDate(1); thisMonthStart.setHours(0, 0, 0, 0);
@@ -327,7 +338,7 @@ router.get("/analytics", asyncHandler(async (req: AuthRequest, res: Response) =>
       const [customerStats] = await prisma.$queryRaw<[{ unique_customers: number; returning: number }]>`
         SELECT
           COUNT(DISTINCT "customerEmail")::int as unique_customers,
-          COUNT(*)::int FILTER (WHERE cnt > 1) as returning
+          COUNT(*) FILTER (WHERE cnt > 1)::int as returning
         FROM (
           SELECT "customerEmail", COUNT(*)::int as cnt
           FROM "Order"

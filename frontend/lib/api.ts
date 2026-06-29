@@ -21,7 +21,11 @@ import type {
   SuccessMessage,
 } from "./types/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+// In browser: use relative URLs (same-origin, avoids CORS with www vs non-www)
+// On server (SSR): use absolute URL to reach backend directly
+const API_URL = typeof window !== "undefined"
+  ? ""
+  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 1_000;
@@ -72,13 +76,39 @@ async function refreshAccessToken(): Promise<boolean> {
       const headers: Record<string, string> = {};
       if (csrf) headers["x-csrf-token"] = csrf;
       
+      const isBrowser = typeof window !== "undefined";
+      const localToken = isBrowser ? localStorage.getItem("twa_token") : null;
+      const localRefreshToken = isBrowser ? localStorage.getItem("twa_refresh_token") : null;
+      
+      if (localToken) headers["Authorization"] = `Bearer ${localToken}`;
+      if (localRefreshToken) headers["x-refresh-token"] = localRefreshToken;
+      
+      const isTwa = isBrowser && (!!(window as any).Telegram?.WebApp || !!localToken);
+      if (isTwa) headers["x-twa-context"] = "true";
+      
       const res = await fetch(`${API_URL}/api/auth/refresh`, {
         method: "POST",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+          ...headers,
+        },
+        body: JSON.stringify({ refreshToken: localRefreshToken }),
         credentials: "include",
       });
       
-      return res.ok;
+      if (res.ok) {
+        const data = await res.json();
+        if (isBrowser) {
+          if (data.accessToken) {
+            localStorage.setItem("twa_token", data.accessToken);
+          }
+          if (data.refreshToken) {
+            localStorage.setItem("twa_refresh_token", data.refreshToken);
+          }
+        }
+        return true;
+      }
+      return false;
     } catch {
       return false;
     } finally {
@@ -95,12 +125,24 @@ export async function apiFetch(
   options: RequestInit = {},
   retry = true
 ): Promise<any> {
+  const isBrowser = typeof window !== "undefined";
+  const twaToken = isBrowser ? localStorage.getItem("twa_token") : null;
+  const isTwa = isBrowser && (!!(window as any).Telegram?.WebApp || !!twaToken);
+
   // Don't set Content-Type for FormData (let browser set it with boundary)
   const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...((options.headers as Record<string, string>) || {}),
   };
+
+  if (twaToken && !headers["Authorization"]) {
+    headers["Authorization"] = `Bearer ${twaToken}`;
+  }
+
+  if (isTwa) {
+    headers["x-twa-context"] = "true";
+  }
 
   // Add CSRF token for state-changing requests
   const method = options.method?.toUpperCase() || "GET";
@@ -146,7 +188,23 @@ export async function apiFetch(
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Request failed");
+        const httpError = new Error(data.error || "Request failed");
+        (httpError as any).status = res.status;
+        throw httpError;
+      }
+
+      // Save tokens in TWA context
+      if (isBrowser) {
+        if (data && data.accessToken) {
+          localStorage.setItem("twa_token", data.accessToken);
+        }
+        if (data && data.refreshToken) {
+          localStorage.setItem("twa_refresh_token", data.refreshToken);
+        }
+        if (endpoint === "/api/auth/logout") {
+          localStorage.removeItem("twa_token");
+          localStorage.removeItem("twa_refresh_token");
+        }
       }
 
       return data;
@@ -157,6 +215,11 @@ export async function apiFetch(
       // Don't retry on abort (user-initiated or client errors)
       if (err.name === "AbortError") {
         throw new Error("Request timed out");
+      }
+
+      // Don't retry on HTTP errors (4xx) — only retry network errors (no status)
+      if (err.status) {
+        throw err;
       }
 
       // Retry on network errors (fetch failed entirely)
@@ -172,10 +235,18 @@ export async function apiFetch(
 
 export const api = {
   // Auth
-  login: (email: string, password: string): Promise<AuthResponse> =>
-    apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-  register: (email: string, password: string, name?: string): Promise<AuthResponse> =>
-    apiFetch("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, name }) }),
+  login: (email: string, password: string, telegramUserId?: string): Promise<AuthResponse> =>
+    apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password, telegramUserId }) }),
+  register: (email: string, password: string, name?: string, telegramUserId?: string): Promise<AuthResponse> =>
+    apiFetch("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, name, telegramUserId }) }),
+  telegramTwaLogin: (initData: string): Promise<{
+    success: boolean;
+    authenticated: boolean;
+    telegramUserId?: string;
+    user?: any;
+    telegramUser?: any;
+  }> =>
+    apiFetch("/api/auth/telegram-twa", { method: "POST", body: JSON.stringify({ initData }) }),
   forgotPassword: (email: string): Promise<SuccessMessage> =>
     apiFetch("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
   resetPassword: (token: string, password: string): Promise<SuccessMessage> =>
@@ -302,6 +373,7 @@ export const api = {
   admin: {
     getDashboard: (): Promise<DashboardStats> => apiFetch("/api/admin/dashboard"),
     getAnalytics: (period?: number) => apiFetch(`/api/admin/dashboard/analytics?period=${period || 30}`),
+    getInvestorAnalytics: (period?: number, marketingSpend?: number) => apiFetch(`/api/analytics/investor?period=${period || 30}&marketingSpend=${marketingSpend || 2000000}`),
     
     // Products
     getProducts: (params?: Record<string, string>): Promise<ProductsResponse> => {

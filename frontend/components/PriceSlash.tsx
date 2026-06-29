@@ -28,6 +28,8 @@ interface PriceSlashButtonProps {
   productSlug: string;
   productName: string;
   originalPrice: number;
+  activeSlash?: PriceSlashData | null;
+  onSlashCreated?: (slash: PriceSlashData) => void;
 }
 
 export default function PriceSlashButton({
@@ -35,6 +37,8 @@ export default function PriceSlashButton({
   productSlug,
   productName,
   originalPrice,
+  activeSlash,
+  onSlashCreated,
 }: PriceSlashButtonProps) {
   const [slashData, setSlashData] = useState<PriceSlashData | null>(null);
   const [showCard, setShowCard] = useState(false);
@@ -44,6 +48,16 @@ export default function PriceSlashButton({
   const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const { formatPrice } = useCurrency();
+
+  useEffect(() => {
+    if (activeSlash) {
+      setSlashData(activeSlash);
+      setShowCard(true);
+    } else if (activeSlash === null) {
+      setSlashData(null);
+      setShowCard(false);
+    }
+  }, [activeSlash]);
 
   const handleCreate = async () => {
     if (!isAuthenticated) {
@@ -62,6 +76,9 @@ export default function PriceSlashButton({
         const data = await res.json();
         setSlashData(data.priceSlash);
         setShowCard(true);
+        if (onSlashCreated) {
+          onSlashCreated(data.priceSlash);
+        }
         showToast("Price slash started! Share with friends to slash the price! ✂️", "success");
       } else {
         const data = await res.json().catch(() => ({}));

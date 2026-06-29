@@ -126,8 +126,8 @@ export default function TermsPage() {
           <h2>15. Contact Information</h2>
           <p>For questions about these terms:</p>
           <ul>
-            <li>Email: legal@adultstore.com</li>
-            <li>Phone: +254 700 000 000</li>
+            <li>Email: legal@pleasurezone.ug</li>
+            <li>Phone: +256 777 123 456</li>
           </ul>
 
           <h2>16. Severability</h2>

@@ -86,6 +86,18 @@ async function processDueSubscriptions(): Promise<void> {
       });
 
       const order = await prisma.$transaction(async (tx) => {
+        // Concurrency-safe stock check inside the transaction using FOR UPDATE row locking
+        if (sub.product.trackInventory && !sub.product.allowBackorder) {
+          const [product] = await tx.$queryRaw<any[]>`
+            SELECT stock, "reservedStock" FROM "Product" WHERE id = ${sub.productId} FOR UPDATE`;
+          if (product) {
+            const available = product.stock - (product.reservedStock || 0);
+            if (available < sub.quantity) {
+              throw new Error("INSUFFICIENT_STOCK");
+            }
+          }
+        }
+
         const o = await tx.order.create({
           data: {
             orderNumber,
@@ -120,6 +132,27 @@ async function processDueSubscriptions(): Promise<void> {
           },
         });
 
+        // Create a stock reservation so that payment confirmation correctly decrements stock
+        const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // 3 days reservation timeout
+        await tx.stockReservation.create({
+          data: {
+            orderId: o.id,
+            productId: sub.productId,
+            quantity: sub.quantity,
+            expiresAt,
+          },
+        });
+
+        // Increment reserved stock on product
+        if (sub.product.trackInventory) {
+          await tx.product.update({
+            where: { id: sub.productId },
+            data: {
+              reservedStock: { increment: sub.quantity },
+            },
+          });
+        }
+
         // Update subscription next delivery date
         const nextDate = new Date();
         nextDate.setDate(nextDate.getDate() + sub.intervalDays);
@@ -147,7 +180,16 @@ async function processDueSubscriptions(): Promise<void> {
       await scheduleRestockReminders(order.id);
 
     } catch (err: any) {
-      logger.error(`Subscription processing failed for ${sub.id}`, { error: err.message });
+      if (err.message === "INSUFFICIENT_STOCK") {
+        if (sub.user.phone) {
+          await sendWhatsApp({
+            to: sub.user.phone,
+            text: `⚠️ PleasureZone: Your ${sub.product.name} subscription couldn't renew — product is temporarily out of stock. We'll retry when back in stock.`,
+          });
+        }
+      } else {
+        logger.error(`Subscription processing failed for ${sub.id}`, { error: err.message });
+      }
     }
   }
 }

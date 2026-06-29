@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Section from "@/components/Section";
 import { MapPin, Clock, Phone, Loader2 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface PickupPoint {
   id: string;

@@ -1,0 +1,62 @@
+# PleasureZone Uganda
+> Premium intimate wellness e-commerce platform serving Uganda with discreet delivery
+
+## About
+PleasureZone Uganda is the leading online store for intimate wellness products in Uganda. We offer premium vibrators, lingerie, lubricants, couples toys, and wellness accessories with same-day delivery in Kampala and nationwide shipping. All orders ship in plain, discreet packaging with anonymous billing.
+
+## Key Features
+- Discreet packaging and plain shipping labels
+- Same-day delivery in Kampala
+- Nationwide delivery across Uganda
+- Secure checkout with multiple payment methods (Mobile Money, Card, PayPal, Cash on Delivery)
+- Loyalty rewards program
+- Subscription boxes
+- Gift cards and gift sending
+- Seller marketplace
+
+## Main Pages
+- /: Homepage with featured products, new arrivals, bestsellers, flash sales
+- /category: Browse all product categories
+- /category?cat=toys: Toys & Vibrators
+- /category?cat=lingerie: Lingerie collection
+- /category?cat=wellness: Wellness products
+- /category?cat=lubricants: Lubricants & personal care
+- /category?cat=couples: Couples products
+- /sales: Current sales and deals
+- /product/[slug]: Individual product pages with reviews, ratings, and related products
+- /blog: Wellness guides, tips, and product reviews
+- /blog/[slug]: Individual blog articles
+- /search: Product search with filters
+- /gift-cards: Gift card purchase
+- /subscription-boxes: Curated monthly subscription boxes
+- /beginners: Beginner's guide to intimate wellness
+- /couples: Products curated for couples
+- /contact: Contact information and support
+- /faq: Frequently asked questions
+- /store: Browse seller storefronts
+- /seller/[slug]: Individual seller pages
+- /track-order: Order tracking
+
+## Product Categories
+- Vibrators & Toys
+- Lingerie & Apparel
+- Lubricants & Personal Care
+- Couples Toys & Intimacy Products
+- Sexual Wellness & Self-Care
+- Intimate Accessories
+
+## Business Information
+- Name: PleasureZone Uganda
+- Location: Kampala, Uganda
+- Delivery: Same-day in Kampala, 1-3 days nationwide
+- Payment: Mobile Money (MTN, Airtel), Visa/Mastercard, PayPal, Cash on Delivery
+- Currency: UGX (Ugandan Shilling)
+
+## Policies
+- /policies/privacy: Privacy policy
+- /policies/terms: Terms of service
+- /policies/shipping: Shipping policy
+
+## Contact
+- Website: https://ugsex.com
+- Support: /support (live chat available)

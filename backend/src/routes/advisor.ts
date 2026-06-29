@@ -7,20 +7,23 @@ import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
+// Helper to strip HTML tags
+const stripHtml = (html: string) => html.replace(/<[^>]*>/g, "");
+
 // ─── Private AI Wellness Advisor ──────────────────────────────────────────────
-// Powered by Claude API. No chat history stored. Fully private.
+// Powered by Google Gemini. No chat history stored. Fully private.
 router.post("/chat", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { message } = z.object({
       message: z.string().min(1).max(500),
     }).parse(req.body);
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey || apiKey === "your-anthropic-api-key") {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "your-gemini-api-key") {
       return res.status(503).json({ error: "AI advisor not configured yet" });
     }
 
-    // Fetch top products for context (limit to avoid token overflow)
+    // Fetch all active products for full context (utilizing Gemini's large context window)
     const products = await prisma.product.findMany({
       where: { status: "ACTIVE" },
       select: {
@@ -32,12 +35,13 @@ router.post("/chat", optionalAuth, asyncHandler(async (req: AuthRequest, res: Re
         tags: true,
       },
       orderBy: [{ featured: "desc" }, { reviewCount: "desc" }],
-      take: 30,
     });
 
-    const catalog = products.map((p) =>
-      `- ${p.name} (${p.category?.name || "General"}) — UGX ${Number(p.price).toLocaleString()} — /product/${p.slug}`
-    ).join("\n");
+    const catalog = products.map((p) => {
+      const cleanDesc = p.description ? stripHtml(p.description).slice(0, 150) : "No description";
+      const tagsStr = Array.isArray(p.tags) ? p.tags.join(", ") : (p.tags || "None");
+      return `- ${p.name} (${p.category?.name || "General"}) — UGX ${Number(p.price).toLocaleString()} — Desc: ${cleanDesc}... — Tags: ${tagsStr} — /product/${p.slug}`;
+    }).join("\n");
 
     const systemPrompt = `You are a discreet, professional wellness advisor for PleasureZone Uganda — Uganda's most trusted discreet wellness shop.
 
@@ -56,28 +60,39 @@ ${catalog}
 
 When recommending products, include the product name and price. Keep it natural and helpful.`;
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const response = await fetch(url, {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
-        system: systemPrompt,
-        messages: [{ role: "user", content: message }],
+        contents: [
+          {
+            parts: [
+              { text: message }
+            ]
+          }
+        ],
+        systemInstruction: {
+          parts: [
+            { text: systemPrompt }
+          ]
+        },
+        generationConfig: {
+          maxOutputTokens: 300,
+          temperature: 0.7,
+        }
       }),
     });
 
     if (!response.ok) {
-      logger.error("Claude API error", { status: response.status, body: await response.text() });
+      logger.error("Gemini API error", { status: response.status, body: await response.text() });
       return res.status(502).json({ error: "Advisor temporarily unavailable" });
     }
 
     const data = await response.json() as any;
-    const reply = data.content?.[0]?.text || "I'm sorry, I couldn't process that. Please try again.";
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm sorry, I couldn't process that. Please try again.";
 
     return res.json({ reply });
   } catch (error) {
@@ -144,6 +159,79 @@ router.post("/size-recommendation", asyncHandler(async (req: Request, res: Respo
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid measurements", details: (error as z.ZodError).errors });
     return res.status(500).json({ error: "Size recommendation failed" });
+  }
+}));
+
+// POST /api/advisor/compatibility-profile - Generate dynamic AI profile from quiz answers
+router.post("/compatibility-profile", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { answers } = z.object({
+      answers: z.record(z.string()),
+    }).parse(req.body);
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "your-gemini-api-key") {
+      return res.status(503).json({ error: "AI advisor not configured" });
+    }
+
+    // Fetch catalog names for context
+    const products = await prisma.product.findMany({
+      where: { status: "ACTIVE" },
+      select: {
+        name: true,
+        slug: true,
+        price: true,
+        category: { select: { name: true } },
+      },
+      take: 15,
+      orderBy: { reviewCount: "desc" },
+    });
+
+    const catalogList = products.map(p => `- ${p.name} (${p.category?.name || "Wellness"}) — UGX ${Number(p.price).toLocaleString()} — /product/${p.slug}`).join("\n");
+
+    const systemPrompt = `You are a professional, highly discreet relationship and sensory wellness expert for PleasureZone Uganda.
+    Based on the user's responses to our intimacy compatibility quiz, write a supportive, personalized "Sensory & Compatibility Profile" (2-3 paragraphs max).
+    Focus on recommendations for relationship connection, comfort, and sensory preferences.
+    Suggest 1 or 2 specific products from our top items when relevant:
+    ${catalogList}
+    Keep your recommendations supportive, respectful, and fully discreet.`;
+
+    const promptText = `Quiz Responses:
+    ${Object.entries(answers).map(([q, a]) => `Q: ${q}\nA: ${a}`).join("\n\n")}
+    
+    Write the personalized Sensory & Compatibility Profile.`;
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { maxOutputTokens: 500, temperature: 0.7 }
+      }),
+    });
+
+    if (!response.ok) {
+      logger.error("Gemini API error in compatibility profile", { status: response.status });
+      return res.status(502).json({ error: "Failed to generate compatibility profile" });
+    }
+
+    const data = await response.json() as any;
+    const profile = data.candidates?.[0]?.content?.parts?.[0]?.text || "Unable to formulate profile. Please try again.";
+
+    // If user is authenticated, save the sensory profile to their account
+    if (req.user?.id) {
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { sensoryProfile: profile },
+      });
+    }
+
+    return res.json({ profile });
+  } catch (error) {
+    logger.error("Compatibility profile error", { error });
+    return res.status(500).json({ error: "Profile generation temporarily unavailable" });
   }
 }));
 

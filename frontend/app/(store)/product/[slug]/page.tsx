@@ -42,11 +42,17 @@ async function getRelatedProducts(categoryId: string, excludeSlug: string) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const product = await getProduct(slug);
-  if (!product) return {};
+  if (!product) {
+    return {
+      title: "Product | PleasureZone Uganda",
+      description: "Browse premium intimate wellness products at PleasureZone Uganda. Fast discreet delivery, plain packaging, and secure checkout.",
+      alternates: { canonical: `${SITE_URL}/product/${slug}` },
+    };
+  }
 
   const category = product.category as { name: string } | undefined;
   const title = `${product.name}${category ? ` - ${category.name}` : ''} | PleasureZone Uganda`;
-  const rawDesc = product.description?.replace(/<[^>]*>/g, '') || '';
+  const rawDesc = product.description?.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() || '';
   const description = rawDesc
     ? `${rawDesc.slice(0, 120)} Shop ${product.name} online at PleasureZone Uganda. Fast discreet delivery.`.slice(0, 160)
     : `Buy ${product.name} online at PleasureZone Uganda. ${category ? `Best ${category.name} with` : 'Fast'} discreet delivery & secure checkout.`;
@@ -61,14 +67,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title,
       description,
       url: canonicalUrl,
-      images: image ? [{ url: image, width: 800, height: 800, alt: product.name }] : [],
+      siteName: "PleasureZone Uganda",
+      images: image ? [{ url: image, width: 800, height: 800, alt: product.name }] : [`${SITE_URL}/og-image.png`],
       type: "website",
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: image ? [image] : [],
+      images: image ? [image] : [`${SITE_URL}/og-image.png`],
     },
   };
 }

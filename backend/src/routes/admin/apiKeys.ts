@@ -64,6 +64,16 @@ router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Rate limit must be between 1 and 10,000 req/min" });
     }
 
+    if (expiresAt) {
+      const d = new Date(expiresAt);
+      if (isNaN(d.getTime())) {
+        return res.status(400).json({ error: "Invalid expiresAt date format" });
+      }
+      if (d <= new Date()) {
+        return res.status(400).json({ error: "expiresAt must be in the future" });
+      }
+    }
+
     const key = generateApiKey();
     const keyHash = hashApiKey(key);
     const prefix = key.slice(0, 12) + "...";

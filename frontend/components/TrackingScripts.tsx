@@ -12,8 +12,6 @@ export default function TrackingScripts() {
       .catch(() => {});
   }, []);
 
-  // GA is handled by GoogleAnalytics component in root layout via NEXT_PUBLIC_GA_ID
-  // Only load from settings if env var is not set
   const envGaId = process.env.NEXT_PUBLIC_GA_ID;
   const gaEnabled = !envGaId && settings.tracking_ga_enabled === "true";
   const gaId = settings.tracking_ga_measurement_id;
@@ -23,6 +21,11 @@ export default function TrackingScripts() {
   const tiktokId = settings.tracking_tiktok_pixel_id;
   const gtmEnabled = settings.tracking_gtm_enabled === "true";
   const gtmId = settings.tracking_gtm_container_id;
+
+  // Microsoft Clarity
+  const envClarityId = process.env.NEXT_PUBLIC_CLARITY_ID;
+  const clarityEnabled = envClarityId || settings.tracking_clarity_enabled === "true";
+  const clarityId = envClarityId || settings.tracking_clarity_id;
 
   return (
     <>
@@ -61,6 +64,13 @@ export default function TrackingScripts() {
       {tiktokEnabled && tiktokId && (
         <Script id="tiktok-pixel" strategy="afterInteractive">
           {`!function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e};ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};ttq.load('${tiktokId}');ttq.page();}(window,document,'ttq');`}
+        </Script>
+      )}
+
+      {/* Microsoft Clarity */}
+      {clarityEnabled && clarityId && (
+        <Script id="clarity" strategy="afterInteractive">
+          {`(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,"clarity","script","${clarityId}");`}
         </Script>
       )}
     </>

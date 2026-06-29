@@ -20,7 +20,18 @@ router.post("/", asyncHandler(async (req: Request, res: Response) => {
       text: string; // Full input chain e.g. "1*2*1"
     };
 
-    const inputs = text ? text.split("*") : [];
+    const rawInputs = text ? text.split("*") : [];
+    
+    // Preprocess inputs to handle virtual navigation (like "Back to menu")
+    const inputs: string[] = [];
+    for (const input of rawInputs) {
+      if (inputs.length === 3 && input === "2") {
+        // Reset path to main menu
+        inputs.length = 0;
+      } else {
+        inputs.push(input);
+      }
+    }
     const depth = inputs.length;
 
     // ── Level 0: Main menu ────────────────────────────────────────────────────

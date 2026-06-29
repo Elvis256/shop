@@ -12,9 +12,16 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { useCountry } from "@/contexts/CountryContext";
 import { parseDaysRange, formatDateRange } from "@/components/DeliveryEstimate";
-import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck, Banknote, Wallet, Star, MessageCircle } from "lucide-react";
+import { Check, CreditCard, Smartphone, Loader2, AlertCircle, Shield, Package, Plane, Zap, Lock, Eye, Truck, Banknote, Wallet, Star, MessageCircle, Calendar } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { trackBeginCheckout } from "@/components/GoogleAnalytics";
 import AddressAutocomplete, { type AddressSelection } from "@/components/AddressAutocomplete";
+import dynamic from "next/dynamic";
+
+const GPSMapPicker = dynamic(() => import("@/components/GPSMapPicker"), {
+  ssr: false,
+  loading: () => <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg text-center text-xs text-gray-500 animate-pulse">Loading Interactive Map...</div>
+});
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -43,6 +50,7 @@ export default function CheckoutPage() {
   
   const [step, setStep] = useState<Step>(1);
   const [paymentMethod, setPaymentMethod] = useState<"card" | "mobile_money" | "paypal" | "cod">("mobile_money");
+  const [codDepositMethod, setCodDepositMethod] = useState<"card" | "mobile_money">("mobile_money");
   const [mobileNetwork, setMobileNetwork] = useState<"MPESA" | "AIRTEL" | "MTN">("MTN");
   const [mobilePhone, setMobilePhone] = useState("");
   const [loading, setLoading] = useState(false);
@@ -70,7 +78,35 @@ export default function CheckoutPage() {
   const [deliveryTimeSlot, setDeliveryTimeSlot] = useState("");
   const [whatsappOptIn, setWhatsappOptIn] = useState(true);
   const [deliveryMethod, setDeliveryMethod] = useState<"home" | "pickup">("home");
-  const [selectedPickupPoint, setSelectedPickupPoint] = useState("");
+  const [pickupPoints, setPickupPoints] = useState<any[]>([]);
+  const [selectedPickupPointId, setSelectedPickupPointId] = useState<string>("");
+  // Incognito Gifting state
+  const [isGift, setIsGift] = useState(false);
+  const [giftRecipientPhone, setGiftRecipientPhone] = useState("");
+  const [giftMessage, setGiftMessage] = useState("");
+  const [senderName, setSenderName] = useState("");
+
+  // GPS delivery coordinate pinpoint
+  const [useGpsPin, setUseGpsPin] = useState(false);
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+
+  // Stealth Packaging selection
+  const [packagingType, setPackagingType] = useState<"STANDARD" | "GIFT" | "ULTRA_STEALTH">("STANDARD");
+
+  // Bill Sharing options
+  const [isPayForMe, setIsPayForMe] = useState(false);
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [splitShowItems, setSplitShowItems] = useState(false);
+  const [receiptMasked, setReceiptMasked] = useState(false);
+  const [dispatchDelay, setDispatchDelay] = useState<"immediate" | "24h" | "3d">("immediate");
+  const [splitPartnerPhone, setSplitPartnerPhone] = useState("");
+  const [billingSameAsShipping, setBillingSameAsShipping] = useState(true);
+  const [billingName, setBillingName] = useState("");
+
+  // Installments eligibility
+  const [installmentsEligible, setInstallmentsEligible] = useState<boolean | null>(null);
+  const [installmentsIneligibleReason, setInstallmentsIneligibleReason] = useState<string>("");
 
   // Stable idempotency key — generated once per checkout session, reused on retries
   const idempotencyKeyRef = useRef(`ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`);
@@ -81,10 +117,86 @@ export default function CheckoutPage() {
   const [storeCreditApplied, setStoreCreditApplied] = useState(false);
   const [storeCreditLoading, setStoreCreditLoading] = useState(false);
 
+  // Delivery options restriction state
+  const [allowedDeliveryMethods, setAllowedDeliveryMethods] = useState<string[]>(["HOME_DELIVERY", "PICKUP", "SELLER_PICKUP"]);
+  const [codAllowed, setCodAllowed] = useState(true);
+
+  // Fetch installments eligibility on mount
+  useEffect(() => {
+    fetch("/api/checkout/eligibility/installments")
+      .then((r) => r.json())
+      .then((data) => {
+        setInstallmentsEligible(data.eligible);
+        if (!data.eligible) {
+          setInstallmentsIneligibleReason(data.reason || "You do not qualify for installments.");
+        }
+      })
+      .catch(() => {
+        setInstallmentsEligible(false);
+        setInstallmentsIneligibleReason("Eligibility status check failed.");
+      });
+  }, []);
+
+  // Fetch allowed delivery and payment options based on items in cart
+  const productIdsStr = items.map((i) => i.productId).join(",");
+  useEffect(() => {
+    if (!productIdsStr) return;
+    fetch(`/api/checkout/delivery-options?productIds=${productIdsStr}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.allowedMethods) {
+          setAllowedDeliveryMethods(data.allowedMethods);
+          // Auto-adjust/fallback selected delivery method based on what is allowed
+          if (deliveryMethod === "pickup" && !data.allowedMethods.includes("PICKUP")) {
+            setDeliveryMethod("home");
+          } else if (deliveryMethod === "home" && !data.allowedMethods.includes("HOME_DELIVERY")) {
+            setDeliveryMethod("pickup");
+          }
+        }
+        if (data.codAllowed !== undefined) {
+          setCodAllowed(data.codAllowed);
+          // If current paymentMethod is cod but COD is not allowed, revert to mobile money
+          if (paymentMethod === "cod" && !data.codAllowed) {
+            setPaymentMethod("mobile_money");
+          }
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productIdsStr]);
+
+  // Fetch active pickup points on mount
+  useEffect(() => {
+    fetch("/api/pickup-points")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setPickupPoints(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Regenerate idempotency key when payment-affecting settings change
   useEffect(() => {
     idempotencyKeyRef.current = `ck_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`;
   }, [installmentsEnabled, installmentCount, paymentMethod, storeCreditApplied]);
+
+  const checkoutTrackedRef = useRef(false);
+  useEffect(() => {
+    if (items.length > 0 && !checkoutTrackedRef.current) {
+      checkoutTrackedRef.current = true;
+      trackBeginCheckout(
+        cartTotal,
+        items.map((i) => ({
+          id: i.productId,
+          name: i.name,
+          price: Number(i.price),
+          quantity: i.quantity,
+        }))
+      );
+    }
+  }, [items, cartTotal]);
 
   // Loyalty points state
   const [loyaltyBalance, setLoyaltyBalance] = useState(0);
@@ -114,6 +226,7 @@ export default function CheckoutPage() {
   // Fetch store credit + loyalty balance for authenticated users
   useEffect(() => {
     if (user) {
+      if (user.receiptMasked) setReceiptMasked(true);
       apiFetch("/api/store-credit")
         .then((d) => {
           if (d && d.balance > 0) setStoreCreditBalance(d.balance);
@@ -228,6 +341,10 @@ export default function CheckoutPage() {
     ? Math.ceil(finalTotal / installmentCount)
     : finalTotal;
 
+  const selectedPointDetails = selectedPickupPointId 
+    ? pickupPoints.find((p) => p.id === selectedPickupPointId)
+    : null;
+
   // Auto-fill from logged-in user
   useEffect(() => {
     if (user) {
@@ -280,8 +397,38 @@ export default function CheckoutPage() {
   };
 
   const validateShipping = () => {
-    if (!shipping.firstName || !shipping.lastName || !shipping.phone || !shipping.address || !shipping.city) {
-      setError("Please fill in all required fields");
+    if (isGift) {
+      if (!giftRecipientPhone) {
+        setError("Please enter the recipient's phone number");
+        return false;
+      }
+      const phoneRegex = /^(\+?256|0)?[7][0-9]{8}$/;
+      if (!phoneRegex.test(giftRecipientPhone.replace(/\s+/g, ""))) {
+        setError("Please enter a valid Ugandan recipient phone number (07XXXXXXXX)");
+        return false;
+      }
+      setError(null);
+      return true;
+    }
+
+    if (deliveryMethod === "pickup") {
+      if (!shipping.firstName || !shipping.lastName || !shipping.phone) {
+        setError("Please enter recipient name and phone number");
+        return false;
+      }
+      if (!selectedPickupPointId) {
+        setError("Please select a pickup station");
+        return false;
+      }
+    } else {
+      if (!shipping.firstName || !shipping.lastName || !shipping.phone || !shipping.address || !shipping.city) {
+        setError("Please fill in all required fields");
+        return false;
+      }
+    }
+
+    if (!billingSameAsShipping && !billingName.trim()) {
+      setError("Please enter the billing cardholder/corporate account name");
       return false;
     }
     if (!shipping.email && !shipping.phone) {
@@ -297,9 +444,28 @@ export default function CheckoutPage() {
   };
 
   const validatePayment = () => {
-    if (paymentMethod === "mobile_money" && !mobilePhone) {
+    if ((paymentMethod === "mobile_money" || (paymentMethod === "cod" && codDepositMethod === "mobile_money")) && !mobilePhone) {
       setError("Please enter your mobile money phone number");
       return false;
+    }
+    // FIX H8: Validate Uganda phone format for mobile money number
+    if ((paymentMethod === "mobile_money" || (paymentMethod === "cod" && codDepositMethod === "mobile_money")) && mobilePhone) {
+      const ugPhone = /^(\+?256|0)?[7][0-9]{8}$/;
+      if (!ugPhone.test(mobilePhone.replace(/\s+/g, ""))) {
+        setError("Please enter a valid Ugandan mobile money number (e.g. 0771234567)");
+        return false;
+      }
+    }
+    if (isPayForMe || isSplitPayment) {
+      if (!splitPartnerPhone) {
+        setError("Please enter your friend's phone number");
+        return false;
+      }
+      const phoneRegex = /^(\+?256|0)?[7][0-9]{8}$/;
+      if (!phoneRegex.test(splitPartnerPhone.replace(/\s+/g, ""))) {
+        setError("Please enter a valid Ugandan friend's phone number (07XXXXXXXX)");
+        return false;
+      }
     }
     setError(null);
     return true;
@@ -319,45 +485,73 @@ export default function CheckoutPage() {
         cartId: cartId || undefined,
         items: items.map((item) => ({
           productId: item.productId,
+          variantId: item.variantId,
           quantity: item.quantity,
           price: item.price,
         })),
         currency: "UGX",
-        amount: Math.max(0, cartTotal - couponDiscount + shippingCost),
-        shipping: shippingCost,
+        amount: Math.max(0, cartTotal - couponDiscount + (isGift ? 0 : shippingCost)),
+        shipping: isGift ? 0 : shippingCost,
         paymentMethod,
-        ...(paymentMethod === "mobile_money" && {
+        ...((paymentMethod === "mobile_money" || (paymentMethod === "cod" && codDepositMethod === "mobile_money")) && {
           mobileMoney: {
             network: mobileNetwork,
             phone: mobilePhone,
           },
         }),
+        ...(paymentMethod === "cod" && { codDepositMethod }),
         customer: {
-          name: `${shipping.firstName} ${shipping.lastName}`,
+          name: isGift ? (senderName || "Someone special") : (billingSameAsShipping ? `${shipping.firstName} ${shipping.lastName}` : billingName),
           ...(shipping.email ? { email: shipping.email } : {}),
           phone: shipping.phone,
         },
-        ...(deliveryTimeSlot ? { deliveryTimeSlot } : {}),
-        shippingAddress: {
-          name: `${shipping.firstName} ${shipping.lastName}`,
-          address: shipping.address,
-          city: shipping.city,
-          postalCode: shipping.postalCode,
-          country: "Uganda",
-          phone: shipping.phone,
-        },
+        ...(!isGift && deliveryTimeSlot ? { deliveryTimeSlot } : {}),
+        ...(!isGift && deliveryMethod === "home" && {
+          shippingAddress: {
+            name: `${shipping.firstName} ${shipping.lastName}`,
+            address: shipping.address,
+            city: shipping.city,
+            postalCode: shipping.postalCode,
+            country: "Uganda",
+            phone: shipping.phone,
+            ...(useGpsPin && latitude && longitude ? { latitude, longitude } : {}),
+          }
+        }),
+        ...(deliveryMethod === "pickup" && selectedPickupPointId ? { pickupPointId: selectedPickupPointId } : {}),
         discreet: shipping.discreet,
+        deliveryMethod: isGift ? "home" : deliveryMethod,
         whatsappOptIn,
+        packagingType,
+        isPayForMe,
+        isSplitPayment,
+        splitShowItems,
+        receiptMasked,
+        dispatchScheduledAt: dispatchDelay === "immediate" ? null : (dispatchDelay === "24h" ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()),
+        ...((isPayForMe || isSplitPayment) ? { splitPartnerPhone } : {}),
         ...(couponCode ? { couponCode } : {}),
         ...(storeCreditApplied && creditDiscount > 0 ? { storeCreditAmount: creditDiscount } : {}),
         ...(loyaltyApplied && loyaltyRedeem > 0 ? { loyaltyPointsRedeem: loyaltyRedeem } : {}),
         ...(giftCardApplied && giftCardDiscount > 0 ? { giftCardCode: giftCardCode.trim(), giftCardAmount: giftCardDiscount } : {}),
         ...(installmentsEnabled ? { installments: installmentCount } : {}),
+        isGift,
+        ...(isGift ? {
+          giftRecipientPhone,
+          giftMessage: giftMessage || undefined,
+          senderName: senderName || "Someone special"
+        } : {}),
         // Include affiliate referral code if present
         ...(typeof window !== "undefined" && localStorage.getItem("affiliate_ref")
           ? { affiliateCode: localStorage.getItem("affiliate_ref") }
           : {}),
       };
+
+      // Save guest checkout contact in sessionStorage for payment-status polling
+      if (!user) {
+        try {
+          if (shipping.email) sessionStorage.setItem("checkout_email", shipping.email);
+          if (shipping.phone) sessionStorage.setItem("checkout_phone", shipping.phone);
+        } catch {}
+      }
 
       const idempotencyKey = idempotencyKeyRef.current;
       const data = await apiFetch("/api/checkout/create", {
@@ -422,14 +616,14 @@ export default function CheckoutPage() {
 
         if (pollingCancelRef.current) return;
 
-        if (data.paymentStatus === "SUCCESSFUL") {
+        if (data.paymentStatus === "SUCCESSFUL" || data.status === "CONFIRMED") {
           clearCart();
           showToast("Payment successful!", "success");
           router.push(`/orders/${orderId}?success=true`);
           return;
         }
 
-        if (data.paymentStatus === "FAILED") {
+        if (data.paymentStatus === "FAILED" || data.status === "CANCELLED") {
           setPaymentPending(false);
           setError("Payment was declined. Please try again.");
           return;
@@ -535,7 +729,31 @@ export default function CheckoutPage() {
 
               <h3 className="flex items-center gap-2"><Package className="w-5 h-5 text-accent" />Shipping Information</h3>
 
-              {/* Saved Address — compact summary when selected */}
+              {/* Gift Toggle Tabs */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg mb-4">
+                <button
+                  type="button"
+                  onClick={() => setIsGift(false)}
+                  className={`py-2 px-3 text-sm font-semibold rounded-md transition-colors ${
+                    !isGift ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-950"
+                  }`}
+                >
+                  🚚 Standard Shipping
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsGift(true)}
+                  className={`py-2 px-3 text-sm font-semibold rounded-md transition-colors ${
+                    isGift ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-950"
+                  }`}
+                >
+                  🎁 Incognito Gift
+                </button>
+              </div>
+
+              {!isGift ? (
+                <>
+                  {/* Saved Address — compact summary when selected */}
               {user && savedAddresses.length > 0 && usingSavedAddress ? (
                 <div className="p-4 bg-primary-50 border border-primary/20 rounded-12 space-y-2">
                   <div className="flex items-start justify-between">
@@ -660,7 +878,7 @@ export default function CheckoutPage() {
 
                   <div>
                     <label htmlFor="address" className="block text-small font-medium mb-2">Address *</label>
-                    <AddressAutocomplete
+                     <AddressAutocomplete
                       id="address"
                       className="input"
                       placeholder="Start typing your address..."
@@ -671,9 +889,47 @@ export default function CheckoutPage() {
                         updateShipping("city", addr.city);
                         updateShipping("county", addr.county);
                         updateShipping("postalCode", addr.postalCode);
+                        if (addr.lat && addr.lng) {
+                          setLatitude(addr.lat);
+                          setLongitude(addr.lng);
+                        }
                       }}
                       enableGeocoding={deliveryMethod === "home"}
                     />
+                    
+                    {deliveryMethod === "home" && (
+                      <div className="space-y-4 pt-3">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={useGpsPin}
+                            onChange={(e) => {
+                              setUseGpsPin(e.target.checked);
+                              if (!e.target.checked) {
+                                setLatitude(null);
+                                setLongitude(null);
+                              }
+                            }}
+                            className="rounded border-gray-300 text-accent focus:ring-accent accent-accent w-4 h-4 cursor-pointer"
+                          />
+                          <span className="text-xs font-semibold text-text flex items-center gap-1">
+                            📍 Pinpoint my precise delivery coordinates on a map
+                          </span>
+                        </label>
+
+                        {useGpsPin && (
+                          <GPSMapPicker
+                            initialLat={latitude}
+                            initialLng={longitude}
+                            onChange={(lat, lng, addr) => {
+                              setLatitude(lat);
+                              setLongitude(lng);
+                              updateShipping("address", addr);
+                            }}
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid sm:grid-cols-3 gap-4">
@@ -711,49 +967,123 @@ export default function CheckoutPage() {
                       />
                     </div>
                   </div>
+
+                  {!isGift && (
+                    <div className="pt-4 mt-4 border-t border-gray-100 dark:border-gray-800 space-y-4">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={billingSameAsShipping}
+                          onChange={(e) => setBillingSameAsShipping(e.target.checked)}
+                          className="rounded border-gray-300 text-accent focus:ring-accent accent-accent w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-xs font-semibold text-text">
+                          Billing name matches shipping recipient
+                        </span>
+                      </label>
+
+                      {!billingSameAsShipping && (
+                        <div className="p-3 bg-gray-50 dark:bg-gray-800/40 rounded-lg border border-border">
+                          <label htmlFor="billingName" className="block text-xs font-semibold mb-1 text-text">
+                            Billing Cardholder / Corporate Account Name *
+                          </label>
+                          <input
+                            id="billingName"
+                            className="input text-xs"
+                            placeholder="e.g. John Doe (as shown on corporate credit card)"
+                            value={billingName}
+                            onChange={(e) => setBillingName(e.target.value)}
+                          />
+                          <p className="text-[10px] text-text-muted mt-1 leading-tight">
+                            We will use this name for payment authorization, while printing the shipping recipient alias on the package label.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
 
               {/* Delivery Method */}
-              <div>
-                <span id="deliveryMethodLabel" className="block text-small font-medium mb-2">Delivery Method</span>
-                <div className="grid grid-cols-2 gap-3" role="group" aria-labelledby="deliveryMethodLabel">
-                  <button
-                    type="button"
-                    onClick={() => setDeliveryMethod("home")}
-                    className={`p-3 border rounded-8 text-sm font-medium text-center transition-colors ${
-                      deliveryMethod === "home" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-gray-300"
+              {allowedDeliveryMethods.filter(m => m === "HOME_DELIVERY" || m === "PICKUP").length > 0 && (
+                <div>
+                  <span id="deliveryMethodLabel" className="block text-small font-medium mb-2">Delivery Method</span>
+                  <div
+                    className={`grid gap-3 ${
+                      allowedDeliveryMethods.filter(m => m === "HOME_DELIVERY" || m === "PICKUP").length > 1
+                        ? "grid-cols-2"
+                        : "grid-cols-1"
                     }`}
+                    role="group"
+                    aria-labelledby="deliveryMethodLabel"
                   >
-                    <Truck className="w-5 h-5 mx-auto mb-1" />
-                    Home Delivery
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeliveryMethod("pickup")}
-                    className={`p-3 border rounded-8 text-sm font-medium text-center transition-colors ${
-                      deliveryMethod === "pickup" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-gray-300"
-                    }`}
-                  >
-                    <Package className="w-5 h-5 mx-auto mb-1" />
-                    Pickup Point
-                  </button>
-                </div>
-                {deliveryMethod === "pickup" && (
-                  <div className="mt-3">
-                    <input
-                      type="text"
-                      placeholder="Enter pickup point name or area..."
-                      value={selectedPickupPoint}
-                      onChange={(e) => setSelectedPickupPoint(e.target.value)}
-                      className="input text-sm"
-                    />
-                    <p className="text-xs text-text-muted mt-1">
-                      <Link href="/pickup-points" target="_blank" className="text-primary hover:underline">View all pickup points →</Link>
-                    </p>
+                    {allowedDeliveryMethods.includes("HOME_DELIVERY") && (
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryMethod("home")}
+                        className={`p-3 border rounded-8 text-sm font-medium text-center transition-colors ${
+                          deliveryMethod === "home" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-gray-300"
+                        }`}
+                      >
+                        <Truck className="w-5 h-5 mx-auto mb-1" />
+                        Home Delivery
+                      </button>
+                    )}
+                    {allowedDeliveryMethods.includes("PICKUP") && (
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryMethod("pickup")}
+                        className={`p-3 border rounded-8 text-sm font-medium text-center transition-colors ${
+                          deliveryMethod === "pickup" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-gray-300"
+                        }`}
+                      >
+                        <Package className="w-5 h-5 mx-auto mb-1" />
+                        Pickup Point
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
+
+                  {deliveryMethod === "pickup" && (
+                    <div className="mt-3">
+                      <select
+                        value={selectedPickupPointId}
+                        onChange={(e) => setSelectedPickupPointId(e.target.value)}
+                        className="select text-sm w-full font-sans bg-white dark:bg-gray-800 border border-border rounded-lg p-2.5"
+                      >
+                        <option value="">-- Choose a pickup point --</option>
+                        {pickupPoints.map((point) => (
+                          <option key={point.id} value={point.id}>
+                            {point.name} ({point.city})
+                          </option>
+                        ))}
+                      </select>
+
+                      {selectedPointDetails && (
+                        <div className="mt-3 p-3 bg-primary/5 dark:bg-gray-800/40 rounded-lg border border-primary/10 space-y-1.5 text-xs font-sans">
+                          <p className="font-bold text-primary">📍 Selected Station Details:</p>
+                          <p className="text-text dark:text-gray-200">
+                            <strong className="font-medium text-text-muted">Address:</strong> {selectedPointDetails?.address}, {selectedPointDetails?.city}
+                          </p>
+                          {selectedPointDetails?.hours && (
+                            <p className="text-text dark:text-gray-200">
+                              <strong className="font-medium text-text-muted">Hours:</strong> {selectedPointDetails?.hours}
+                            </p>
+                          )}
+                          {selectedPointDetails?.phone && (
+                            <p className="text-text dark:text-gray-200">
+                              <strong className="font-medium text-text-muted">Phone:</strong> {selectedPointDetails?.phone}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      <p className="text-xs text-text-muted mt-2">
+                        <Link href="/pickup-points" target="_blank" className="text-primary hover:underline">View all pickup points →</Link>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Discreet Option */}
               <label className="flex items-start gap-3 p-4 border border-border rounded-8 cursor-pointer hover:border-accent transition-colors">
@@ -866,6 +1196,186 @@ export default function CheckoutPage() {
                   })()}
                 </div>
               )}
+              </>
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-4 bg-pink-50 dark:bg-pink-950/20 border border-pink-100 dark:border-pink-900 rounded-12">
+                    <p className="text-xs text-pink-700 dark:text-pink-400 font-semibold mb-1">🎁 Incognito Gifting Mode Enabled</p>
+                    <p className="text-xs text-pink-600 dark:text-pink-400">
+                      The recipient will receive a WhatsApp/SMS link to enter their own delivery address.
+                      No product details or prices are shown in their link, and delivery is 100% discreet in plain packaging.
+                    </p>
+                  </div>
+
+                  <h4 className="font-semibold text-sm border-b pb-1 text-gray-800 dark:text-gray-200 mt-4">1. Sender Information (For Receipt/Updates)</h4>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="senderPhone" className="block text-small font-medium mb-2">Your Phone *</label>
+                      <input
+                        id="senderPhone"
+                        className="input"
+                        type="tel"
+                        placeholder="Your phone number"
+                        value={shipping.phone}
+                        onChange={(e) => updateShipping("phone", e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="senderEmail" className="block text-small font-medium mb-2">Your Email <span className="text-xs font-normal text-gray-400 dark:text-gray-500">(optional)</span></label>
+                      <input
+                        id="senderEmail"
+                        className="input"
+                        type="email"
+                        placeholder="Your email address"
+                        value={shipping.email}
+                        onChange={(e) => updateShipping("email", e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <h4 className="font-semibold text-sm border-b pb-1 text-gray-800 dark:text-gray-200 mt-4">2. Gift Recipient Information</h4>
+                  <div>
+                    <label htmlFor="recipientPhone" className="block text-small font-medium mb-2">Recipient Phone * <span className="text-xs font-normal text-gray-400 dark:text-gray-500">(Uganda format)</span></label>
+                    <input
+                      id="recipientPhone"
+                      className="input"
+                      type="tel"
+                      placeholder="e.g. 07XXXXXXXX"
+                      value={giftRecipientPhone}
+                      onChange={(e) => setGiftRecipientPhone(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="senderName" className="block text-small font-medium mb-2">Sender Name <span className="text-xs font-normal text-gray-400 dark:text-gray-500">(optional)</span></label>
+                      <input
+                        id="senderName"
+                        className="input"
+                        placeholder="e.g. Someone special"
+                        value={senderName}
+                        onChange={(e) => setSenderName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="giftMessage" className="block text-small font-medium mb-2">Gift Message <span className="text-xs font-normal text-gray-400 dark:text-gray-500">(optional)</span></label>
+                      <input
+                        id="giftMessage"
+                        className="input"
+                        placeholder="e.g. Hope you love this! ❤️"
+                        value={giftMessage}
+                        onChange={(e) => setGiftMessage(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Stealth Packaging Customizer */}
+              <div className="p-4 border border-border rounded-12 space-y-4 bg-surface dark:bg-gray-800/50">
+                <h4 className="text-small font-semibold flex items-center gap-2 text-text">
+                  <Shield className="w-4 h-4 text-accent animate-pulse" /> Stealth Packaging Customizer
+                </h4>
+                <p className="text-xs text-text-muted">
+                  Select your package discretion. All options are shipped with <strong>no external store branding or contents listed</strong>.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={() => setPackagingType("STANDARD")}
+                    className={`p-3 text-left border rounded-lg transition-all flex flex-col justify-between ${
+                      packagingType === "STANDARD"
+                        ? "border-accent bg-accent/5 ring-1 ring-accent"
+                        : "border-border hover:border-gray-300 dark:hover:border-gray-700 bg-surface dark:bg-gray-800"
+                    }`}
+                  >
+                    <div>
+                      <span className="block text-xs font-bold text-text mb-1">📦 Standard Discreet</span>
+                      <span className="block text-[10px] text-text-muted leading-relaxed">
+                        Plain brown box or solid courier bag. Standard generic label.
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-emerald-600 font-semibold mt-2">Free (Included)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPackagingType("GIFT")}
+                    className={`p-3 text-left border rounded-lg transition-all flex flex-col justify-between ${
+                      packagingType === "GIFT"
+                        ? "border-accent bg-accent/5 ring-1 ring-accent"
+                        : "border-border hover:border-gray-300 dark:hover:border-gray-700 bg-surface dark:bg-gray-800"
+                    }`}
+                  >
+                    <div>
+                      <span className="block text-xs font-bold text-text mb-1">🎁 Gift Stealth</span>
+                      <span className="block text-[10px] text-text-muted leading-relaxed">
+                        Glossy wrapping paper, ribbon, and card envelope. Looks like a birthday gift.
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-accent font-semibold mt-2">Great for couples</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPackagingType("ULTRA_STEALTH")}
+                    className={`p-3 text-left border rounded-lg transition-all flex flex-col justify-between ${
+                      packagingType === "ULTRA_STEALTH"
+                        ? "border-accent bg-accent/5 ring-1 ring-accent"
+                        : "border-border hover:border-gray-300 dark:hover:border-gray-700 bg-surface dark:bg-gray-800"
+                    }`}
+                  >
+                    <div>
+                      <span className="block text-xs font-bold text-text mb-1">🛡️ Ultra Heavy Stealth</span>
+                      <span className="block text-[10px] text-text-muted leading-relaxed">
+                        Double-sealed, scent-blocked, non-rattling pack in regional courier sleeve.
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-accent font-semibold mt-2">Premium Privacy</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Private Dispatch Scheduler & Receipt Masking */}
+              <div className="p-4 border border-border rounded-12 space-y-4 bg-surface dark:bg-gray-800/50">
+                <h4 className="text-small font-semibold flex items-center gap-2 text-text">
+                  <Calendar className="w-4 h-4 text-accent animate-pulse" /> Private Dispatch & Receipt Masking
+                </h4>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-text">Dispatch Delay (Hold Queue)</label>
+                    <select
+                      value={dispatchDelay}
+                      onChange={(e) => setDispatchDelay(e.target.value as any)}
+                      className="w-full text-xs bg-surface dark:bg-gray-800 border border-border rounded-md p-2 focus:ring-1 focus:ring-accent outline-none text-text"
+                    >
+                      <option value="immediate">⚡ Immediate Dispatch</option>
+                      <option value="24h">⏱️ Hold for 24 Hours</option>
+                      <option value="3d">⏱️ Hold for 3 Days</option>
+                    </select>
+                    <span className="block text-[10px] text-text-muted">
+                      Keeps order in held state to delay shipment as needed.
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col justify-end space-y-2">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={receiptMasked}
+                        onChange={(e) => setReceiptMasked(e.target.checked)}
+                        className="mt-1 cursor-pointer accent-accent"
+                      />
+                      <div>
+                        <span className="block text-xs font-semibold text-text">Mask Receipt Details</span>
+                        <span className="block text-[10px] text-text-muted leading-tight">
+                          Replaces explicit names with codes (e.g. PZ-ABCD) on receipts/notifications.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
 
               <button
                 onClick={() => validateShipping() && setStep(2)}
@@ -946,28 +1456,35 @@ export default function CheckoutPage() {
                 )}
 
                 {isPaymentEnabled("payment_cod_enabled") && (
-                <label
-                  className={`flex items-center gap-4 p-4 border rounded-8 cursor-pointer ${
-                    paymentMethod === "cod" ? "border-accent bg-accent/5" : "border-border"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="payment"
-                    checked={paymentMethod === "cod"}
-                    onChange={() => setPaymentMethod("cod")}
-                  />
-                  <Banknote className="w-6 h-6" />
-                  <div>
-                    <span className="font-medium">Cash on Delivery</span>
-                    <p className="text-small text-text-muted">Pay when you receive your order</p>
-                  </div>
-                </label>
+                 <label
+                   className={`flex items-center gap-4 p-4 border rounded-8 cursor-pointer ${
+                     paymentMethod === "cod" ? "border-accent bg-accent/5" : "border-border"
+                   } ${(!codAllowed || isSplitPayment || isPayForMe) ? "opacity-40 cursor-not-allowed" : ""}`}
+                 >
+                   <input
+                     type="radio"
+                     name="payment"
+                     disabled={!codAllowed || isSplitPayment || isPayForMe}
+                     checked={paymentMethod === "cod"}
+                     onChange={() => setPaymentMethod("cod")}
+                   />
+                   <Banknote className="w-6 h-6" />
+                   <div>
+                     <span className="font-medium">Cash on Delivery</span>
+                     <p className="text-small text-text-muted">Pay when you receive your order</p>
+                     {!codAllowed && (
+                       <p className="text-xs text-red-500 mt-1 font-semibold">⚠️ Not available for the items in your cart</p>
+                     )}
+                     {(isSplitPayment || isPayForMe) && (
+                       <p className="text-xs text-red-500 mt-1 font-semibold">⚠️ Not available for split payments or group checkouts</p>
+                     )}
+                   </div>
+                 </label>
                 )}
               </div>
 
               {/* Mobile Money Form */}
-              {paymentMethod === "mobile_money" && (
+              {(paymentMethod === "mobile_money" || (paymentMethod === "cod" && codDepositMethod === "mobile_money")) && (
                 <div className="space-y-4 pt-4 border-t border-border">
                   <div>
                     <label htmlFor="mobileNetwork" className="block text-small font-medium mb-2">Select Network</label>
@@ -995,7 +1512,7 @@ export default function CheckoutPage() {
                       onChange={(e) => setMobilePhone(e.target.value)}
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Enter the phone number registered with {mobileNetwork}
+                      Enter the phone number registered with {mobileNetwork} {paymentMethod === "cod" ? "to pay the 20% deposit" : ""}
                     </p>
                   </div>
                 </div>
@@ -1037,29 +1554,82 @@ export default function CheckoutPage() {
 
               {/* COD Info */}
               {paymentMethod === "cod" && (
-                <div className="p-4 bg-amber-50 rounded-8 flex items-start gap-3">
-                  <Banknote className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-amber-900">Cash on Delivery</p>
-                    <p className="text-xs text-amber-700 mt-1">
-                      Pay with cash when your order is delivered. Please have the exact amount ready.
-                    </p>
+                <div className="p-4 bg-amber-50 rounded-8 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <Banknote className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-900">Cash on Delivery (20% Online Deposit Required)</p>
+                      <p className="text-xs text-amber-700 mt-1">
+                        A 20% online commitment deposit is required to confirm your order and prevent fake checkouts. The remaining 80% is paid to the courier upon delivery.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-white rounded-6 border border-amber-200 text-xs font-sans space-y-2">
+                    <div className="flex justify-between text-text">
+                      <span className="font-medium">20% Online Deposit (Pay Now):</span>
+                      <span className="font-bold text-amber-800">{formatPrice(Math.ceil(finalTotal * 0.2))}</span>
+                    </div>
+                    <div className="flex justify-between text-text border-t border-dashed border-gray-200 pt-2">
+                      <span className="font-medium">80% Balance (Pay on Delivery):</span>
+                      <span className="font-semibold">{formatPrice(finalTotal - Math.ceil(finalTotal * 0.2))}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-3 pt-2 border-t border-amber-200/50">
+                    <span className="block text-xs font-semibold text-amber-900">
+                      Choose Deposit Payment Method:
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCodDepositMethod("mobile_money")}
+                        className={`py-2 px-3 text-xs font-medium rounded-6 border flex items-center justify-center gap-1.5 transition-all ${
+                          codDepositMethod === "mobile_money"
+                            ? "border-accent bg-accent/5 text-accent font-semibold"
+                            : "border-gray-200 bg-white text-text hover:border-gray-300"
+                        }`}
+                      >
+                        <Smartphone className="w-3.5 h-3.5" /> Mobile Money
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCodDepositMethod("card")}
+                        className={`py-2 px-3 text-xs font-medium rounded-6 border flex items-center justify-center gap-1.5 transition-all ${
+                          codDepositMethod === "card"
+                            ? "border-accent bg-accent/5 text-accent font-semibold"
+                            : "border-gray-200 bg-white text-text hover:border-gray-300"
+                        }`}
+                      >
+                        <CreditCard className="w-3.5 h-3.5" /> Card
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Pay in Installments */}
-              <div className="border border-border rounded-8 overflow-hidden">
-                <label className="flex items-center gap-3 p-4 cursor-pointer">
+              <div className={`border border-border rounded-8 overflow-hidden ${installmentsEligible === false ? "opacity-60 bg-gray-50 dark:bg-gray-800/10" : ""}`}>
+                <label className={`flex items-center gap-3 p-4 ${installmentsEligible === false ? "cursor-not-allowed" : "cursor-pointer"}`}>
                   <input
                     type="checkbox"
+                    disabled={installmentsEligible === false}
                     checked={installmentsEnabled}
-                    onChange={(e) => setInstallmentsEnabled(e.target.checked)}
+                    onChange={(e) => {
+                      setInstallmentsEnabled(e.target.checked);
+                      if (e.target.checked) {
+                        setIsPayForMe(false);
+                        setIsSplitPayment(false);
+                      }
+                    }}
                     className="accent-accent"
                   />
                   <div>
-                    <span className="font-medium text-sm">Pay in Installments</span>
+                    <span className="font-semibold text-sm text-text">Pay in Installments</span>
                     <p className="text-xs text-text-muted">Split your payment into smaller amounts</p>
+                    {installmentsEligible === false && (
+                      <p className="text-[11px] text-red-500 mt-1 font-sans leading-tight">
+                        ⚠️ Ineligible: {installmentsIneligibleReason}
+                      </p>
+                    )}
                   </div>
                 </label>
 
@@ -1083,16 +1653,19 @@ export default function CheckoutPage() {
                         </button>
                       ))}
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                    <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 font-sans">
                       <p className="text-sm font-medium text-gray-900">Payment schedule:</p>
                       {Array.from({ length: installmentCount }).map((_, i) => {
-                        const amount = Math.ceil(finalTotal / installmentCount);
+                        // FIX H6: Use Math.floor so last installment gets the remainder (never negative)
+                        const baseAmount = Math.floor(finalTotal / installmentCount);
+                        const remainder = finalTotal - baseAmount * installmentCount;
+                        const amount = i === installmentCount - 1 ? baseAmount + remainder : baseAmount;
                         const intervalWeeks = installmentCount <= 2 ? 2 : 4;
                         const isFirst = i === 0;
                         return (
                           <p key={i} className="text-xs text-gray-600 flex justify-between">
                             <span>{isFirst ? "Today" : `In ${i * intervalWeeks} weeks`}</span>
-                            <span className="font-medium">{formatPrice(i === installmentCount - 1 ? finalTotal - amount * (installmentCount - 1) : amount)}</span>
+                            <span className="font-medium">{formatPrice(amount)}</span>
                           </p>
                         );
                       })}
@@ -1100,6 +1673,144 @@ export default function CheckoutPage() {
                   </div>
                 )}
               </div>
+
+              {/* Bill Sharing Option */}
+              {paymentMethod !== "cod" && (
+                <div className="border border-border rounded-8 overflow-hidden bg-surface dark:bg-gray-800/20">
+                  <label className="flex items-center gap-3 p-4 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={isPayForMe || isSplitPayment}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        if (checked) {
+                          setIsSplitPayment(true); // Default to Split Payment
+                          setIsPayForMe(false);
+                          setInstallmentsEnabled(false);
+                        } else {
+                          setIsSplitPayment(false);
+                          setIsPayForMe(false);
+                          setSplitShowItems(false);
+                        }
+                      }}
+                      className="accent-accent w-4 h-4 cursor-pointer"
+                    />
+                    <div>
+                      <span className="font-semibold text-sm text-text flex items-center gap-1.5">
+                        👥 Bill Sharing & Ask a Friend
+                      </span>
+                      <p className="text-xs text-text-muted">Split the cost 50/50 or ask a friend to pay the full bill on your behalf</p>
+                    </div>
+                  </label>
+
+                  {(isPayForMe || isSplitPayment) && (
+                    <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">
+                      {/* Sub-options for sharing */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div
+                          onClick={() => {
+                            setIsSplitPayment(true);
+                            setIsPayForMe(false);
+                          }}
+                          className={`p-3 border rounded-lg cursor-pointer transition-all flex flex-col justify-between ${
+                            isSplitPayment
+                              ? "border-accent bg-accent/5 dark:bg-accent/10"
+                              : "border-border hover:border-gray-300 bg-gray-50/50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1 font-sans">
+                            <input
+                              type="radio"
+                              name="sharing_type"
+                              checked={isSplitPayment}
+                              readOnly
+                              className="accent-accent w-3.5 h-3.5"
+                            />
+                            <span className="font-semibold text-xs text-text">50/50 Split Payment</span>
+                          </div>
+                          <p className="text-[10px] text-text-muted">Pay half now, and your friend pays the other half later.</p>
+                        </div>
+
+                        <div
+                          onClick={() => {
+                            setIsPayForMe(true);
+                            setIsSplitPayment(false);
+                          }}
+                          className={`p-3 border rounded-lg cursor-pointer transition-all flex flex-col justify-between ${
+                            isPayForMe
+                              ? "border-accent bg-accent/5 dark:bg-accent/10"
+                              : "border-border hover:border-gray-300 bg-gray-50/50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1 font-sans">
+                            <input
+                              type="radio"
+                              name="sharing_type"
+                              checked={isPayForMe}
+                              readOnly
+                              className="accent-accent w-3.5 h-3.5"
+                            />
+                            <span className="font-semibold text-xs text-text">100% Ask a Friend to Pay</span>
+                          </div>
+                          <p className="text-[10px] text-text-muted">Send the entire bill to a friend to pay on your behalf.</p>
+                        </div>
+                      </div>
+
+                      {/* Phone input */}
+                      <div>
+                        <label htmlFor="splitPartnerPhone" className="block text-xs font-semibold text-text mb-1">
+                          Friend&apos;s Phone Number * <span className="text-[10px] text-text-muted font-normal">(Uganda format, e.g. 07XXXXXXXX)</span>
+                        </label>
+                        <input
+                          id="splitPartnerPhone"
+                          className="input text-sm"
+                          placeholder="e.g. 0771234567"
+                          value={splitPartnerPhone}
+                          onChange={(e) => setSplitPartnerPhone(e.target.value)}
+                        />
+                        <p className="text-[10px] text-text-muted mt-1.5 font-sans leading-relaxed">
+                          We will send the payment link to this phone number via SMS/WhatsApp. 
+                          {isSplitPayment 
+                            ? " Once you pay your 50% share, your friend will receive the invite to pay the other 50%." 
+                            : " The order will be processed once your friend completes the full payment."}
+                        </p>
+                      </div>
+
+                      {/* Opt-in to show items to partner */}
+                      <div className="flex items-center gap-2 pt-1 font-sans select-none">
+                        <input
+                          id="splitShowItems"
+                          type="checkbox"
+                          checked={splitShowItems}
+                          onChange={(e) => setSplitShowItems(e.target.checked)}
+                          className="accent-accent w-4 h-4 cursor-pointer"
+                        />
+                        <label htmlFor="splitShowItems" className="text-xs font-medium text-text cursor-pointer leading-tight">
+                          Share order items (products & quantities) on the payment page 
+                          <span className="block text-[10px] text-text-muted font-normal mt-0.5">By default, order items are hidden for absolute privacy.</span>
+                        </label>
+                      </div>
+
+                      {/* Dynamic price breakdown details */}
+                      <div className="p-3 bg-accent/5 rounded-lg border border-accent/15 space-y-1.5 font-sans">
+                        <p className="text-xs font-bold text-accent">Payment Details Breakdown:</p>
+                        <div className="flex justify-between text-xs text-text">
+                          <span>Your Share (Pay Now):</span>
+                          {/* FIX H7: Use Math.floor for initiator share so total is never exceeded */}
+                          <span className="font-semibold">{isPayForMe ? formatPrice(0) : formatPrice(Math.floor(finalTotal / 2))}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-text border-t border-dashed border-accent/20 pt-1.5">
+                          <span>Friend&apos;s Share (Awaiting Payment):</span>
+                          <span className="font-semibold text-accent">
+                            {/* Partner always pays the remainder to ensure total is exact */}
+                            {isPayForMe ? formatPrice(finalTotal) : formatPrice(finalTotal - Math.floor(finalTotal / 2))}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {paymentSettings.payment_instructions && (
                 <p className="text-xs text-text-muted italic">{paymentSettings.payment_instructions}</p>
@@ -1165,7 +1876,7 @@ export default function CheckoutPage() {
                       : paymentMethod === "paypal"
                       ? "PayPal"
                       : paymentMethod === "cod"
-                      ? "Cash on Delivery"
+                      ? `Cash on Delivery (20% Deposit via ${codDepositMethod === "mobile_money" ? "Mobile Money" : "Card"})`
                       : "Flutterwave (Card, Mobile Money, Bank & more)"}
                   </p>
                   <p className="text-small text-text-muted mt-1">
@@ -1174,7 +1885,7 @@ export default function CheckoutPage() {
                       : paymentMethod === "paypal"
                       ? "Secure checkout via PayPal (charged in USD)"
                       : paymentMethod === "cod"
-                      ? "Pay cash when you receive your order"
+                      ? `20% Deposit (${formatPrice(Math.ceil(finalTotal * 0.2))}) paid online, 80% balance (${formatPrice(finalTotal - Math.ceil(finalTotal * 0.2))}) paid on delivery.`
                       : "Via Flutterwave secure checkout"}
                   </p>
                 </div>
@@ -1378,7 +2089,9 @@ export default function CheckoutPage() {
                   ) : (
                     <>
                       <Lock className="w-4 h-4" />
-                      {installmentsEnabled && installmentCount >= 2
+                      {paymentMethod === "cod"
+                        ? `Pay Deposit ${formatPrice(Math.ceil(finalTotal * 0.2))}`
+                        : installmentsEnabled && installmentCount >= 2
                         ? `Pay ${formatPrice(firstInstallmentAmount)} (1st of ${installmentCount})`
                         : `Pay ${formatPrice(finalTotal)}`}
                     </>
@@ -1402,7 +2115,13 @@ export default function CheckoutPage() {
 
         {/* Order Summary */}
         <div>
-          <OrderSummary city={shipping.city} onCouponChange={handleCouponChange} />
+          <OrderSummary
+            city={shipping.city}
+            onCouponChange={handleCouponChange}
+            storeCreditDiscount={creditDiscount}
+            giftCardDiscount={giftCardDiscount}
+            loyaltyDiscount={loyaltyDiscount}
+          />
         </div>
       </div>
     </Section>

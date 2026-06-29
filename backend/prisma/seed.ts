@@ -9,10 +9,10 @@ async function main() {
   // Create admin user
   const adminPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD || "admin123", 12);
   const admin = await prisma.user.upsert({
-    where: { email: process.env.ADMIN_EMAIL || "admin@adultstore.com" },
+    where: { email: process.env.ADMIN_EMAIL || "admin@pleasurezone.ug" },
     update: {},
     create: {
-      email: process.env.ADMIN_EMAIL || "admin@adultstore.com",
+      email: process.env.ADMIN_EMAIL || "admin@pleasurezone.ug",
       password: adminPassword,
       name: "Admin",
       role: "ADMIN",
@@ -350,7 +350,7 @@ async function main() {
   const settings = [
     { key: "store_name", value: "Pleasure Zone Uganda" },
     { key: "store_email", value: "support@pleasurezone.ug" },
-    { key: "store_phone", value: "+256 700 000 000" },
+    { key: "store_phone", value: "+256 777 123 456" },
     { key: "store_currency", value: "UGX" },
     { key: "free_shipping_threshold", value: "150000" },
     { key: "standard_shipping_cost", value: "10000" },

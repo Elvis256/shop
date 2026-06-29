@@ -2,47 +2,47 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Package, CheckCircle, Loader2, Lock, RefreshCw, Star, X } from "lucide-react";
+import { Package, CheckCircle, Loader2, Lock, RefreshCw, Star, X, Shield, Sparkles, Sliders, ChevronRight } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 const BOX_DEFS = [
   {
     slug: "solo-wellness-box",
     emoji: "✨",
-    name: "Solo Wellness Box",
+    name: "Discover Mystery Box",
     tagline: "Your monthly self-care ritual",
     description: "Curated wellness essentials delivered discreetly every month. Products chosen for your personal pleasure and wellbeing.",
     features: ["4–6 curated products", "10% subscriber discount", "Plain packaging", "Cancel anytime"],
     color: "from-pink-500/10 to-purple-500/10",
     border: "border-pink-500/30",
-    badge: "Most Popular",
+    badge: "Solo & Self-Care",
     badgeColor: "bg-pink-600",
   },
   {
     slug: "couples-box",
     emoji: "💑",
-    name: "Couples Box",
+    name: "Explore Mystery Box",
     tagline: "Reconnect every month",
     description: "A thoughtfully curated monthly package designed to enhance intimacy and bring couples closer together.",
     features: ["6–8 products for two", "15% subscriber discount", "Discreet packaging", "Skip or cancel anytime"],
     color: "from-red-500/10 to-pink-500/10",
     border: "border-red-500/30",
-    badge: "Best Value",
+    badge: "Best Value for Couples",
     badgeColor: "bg-red-600",
   },
   {
     slug: "skincare-box",
     emoji: "🌿",
-    name: "Skincare Box",
-    tagline: "Glow every month",
-    description: "Premium skincare products selected for Uganda's climate. Moisturisers, serums, and treatments for radiant skin.",
-    features: ["4–5 premium products", "10% subscriber discount", "Plain packaging", "Cancel anytime"],
-    color: "from-green-500/10 to-teal-500/10",
-    border: "border-green-500/30",
-    badge: null,
-    badgeColor: "",
+    name: "Elevate Luxury Box",
+    tagline: "Ultra-premium indulgence",
+    description: "Our highest tier mystery box containing elite wellness accessories, top-shelf serums, and custom accessories.",
+    features: ["4–5 luxury products", "15% subscriber discount", "Plain packaging", "Cancel anytime"],
+    color: "from-amber-500/10 to-orange-500/10",
+    border: "border-amber-500/30",
+    badge: "Luxury Tier",
+    badgeColor: "bg-amber-600",
   },
 ];
 
@@ -72,8 +72,16 @@ export default function SubscriptionBoxesPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Preference Quiz Modal State
+  const [selectedBoxSlug, setSelectedBoxSlug] = useState<string | null>(null);
+  const [quizStep, setQuizStep] = useState(0);
+  const [quizAnswers, setQuizAnswers] = useState({
+    goal: "",
+    experience: "",
+    packaging: "STANDARD",
+  });
 
+  useEffect(() => {
     // Fetch all subscribable products
     Promise.all([
       fetch(`${API_URL}/api/products?subscribable=true&limit=20`, { credentials: "include" })
@@ -104,32 +112,40 @@ export default function SubscriptionBoxesPage() {
     return userSubs.find((s) => s.productId === product.id) || null;
   }
 
-  async function handleSubscribe(slug: string) {
+  const handleStartSubscribe = (slug: string) => {
     if (!isLoggedIn) {
       router.push("/auth/login?redirect=/subscription-boxes");
       return;
     }
+    setSelectedBoxSlug(slug);
+    setQuizStep(1);
+  };
 
-    const product = products[slug];
-    if (!product) {
-      setError("This box is not yet available. Check back soon!");
-      return;
-    }
+  async function handleConfirmSubscribe() {
+    if (!selectedBoxSlug) return;
+    const product = products[selectedBoxSlug];
+    if (!product) return;
 
-    setSubscribing(slug);
+    setSubscribing(selectedBoxSlug);
     setError(null);
+    setSelectedBoxSlug(null); // close modal
 
     try {
       const res = await fetch(`${API_URL}/api/subscriptions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ productId: product.id, quantity: 1, intervalDays: 30 }),
+        body: JSON.stringify({ 
+          productId: product.id, 
+          quantity: 1, 
+          intervalDays: 30,
+          preferences: quizAnswers 
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to subscribe");
 
-      setSuccess(slug);
+      setSuccess(selectedBoxSlug);
       setUserSubs((prev) => [
         ...prev,
         {
@@ -150,17 +166,17 @@ export default function SubscriptionBoxesPage() {
     discount ? price * (1 - discount / 100) : price;
 
   return (
-    <div className="min-h-screen bg-surface px-4 py-12">
+    <div className="min-h-screen bg-gradient-to-b from-rose-50/20 via-white to-rose-50/10 dark:from-gray-950 dark:to-gray-900 px-4 py-12">
       <div className="max-w-2xl mx-auto space-y-8">
 
         {/* Header */}
         <div className="text-center space-y-3">
-          <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto">
-            <Package className="w-8 h-8 text-primary" />
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-500 bg-rose-50 dark:bg-rose-950/20 px-3 py-1 rounded-full">
+            <Sparkles className="w-3.5 h-3.5" /> Curated Mystery Tiers
           </div>
-          <h1 className="text-3xl font-bold text-text">Subscription Boxes</h1>
-          <p className="text-text-muted max-w-sm mx-auto">
-            Curated wellness products delivered to your door every month — discreetly.
+          <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white">Wellness Subscription Boxes</h1>
+          <p className="text-xs text-text-muted max-w-sm mx-auto">
+            Discreetly delivered monthly boxes. Tailor your preferences and let our intimacy experts curate your package.
           </p>
         </div>
 
@@ -261,9 +277,9 @@ export default function SubscriptionBoxesPage() {
                     </div>
                   ) : (
                     <button
-                      onClick={() => handleSubscribe(box.slug)}
+                      onClick={() => handleStartSubscribe(box.slug)}
                       disabled={isThisSubscribing || !product}
-                      className="bg-primary hover:bg-primary/90 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors flex items-center gap-2 min-w-[110px] justify-center"
+                      className="bg-primary hover:bg-primary/90 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors flex items-center gap-2 min-w-[110px] justify-center shadow-sm"
                     >
                       {isThisSubscribing ? (
                         <><Loader2 className="w-4 h-4 animate-spin" /> Subscribing...</>
@@ -280,14 +296,119 @@ export default function SubscriptionBoxesPage() {
           })}
         </div>
 
+        {/* Preference Setup Modal */}
+        {quizStep > 0 && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-3xl max-w-md w-full p-6 border border-border shadow-2xl space-y-6 animate-scale-in">
+              <div className="flex items-center justify-between border-b pb-3 border-border">
+                <span className="text-xs font-semibold text-rose-500 flex items-center gap-1">
+                  <Sliders className="w-3.5 h-3.5" /> Customize Your Curation
+                </span>
+                <button 
+                  onClick={() => setQuizStep(0)} 
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {quizStep === 1 && (
+                <div className="space-y-4">
+                  <h3 className="font-bold text-base text-gray-900 dark:text-white">Q1: What is your primary wellness goal?</h3>
+                  <div className="space-y-2">
+                    {["Sensory self-care & pleasure", "Deepening physical partner connection", "Exploring wild novelty & adventure"].map((opt) => (
+                      <button
+                        key={opt}
+                        onClick={() => {
+                          setQuizAnswers({ ...quizAnswers, goal: opt });
+                          setQuizStep(2);
+                        }}
+                        className="w-full text-left p-3.5 text-xs font-medium border border-border rounded-xl hover:border-accent hover:bg-accent/5 transition-all text-gray-700 dark:text-gray-300"
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {quizStep === 2 && (
+                <div className="space-y-4">
+                  <h3 className="font-bold text-base text-gray-900 dark:text-white">Q2: What is your comfort/experience level?</h3>
+                  <div className="space-y-2">
+                    {["Curious Beginner: light items", "Comfortable Intermediate: standard accessories", "Experienced Connoisseur: advanced products"].map((opt) => (
+                      <button
+                        key={opt}
+                        onClick={() => {
+                          setQuizAnswers({ ...quizAnswers, experience: opt });
+                          setQuizStep(3);
+                        }}
+                        className="w-full text-left p-3.5 text-xs font-medium border border-border rounded-xl hover:border-accent hover:bg-accent/5 transition-all text-gray-700 dark:text-gray-300"
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => setQuizStep(1)} className="text-[10px] text-gray-500 hover:underline">
+                    ← Back to Question 1
+                  </button>
+                </div>
+              )}
+
+              {quizStep === 3 && (
+                <div className="space-y-4">
+                  <h3 className="font-bold text-base text-gray-900 dark:text-white">Q3: Preferred stealth packaging style?</h3>
+                  <div className="space-y-2">
+                    {[
+                      { value: "STANDARD", label: "📦 Plain brown box / generic label" },
+                      { value: "GIFT", label: "🎁 Birthday present wrap / greeting envelope" },
+                      { value: "ULTRA_STEALTH", label: "🛡️ Double vacuum-sealed scent-blocked pack" }
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          setQuizAnswers({ ...quizAnswers, packaging: opt.value });
+                        }}
+                        className={`w-full text-left p-3.5 text-xs font-semibold border rounded-xl hover:border-accent transition-all flex justify-between items-center ${
+                          quizAnswers.packaging === opt.value 
+                            ? "border-accent bg-accent/5 text-accent"
+                            : "border-border text-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        {quizAnswers.packaging === opt.value && <CheckCircle className="w-4 h-4 text-accent" />}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  <div className="flex gap-3 pt-3">
+                    <button 
+                      onClick={() => setQuizStep(2)} 
+                      className="flex-1 py-2.5 border border-border rounded-lg text-xs font-semibold text-gray-600"
+                    >
+                      Back
+                    </button>
+                    <button 
+                      onClick={handleConfirmSubscribe} 
+                      className="flex-1 py-2.5 bg-primary text-white rounded-lg text-xs font-semibold hover:opacity-90 flex items-center justify-center gap-1"
+                    >
+                      Confirm Curation <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* How it works */}
         <div className="bg-surface-secondary border border-border rounded-2xl p-5 space-y-4">
           <h3 className="text-text font-semibold">How it works</h3>
           <div className="grid grid-cols-3 gap-3 text-center">
             {[
-              { step: "1", title: "Subscribe", desc: "Pick your box & subscribe" },
-              { step: "2", title: "We curate", desc: "We handpick products monthly" },
-              { step: "3", title: "Delivered", desc: "Discreet to your door" },
+              { step: "1", title: "Setup Profile", desc: "Select tier & answer setup quiz" },
+              { step: "2", title: "We curate", desc: "Our team curates your physical items" },
+              { step: "3", title: "Delivered", desc: "100% plain discreet outer package" },
             ].map((s) => (
               <div key={s.step} className="space-y-1">
                 <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center mx-auto text-primary font-bold text-sm">

@@ -5,7 +5,7 @@ import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface DailyDealData {
   id: string;

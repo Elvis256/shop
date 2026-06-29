@@ -34,11 +34,43 @@ router.post("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respon
         userId: userId,
         status: { in: ["DELIVERED", "SHIPPED"] },
       },
-      include: { items: true },
+      include: {
+        items: true,
+        timeline: {
+          where: { status: "DELIVERED" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
     });
 
     if (!order) {
       return res.status(404).json({ error: "Order not found or not eligible for return" });
+    }
+
+    // Enforce 7-day return window from delivery date
+    const RETURN_WINDOW_DAYS = 7;
+    if (order.status === "DELIVERED") {
+      const deliveredAt = order.timeline[0]?.createdAt || order.updatedAt;
+      const daysSinceDelivery = (Date.now() - deliveredAt.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSinceDelivery > RETURN_WINDOW_DAYS) {
+        return res.status(400).json({
+          error: `Return window has expired. Returns must be requested within ${RETURN_WINDOW_DAYS} days of delivery.`,
+        });
+      }
+    }
+
+    // Validate return item quantities against actual order items
+    for (const returnItem of data.items) {
+      const orderItem = order.items.find(oi => oi.id === returnItem.orderItemId);
+      if (!orderItem) {
+        return res.status(400).json({ error: `Order item ${returnItem.orderItemId} not found in this order` });
+      }
+      if (returnItem.quantity > orderItem.quantity) {
+        return res.status(400).json({
+          error: `Cannot return ${returnItem.quantity} of "${orderItem.name}" — only ${orderItem.quantity} were ordered`,
+        });
+      }
     }
 
     // Check if return already exists
@@ -118,17 +150,46 @@ router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respons
 }));
 
 // GET /api/returns/admin/all — List all return requests (admin)
-router.get("/admin/all", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get("/admin/all", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
-    const returns = await prisma.returnRequest.findMany({
-      include: {
-        order: { select: { orderNumber: true, totalAmount: true, customerName: true, customerEmail: true } },
-        user: { select: { name: true, email: true } },
-        items: true,
+    const { search, status, page = "1", limit = "20" } = req.query;
+    const take = Math.min(parseInt(limit as string) || 20, 100);
+    const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
+
+    const where: any = {};
+    if (status && status !== "All") where.status = status;
+    if (search) {
+      where.OR = [
+        { order: { orderNumber: { contains: search as string, mode: "insensitive" } } },
+        { order: { customerName: { contains: search as string, mode: "insensitive" } } },
+        { order: { customerEmail: { contains: search as string, mode: "insensitive" } } },
+      ];
+    }
+
+    const [returns, total] = await Promise.all([
+      prisma.returnRequest.findMany({
+        where,
+        include: {
+          order: { select: { orderNumber: true, totalAmount: true, customerName: true, customerEmail: true } },
+          user: { select: { name: true, email: true } },
+          items: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take,
+        skip,
+      }),
+      prisma.returnRequest.count({ where }),
+    ]);
+
+    res.json({
+      returns,
+      pagination: {
+        total,
+        page: Math.floor(skip / take) + 1,
+        limit: take,
+        totalPages: Math.ceil(total / take),
       },
-      orderBy: { createdAt: "desc" },
     });
-    res.json(returns);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

@@ -143,7 +143,20 @@ export async function checkPriceDropAlerts(productId: string, newPrice: number):
       sendSMS(alert.phone, message).catch(() => {});
     }
     if (alert.email) {
-      logger.info(`[PriceDrop] Would email ${alert.email}: ${message}`);
+      const { sendEmail } = await import("../lib/email");
+      sendEmail({
+        to: alert.email,
+        template: "price-drop",
+        data: {
+          productName: alert.product.name,
+          newPrice,
+          targetPrice: Number(alert.targetPrice),
+          productUrl: `${baseUrl}/product/${alert.product.slug}`,
+          currency: "UGX",
+        },
+      }).catch((err) => {
+        logger.error(`Failed to send price drop email to ${alert.email}`, { error: err });
+      });
     }
   }
 

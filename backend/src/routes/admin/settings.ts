@@ -4,6 +4,9 @@ import prisma from "../../lib/prisma";
 import { authenticate, requireAdmin, AuthRequest } from "../../middleware/auth";
 import { logger } from "../../lib/logger";
 import { asyncHandler } from "../../middleware/errorHandler";
+import { verifySmtpConnection, invalidateSmtpCache, sendEmail } from "../../lib/email";
+import { sendSMS } from "../../services/sms";
+import { sendWhatsApp } from "../../services/whatsapp";
 
 const router = Router();
 
@@ -164,6 +167,71 @@ router.put("/inventory/:productId", asyncHandler(async (req: AuthRequest, res: R
   } catch (error) {
     logger.error("Admin update inventory error", { error });
     return res.status(500).json({ error: "Failed to update inventory" });
+  }
+}));
+
+// POST /api/admin/settings/test-smtp — Verify SMTP connection
+router.post("/test-smtp", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    invalidateSmtpCache();
+    const result = await verifySmtpConnection();
+    if (result.success) {
+      return res.json({ success: true, message: "SMTP connection verified successfully" });
+    }
+    return res.status(400).json({ success: false, error: result.error });
+  } catch (error: any) {
+    logger.error("SMTP test error", { error });
+    return res.status(500).json({ success: false, error: error.message || "SMTP test failed" });
+  }
+}));
+
+// POST /api/admin/settings/test-email — Send a test email
+router.post("/test-email", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { email } = z.object({ email: z.string().email() }).parse(req.body);
+    invalidateSmtpCache();
+    const result = await sendEmail({
+      to: email,
+      template: "welcome",
+      data: { name: "Admin Test" },
+    });
+    if (result) {
+      return res.json({ success: true, message: `Test email sent to ${email}` });
+    }
+    return res.status(400).json({ success: false, error: "Failed to send email — check SMTP configuration" });
+  } catch (error: any) {
+    logger.error("Test email error", { error });
+    return res.status(500).json({ success: false, error: error.message || "Failed to send test email" });
+  }
+}));
+
+// POST /api/admin/settings/test-sms — Send a test SMS
+router.post("/test-sms", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { phone } = z.object({ phone: z.string().min(5) }).parse(req.body);
+    const result = await sendSMS(phone, "This is a test SMS from your store admin panel.");
+    if (result) {
+      return res.json({ success: true, message: `Test SMS sent to ${phone}` });
+    }
+    return res.status(400).json({ success: false, error: "Failed to send SMS — check Africa's Talking configuration" });
+  } catch (error: any) {
+    logger.error("Test SMS error", { error });
+    return res.status(500).json({ success: false, error: error.message || "Failed to send test SMS" });
+  }
+}));
+
+// POST /api/admin/settings/test-whatsapp — Send a test WhatsApp message
+router.post("/test-whatsapp", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { phone } = z.object({ phone: z.string().min(5) }).parse(req.body);
+    const result = await sendWhatsApp({ to: phone, text: "This is a test WhatsApp message from your store admin panel." });
+    if (result) {
+      return res.json({ success: true, message: `Test WhatsApp message sent to ${phone}` });
+    }
+    return res.status(400).json({ success: false, error: "Failed to send WhatsApp — check API configuration" });
+  } catch (error: any) {
+    logger.error("Test WhatsApp error", { error });
+    return res.status(500).json({ success: false, error: error.message || "Failed to send test WhatsApp message" });
   }
 }));
 

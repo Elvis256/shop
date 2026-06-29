@@ -99,6 +99,7 @@ async function syncCJPricesAndStock(): Promise<void> {
 
   const products = await prisma.product.findMany({
     where: { cjProductId: { not: null }, cjAutoSync: true },
+    orderBy: { lastSyncedAt: "asc" },
     take: 100,
   });
 

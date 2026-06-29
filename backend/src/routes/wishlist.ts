@@ -276,9 +276,9 @@ router.post("/:productId/move-to-cart", asyncHandler(async (req: AuthRequest, re
 
     // Add to cart (or update quantity)
     await prisma.cartItem.upsert({
-      where: { cartId_productId: { cartId: cart.id, productId } },
+      where: { cartId_productId_variantId: { cartId: cart.id, productId, variantId: null } },
       update: { quantity: { increment: 1 } },
-      create: { cartId: cart.id, productId, quantity: 1 },
+      create: { cartId: cart.id, productId, variantId: null, quantity: 1 },
     });
 
     // Remove from wishlist
@@ -290,6 +290,138 @@ router.post("/:productId/move-to-cart", asyncHandler(async (req: AuthRequest, re
   } catch (error) {
     logger.error("Move to cart error", { error });
     return res.status(500).json({ error: "Failed to move to cart" });
+  }
+}));
+
+// GET /api/wishlist/couple - Get partner's wishlist items
+router.get("/couple", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { partnerId: true },
+    });
+
+    if (!user?.partnerId) {
+      return res.json({ paired: false, items: [], partner: null });
+    }
+
+    const partner = await prisma.user.findUnique({
+      where: { id: user.partnerId },
+      select: { id: true, email: true, name: true },
+    });
+
+    if (!partner) {
+      // Clean up orphaned reference
+      await prisma.user.update({
+        where: { id: req.user!.id },
+        data: { partnerId: null },
+      });
+      return res.json({ paired: false, items: [], partner: null });
+    }
+
+    const items = await prisma.wishlistItem.findMany({
+      where: { userId: partner.id },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            price: true,
+            comparePrice: true,
+            currency: true,
+            rating: true,
+            stock: true,
+            images: { take: 1, orderBy: { position: "asc" } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.json({
+      paired: true,
+      partner: { email: partner.email, name: partner.name },
+      items: items.map((item) => ({
+        id: item.id,
+        addedAt: item.createdAt,
+        collectionName: item.collectionName,
+        product: {
+          ...item.product,
+          imageUrl: item.product.images[0]?.url || null,
+          inStock: item.product.stock > 0,
+        },
+      })),
+    });
+  } catch (error) {
+    logger.error("Get couple wishlist error", { error });
+    return res.status(500).json({ error: "Failed to fetch couple wishlist" });
+  }
+}));
+
+// POST /api/wishlist/couple/pair - Pair with partner by email
+router.post("/couple/pair", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { email } = z.object({
+      email: z.string().email(),
+    }).parse(req.body);
+
+    if (email.toLowerCase() === req.user!.email.toLowerCase()) {
+      return res.status(400).json({ error: "You cannot pair with yourself" });
+    }
+
+    const partner = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+
+    if (!partner) {
+      return res.status(404).json({ error: "Partner account not found. Make sure they have registered." });
+    }
+
+    // Link both accounts
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: req.user!.id },
+        data: { partnerId: partner.id },
+      }),
+      prisma.user.update({
+        where: { id: partner.id },
+        data: { partnerId: req.user!.id },
+      }),
+    ]);
+
+    return res.json({ message: "Successfully paired with partner", partner: { email: partner.email, name: partner.name } });
+  } catch (error) {
+    logger.error("Pair couple error", { error });
+    return res.status(500).json({ error: "Failed to pair accounts" });
+  }
+}));
+
+// POST /api/wishlist/couple/unpair - Unpair from partner
+router.post("/couple/unpair", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { partnerId: true },
+    });
+
+    if (user?.partnerId) {
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: req.user!.id },
+          data: { partnerId: null },
+        }),
+        prisma.user.update({
+          where: { id: user.partnerId },
+          data: { partnerId: null },
+        }),
+      ]);
+    }
+
+    return res.json({ message: "Successfully unpaired" });
+  } catch (error) {
+    logger.error("Unpair couple error", { error });
+    return res.status(500).json({ error: "Failed to unpair accounts" });
   }
 }));
 

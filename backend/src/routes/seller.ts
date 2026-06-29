@@ -6,6 +6,11 @@ import { logActivity } from "../lib/activityLogger";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createFlutterwaveTransfer } from "../services/flutterwave";
+import { sendWhatsApp } from "../services/whatsapp";
+import { sendSMS } from "../services/sms";
+import { enqueueNotification } from "../services/notificationDispatcher";
+import { parseShippingAddress } from "../utils/shippingAddress";
+import crypto from "crypto";
 
 const router = Router();
 
@@ -14,8 +19,6 @@ interface SellerRequest extends AuthRequest {
   seller?: any;
 }
 
-// Async middleware: checks for an approved Seller record linked to the authenticated user.
-// Attaches full req.seller for downstream use. No role check — any user with an approved Seller record qualifies.
 async function requireSeller(req: SellerRequest, res: Response, next: NextFunction) {
   if (!req.user) {
     return res.status(401).json({ error: "Authentication required" });
@@ -23,13 +26,33 @@ async function requireSeller(req: SellerRequest, res: Response, next: NextFuncti
   const seller = await prisma.seller.findUnique({
     where: { userId: req.user.id },
   });
-  if (!seller || seller.status !== "APPROVED") {
-    return res.status(403).json({
-      error: seller?.status === "PENDING"
-        ? "Your seller application is still under review"
-        : "Seller access required",
-    });
+  if (!seller) {
+    return res.status(403).json({ error: "Seller access required" });
   }
+
+  if (seller.status !== "APPROVED") {
+    // Allow pending sellers to complete onboarding steps
+    const allowedPendingPaths = [
+      "/profile",
+      "/upload-images",
+      "/upload-documents",
+      "/products",
+    ];
+    const isAllowed = allowedPendingPaths.some(
+      (path) => req.path === path || req.path.startsWith(path + "/")
+    );
+
+    if (seller.status === "PENDING" && isAllowed) {
+      // Allowed through to complete onboarding
+    } else {
+      return res.status(403).json({
+        error: seller.status === "PENDING"
+          ? "Your seller application is still under review"
+          : "Seller access required",
+      });
+    }
+  }
+
   req.seller = seller;
   next();
 }
@@ -43,6 +66,15 @@ function slugify(text: string): string {
     .replace(/[\s_]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function sanitizeInput(str: any): string | null {
+  if (str === null || str === undefined) return null;
+  if (typeof str !== "string") return String(str);
+  return str
+    .replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, "")
+    .replace(/<[^>]*>?/gm, "")
+    .trim();
 }
 
 export async function getCommissionRate(sellerId: string, categoryId: string | null): Promise<number> {
@@ -76,6 +108,54 @@ export async function getCommissionRate(sellerId: string, categoryId: string | n
 
   // 4. Fallback
   return 15;
+}
+
+// Batched version — resolves commission rates for multiple items in 2-3 queries total
+export async function getCommissionRates(
+  items: Array<{ sellerId: string; categoryId: string | null }>
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  const uniqueCategoryIds = [...new Set(items.map((i) => i.categoryId).filter(Boolean))] as string[];
+  const uniqueSellerIds = [...new Set(items.map((i) => i.sellerId))];
+
+  // Batch 1: all category rules
+  const categoryRules = uniqueCategoryIds.length > 0
+    ? await prisma.commissionRule.findMany({ where: { categoryId: { in: uniqueCategoryIds } } })
+    : [];
+  const catRuleMap = new Map(categoryRules.map((r) => [r.categoryId, r]));
+
+  // Batch 2: all sellers
+  const sellers = await prisma.seller.findMany({
+    where: { id: { in: uniqueSellerIds } },
+    select: { id: true, commissionRate: true, tier: true },
+  });
+  const sellerMap = new Map(sellers.map((s) => [s.id, s]));
+
+  // Batch 3: default rule (single query)
+  const defaultRule = await prisma.commissionRule.findFirst({
+    where: { categoryId: null, isActive: true },
+  });
+
+  for (const item of items) {
+    const key = `${item.sellerId}:${item.categoryId || ""}`;
+    if (result.has(key)) continue;
+
+    // Same logic as getCommissionRate but using cached data
+    if (item.categoryId) {
+      const catRule = catRuleMap.get(item.categoryId);
+      if (catRule && !catRule.isActive) { result.set(key, 15); continue; }
+      if (catRule) { result.set(key, Number(catRule.rate)); continue; }
+    }
+    const seller = sellerMap.get(item.sellerId);
+    if (seller?.commissionRate !== null && seller?.commissionRate !== undefined) {
+      result.set(key, Number(seller.commissionRate)); continue;
+    }
+    if (seller?.tier === "GOLD") { result.set(key, 10); continue; }
+    if (seller?.tier === "SILVER") { result.set(key, 12); continue; }
+    if (defaultRule) { result.set(key, Number(defaultRule.rate)); continue; }
+    result.set(key, 15);
+  }
+  return result;
 }
 
 // ============ PUBLIC ROUTES ============
@@ -131,6 +211,48 @@ router.post("/register", authenticate, asyncHandler(async (req: AuthRequest, res
   } catch (error) {
     logger.error("Seller registration error", { error });
     return res.status(500).json({ error: "Failed to register as seller" });
+  }
+}));
+
+// GET /stores — Public: browse all approved stores
+router.get("/stores", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { search, page = "1", limit = "20" } = req.query;
+    const take = Math.min(parseInt(limit as string) || 20, 50);
+    const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
+
+    const where: any = { status: "APPROVED" };
+    if (search) {
+      where.OR = [
+        { storeName: { contains: search as string, mode: "insensitive" } },
+        { description: { contains: search as string, mode: "insensitive" } },
+      ];
+    }
+
+    const [stores, total] = await Promise.all([
+      prisma.seller.findMany({
+        where,
+        select: {
+          id: true, storeName: true, storeSlug: true, logo: true,
+          description: true, rating: true, reviewCount: true, tier: true,
+          _count: { select: { products: { where: { status: "ACTIVE" } } } },
+        },
+        orderBy: { rating: "desc" },
+        take,
+        skip,
+      }),
+      prisma.seller.count({ where }),
+    ]);
+
+    return res.json({
+      stores: stores.map((s: any) => ({
+        ...s, productCount: s._count.products, _count: undefined,
+      })),
+      pagination: { total, page: Math.floor(skip / take) + 1, totalPages: Math.ceil(total / take) },
+    });
+  } catch (error) {
+    logger.error("Browse stores error", { error });
+    return res.status(500).json({ error: "Failed to fetch stores" });
   }
 }));
 
@@ -224,6 +346,116 @@ router.get("/store/:slug/products", asyncHandler(async (req: AuthRequest, res: R
   } catch (error) {
     logger.error("Get store products error", { error });
     return res.status(500).json({ error: "Failed to load store products" });
+  }
+}));
+
+// GET /store/:slug/reviews — Public seller reviews
+router.get("/store/:slug/reviews", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { slug } = req.params;
+    const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+    const skip = (page - 1) * limit;
+
+    const seller = await prisma.seller.findUnique({
+      where: { storeSlug: slug },
+      select: { id: true, status: true },
+    });
+
+    if (!seller || seller.status !== "APPROVED") {
+      return res.status(404).json({ error: "Store not found" });
+    }
+
+    const [reviews, total] = await Promise.all([
+      prisma.sellerReview.findMany({
+        where: { sellerId: seller.id },
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.sellerReview.count({ where: { sellerId: seller.id } }),
+    ]);
+
+    return res.json({
+      reviews,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    logger.error("Get store reviews error", { error });
+    return res.status(500).json({ error: "Failed to load reviews" });
+  }
+}));
+
+// POST /store/:slug/reviews — Submit a review for a seller (authenticated)
+router.post("/store/:slug/reviews", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { slug } = req.params;
+    const user = req.user!;
+    const { rating, comment, orderId } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: "Rating must be between 1 and 5" });
+    }
+
+    const seller = await prisma.seller.findUnique({
+      where: { storeSlug: slug },
+      select: { id: true, status: true, userId: true },
+    });
+
+    if (!seller || seller.status !== "APPROVED") {
+      return res.status(404).json({ error: "Store not found" });
+    }
+
+    // Cannot review your own store
+    if (seller.userId === user.id) {
+      return res.status(400).json({ error: "Cannot review your own store" });
+    }
+
+    // Verify the user has ordered from this seller (if orderId provided)
+    if (orderId) {
+      const orderItem = await prisma.orderItem.findFirst({
+        where: { sellerId: seller.id, order: { userId: user.id, id: orderId, status: "DELIVERED" } },
+      });
+      if (!orderItem) {
+        return res.status(400).json({ error: "You can only review after a delivered order" });
+      }
+    }
+
+    const userName = (await prisma.user.findUnique({ where: { id: user.id }, select: { name: true } }))?.name || "Anonymous";
+
+    const review = await prisma.sellerReview.create({
+      data: {
+        sellerId: seller.id,
+        userId: user.id,
+        userName,
+        rating: Math.round(rating),
+        comment: comment?.slice(0, 2000) || null,
+        orderId: orderId || null,
+      },
+    });
+
+    // Update seller rating aggregate
+    const agg = await prisma.sellerReview.aggregate({
+      where: { sellerId: seller.id },
+      _avg: { rating: true },
+      _count: { rating: true },
+    });
+
+    await prisma.seller.update({
+      where: { id: seller.id },
+      data: {
+        rating: agg._avg.rating || 0,
+        reviewCount: agg._count.rating || 0,
+      },
+    });
+
+    return res.status(201).json({ review });
+  } catch (error: any) {
+    if (error.code === "P2002") {
+      return res.status(400).json({ error: "You have already reviewed this seller for this order" });
+    }
+    logger.error("Submit store review error", { error });
+    return res.status(500).json({ error: "Failed to submit review" });
   }
 }));
 
@@ -557,9 +789,13 @@ router.post("/products", authenticate, requireSeller, asyncHandler(async (req: S
       lowStockAlert,
       hasVariants,
       variants,
+      allowedDeliveryMethods,
+      codAllowed,
+      shippingFee,
     } = req.body;
 
-    if (!name || typeof name !== "string" || name.trim().length < 2) {
+    const sanitizedName = sanitizeInput(name) || "";
+    if (!sanitizedName || sanitizedName.length < 2) {
       return res.status(400).json({ error: "Product name is required" });
     }
     if (price === undefined || isNaN(Number(price)) || Number(price) < 0) {
@@ -567,7 +803,7 @@ router.post("/products", authenticate, requireSeller, asyncHandler(async (req: S
     }
 
     // Generate slug
-    let slug = slugify(name.trim());
+    let slug = slugify(sanitizedName);
     const slugExists = await prisma.product.findUnique({ where: { slug } });
     if (slugExists) {
       slug = `${slug}-${Date.now().toString(36)}`;
@@ -579,32 +815,42 @@ router.post("/products", authenticate, requireSeller, asyncHandler(async (req: S
       productStatus = "PENDING_REVIEW";
     }
 
+    const sanitizedSpecs = Array.isArray(specifications)
+      ? specifications.map((s: any) => ({
+          key: sanitizeInput(s.key) || "",
+          value: sanitizeInput(s.value) || "",
+        })).filter((s: any) => s.key && s.value)
+      : null;
+
     const product = await prisma.product.create({
       data: {
-        name: name.trim(),
+        name: sanitizedName,
         slug,
-        description: description?.trim() || null,
+        description: sanitizeInput(description),
         price: Number(price),
         comparePrice: comparePrice ? Number(comparePrice) : null,
-        sku: sku?.trim() || null,
+        sku: sanitizeInput(sku),
         stock: parseInt(stock) || 0,
         categoryId: categoryId || null,
-        tags: Array.isArray(tags) ? tags : [],
+        tags: Array.isArray(tags) ? tags.map((t: any) => sanitizeInput(t)).filter(Boolean) : [],
         sellerId: seller.id,
         status: productStatus,
         weight: weight ? Number(weight) : null,
-        specifications: specifications || null,
-        metaTitle: metaTitle?.trim() || null,
-        metaDescription: metaDescription?.trim() || null,
+        specifications: sanitizedSpecs,
+        metaTitle: sanitizeInput(metaTitle),
+        metaDescription: sanitizeInput(metaDescription),
         trackInventory: trackInventory !== false,
         allowBackorder: allowBackorder === true,
         lowStockAlert: parseInt(lowStockAlert) || 5,
         hasVariants: hasVariants === true,
+        allowedDeliveryMethods: Array.isArray(allowedDeliveryMethods) ? allowedDeliveryMethods : [],
+        codAllowed: codAllowed !== false,
+        shippingFee: shippingFee != null ? Number(shippingFee) : null,
         images: images?.length
           ? {
               create: images.map((img: { url: string; alt?: string }, idx: number) => ({
                 url: img.url,
-                alt: img.alt || name.trim(),
+                alt: img.alt || sanitizedName,
                 order: idx,
               })),
             }
@@ -622,13 +868,13 @@ router.post("/products", authenticate, requireSeller, asyncHandler(async (req: S
       await prisma.productVariant.createMany({
         data: variants.map((v: any) => ({
           productId: product.id,
-          name: v.name || "",
-          sku: v.sku?.trim() || null,
+          name: sanitizeInput(v.name) || "",
+          sku: sanitizeInput(v.sku),
           price: v.price ? Number(v.price) : null,
           stock: parseInt(v.stock) || 0,
-          size: v.size?.trim() || null,
-          color: v.color?.trim() || null,
-          material: v.material?.trim() || null,
+          size: sanitizeInput(v.size),
+          color: sanitizeInput(v.color),
+          material: sanitizeInput(v.material),
         })),
       });
     }
@@ -638,7 +884,7 @@ router.post("/products", authenticate, requireSeller, asyncHandler(async (req: S
       action: "PRODUCT_CREATED",
       entityType: "Seller",
       entityId: seller.id,
-      description: `Created product "${name.trim()}" (${productStatus})`,
+      description: `Created product "${sanitizedName}" (${productStatus})`,
     });
 
     const result = await prisma.product.findUnique({
@@ -688,25 +934,38 @@ router.put("/products/:id", authenticate, requireSeller, asyncHandler(async (req
       lowStockAlert,
       hasVariants,
       variants,
+      allowedDeliveryMethods,
+      codAllowed,
+      shippingFee,
     } = req.body;
 
     const data: any = {};
-    if (name !== undefined) data.name = name.trim();
-    if (description !== undefined) data.description = description?.trim() || null;
+    if (name !== undefined) data.name = sanitizeInput(name);
+    if (description !== undefined) data.description = sanitizeInput(description);
     if (price !== undefined) data.price = Number(price);
     if (comparePrice !== undefined) data.comparePrice = comparePrice ? Number(comparePrice) : null;
-    if (sku !== undefined) data.sku = sku?.trim() || null;
+    if (sku !== undefined) data.sku = sanitizeInput(sku);
     if (stock !== undefined) data.stock = parseInt(stock) || 0;
     if (categoryId !== undefined) data.categoryId = categoryId || null;
-    if (tags !== undefined) data.tags = Array.isArray(tags) ? tags : [];
+    if (tags !== undefined) data.tags = Array.isArray(tags) ? tags.map((t: any) => sanitizeInput(t)).filter(Boolean) : [];
     if (weight !== undefined) data.weight = weight ? Number(weight) : null;
-    if (specifications !== undefined) data.specifications = specifications || null;
-    if (metaTitle !== undefined) data.metaTitle = metaTitle?.trim() || null;
-    if (metaDescription !== undefined) data.metaDescription = metaDescription?.trim() || null;
+    if (specifications !== undefined) {
+      data.specifications = Array.isArray(specifications)
+        ? specifications.map((s: any) => ({
+            key: sanitizeInput(s.key) || "",
+            value: sanitizeInput(s.value) || "",
+          })).filter((s: any) => s.key && s.value)
+        : null;
+    }
+    if (metaTitle !== undefined) data.metaTitle = sanitizeInput(metaTitle);
+    if (metaDescription !== undefined) data.metaDescription = sanitizeInput(metaDescription);
     if (trackInventory !== undefined) data.trackInventory = !!trackInventory;
     if (allowBackorder !== undefined) data.allowBackorder = !!allowBackorder;
     if (lowStockAlert !== undefined) data.lowStockAlert = parseInt(lowStockAlert) || 5;
     if (hasVariants !== undefined) data.hasVariants = !!hasVariants;
+    if (allowedDeliveryMethods !== undefined) data.allowedDeliveryMethods = Array.isArray(allowedDeliveryMethods) ? allowedDeliveryMethods : [];
+    if (codAllowed !== undefined) data.codAllowed = !!codAllowed;
+    if (shippingFee !== undefined) data.shippingFee = shippingFee != null ? Number(shippingFee) : null;
     // Sellers can only set DRAFT or ACTIVE
     if (status !== undefined && ["DRAFT", "ACTIVE"].includes(status)) {
       if (status === "ACTIVE" && !seller.autoApproveProducts) {
@@ -724,13 +983,13 @@ router.put("/products/:id", authenticate, requireSeller, asyncHandler(async (req
           ? [prisma.productVariant.createMany({
               data: variants.map((v: any) => ({
                 productId: req.params.id,
-                name: v.name || "",
-                sku: v.sku?.trim() || null,
+                name: sanitizeInput(v.name) || "",
+                sku: sanitizeInput(v.sku),
                 price: v.price ? Number(v.price) : null,
                 stock: parseInt(v.stock) || 0,
-                size: v.size?.trim() || null,
-                color: v.color?.trim() || null,
-                material: v.material?.trim() || null,
+                size: sanitizeInput(v.size),
+                color: sanitizeInput(v.color),
+                material: sanitizeInput(v.material),
               })),
             })]
           : []),
@@ -920,9 +1179,14 @@ router.put("/orders/:id/status", authenticate, requireSeller, asyncHandler(async
     const totalItemCount = await prisma.orderItem.count({ where: { orderId: req.params.id } });
     const isMultiSeller = totalItemCount > sellerItems.length;
 
+    // Always update the line-item statuses for this seller.
+    await prisma.orderItem.updateMany({
+      where: { orderId: req.params.id, sellerId: seller.id },
+      data: { status },
+    });
+
     if (isMultiSeller) {
-      // Multi-seller order: only add timeline event, do NOT update global order status
-      // as other sellers' items may not be ready.
+      // Multi-seller order: add timeline event, but do NOT update global order status yet.
       await prisma.orderEvent.create({
         data: {
           orderId: req.params.id,
@@ -930,6 +1194,45 @@ router.put("/orders/:id/status", authenticate, requireSeller, asyncHandler(async
           note: `${seller.storeName}'s items: ${status}${trackingNumber ? ` (Tracking: ${trackingNumber.trim()})` : ""}`,
         },
       });
+
+      // Orchestrator: if every item in the order is now SHIPPED, advance global status.
+      if (status === "SHIPPED") {
+        const pendingItems = await prisma.orderItem.count({
+          where: { orderId: req.params.id, status: { not: "SHIPPED" } },
+        });
+
+        if (pendingItems === 0) {
+          const order = await prisma.order.update({
+            where: { id: req.params.id },
+            data: { status: "SHIPPED" },
+          });
+
+          await prisma.orderEvent.create({
+            data: {
+              orderId: req.params.id,
+              status: "SHIPPED",
+              note: "All sellers have shipped their items — order marked as shipped",
+            },
+          });
+
+          enqueueNotification({
+            event: "ORDER_SHIPPED",
+            recipientEmail: order.customerEmail || undefined,
+            recipientPhone: order.customerPhone || undefined,
+            recipientUserId: order.userId || undefined,
+            orderId: order.id,
+            data: {
+              customerName: order.customerName,
+              orderNumber: order.orderNumber,
+              orderId: order.id,
+              total: Number(order.totalAmount),
+              currency: order.currency || "UGX",
+              trackingNumber: trackingNumber || order.trackingNumber,
+              estimatedDelivery: "2-3 business days",
+            },
+          }).catch((err) => logger.error("Notification dispatch failed", { error: err }));
+        }
+      }
 
       return res.json({ message: `Your items marked as ${status}`, multiSeller: true });
     }
@@ -952,6 +1255,45 @@ router.put("/orders/:id/status", authenticate, requireSeller, asyncHandler(async
         note: `Status updated to ${status} by seller: ${seller.storeName}`,
       },
     });
+
+    // Dispatch notifications via centralized dispatcher
+    const eventMap: Record<string, string> = {
+      PROCESSING: "ORDER_PROCESSING",
+      SHIPPED: "ORDER_SHIPPED",
+    };
+    const notifEvent = eventMap[status];
+    if (notifEvent) {
+      enqueueNotification({
+        event: notifEvent as any,
+        recipientEmail: order.customerEmail || undefined,
+        recipientPhone: order.customerPhone || undefined,
+        recipientUserId: order.userId || undefined,
+        orderId: order.id,
+        data: {
+          customerName: order.customerName,
+          orderNumber: order.orderNumber,
+          orderId: order.id,
+          total: Number(order.totalAmount),
+          currency: order.currency || "UGX",
+          trackingNumber: order.trackingNumber || trackingNumber,
+          estimatedDelivery: "2-3 business days",
+        },
+      }).catch((err) => logger.error("Notification dispatch failed", { error: err }));
+    }
+
+    // Auto-generate delivery OTP for COD (unpaid) orders when shipped
+    if (status === "SHIPPED" && order.customerPhone && order.paymentStatus === "PENDING") {
+      const otp = crypto.randomInt(100000, 999999).toString();
+      const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      prisma.order.update({
+        where: { id: order.id },
+        data: { deliveryOtp: otp, deliveryOtpExpiry: expiry },
+      }).then(() => {
+        const msg = `Your delivery verification code for order ${order.orderNumber} is: ${otp}. Share this with the delivery agent upon receipt. Valid for 24 hours.`;
+        sendWhatsApp({ to: order.customerPhone!, text: msg }).catch(() => {});
+        sendSMS(order.customerPhone!, msg).catch(() => {});
+      }).catch(err => logger.error("Auto OTP generation failed", { error: err }));
+    }
 
     return res.json({ order });
   } catch (error) {
@@ -987,14 +1329,19 @@ router.get("/earnings", authenticate, requireSeller, asyncHandler(async (req: Se
       take: limit,
       include: {
         order: { select: { id: true, orderNumber: true, createdAt: true, status: true } },
-        product: { select: { id: true, name: true } },
+        product: { select: { id: true, name: true, categoryId: true } },
       },
     });
 
-    // Compute commission and net for each item using the full commission rate logic
-    const recentTransactions = await Promise.all(recentItems.map(async (item) => {
+    // Batch-load commission rates (2-3 queries total instead of per-item)
+    const rateMap = await getCommissionRates(
+      recentItems.map((i) => ({ sellerId: seller.id, categoryId: i.product?.categoryId || null }))
+    );
+
+    const recentTransactions = recentItems.map((item) => {
       const amount = Number(item.price) * item.quantity;
-      const rate = await getCommissionRate(seller.id, (item as any).product?.categoryId || null);
+      const rateKey = `${seller.id}:${item.product?.categoryId || ""}`;
+      const rate = rateMap.get(rateKey) ?? 15;
       const commission = Math.round((amount * rate) / 100);
       return {
         id: item.id,
@@ -1007,7 +1354,7 @@ router.get("/earnings", authenticate, requireSeller, asyncHandler(async (req: Se
         net: amount - commission,
         date: item.order.createdAt,
       };
-    }));
+    });
 
     return res.json({
       totalEarnings: seller.totalEarnings,
@@ -1032,7 +1379,7 @@ router.get("/earnings/invoice/:orderId", authenticate, requireSeller, asyncHandl
       include: {
         items: {
           where: { sellerId: seller.id },
-          include: { product: { select: { name: true, sku: true } } },
+          include: { product: { select: { name: true, sku: true, categoryId: true } } },
         },
       },
     });
@@ -1041,9 +1388,14 @@ router.get("/earnings/invoice/:orderId", authenticate, requireSeller, asyncHandl
       return res.status(404).json({ error: "Order not found" });
     }
 
-    const items = await Promise.all(order.items.map(async (item) => {
+    const orderRateMap = await getCommissionRates(
+      order.items.map((i) => ({ sellerId: seller.id, categoryId: i.product?.categoryId || null }))
+    );
+
+    const items = order.items.map((item) => {
       const amount = Number(item.price) * item.quantity;
-      const rate = await getCommissionRate(seller.id, (item as any).product?.categoryId || null);
+      const rateKey = `${seller.id}:${item.product?.categoryId || ""}`;
+      const rate = orderRateMap.get(rateKey) ?? 15;
       const commission = Math.round((amount * rate) / 100);
       return {
         productName: item.product?.name || "Unknown",
@@ -1055,7 +1407,7 @@ router.get("/earnings/invoice/:orderId", authenticate, requireSeller, asyncHandl
         commission,
         net: amount - commission,
       };
-    }));
+    });
 
     const totals = items.reduce(
       (acc, i) => ({ gross: acc.gross + i.amount, commission: acc.commission + i.commission, net: acc.net + i.net }),
@@ -1090,8 +1442,37 @@ router.post("/payouts/request", authenticate, requireSeller, asyncHandler(async 
       return res.status(400).json({ error: "Valid payout amount is required" });
     }
 
-    if (payoutAmount > Number(seller.balance)) {
-      return res.status(400).json({ error: "Insufficient balance" });
+    // Calculate escrow-held balance
+    const heldEscrowItems = await prisma.orderItem.findMany({
+      where: {
+        sellerId: seller.id,
+        order: {
+          escrow: {
+            status: "HELD",
+          },
+        },
+      },
+      select: {
+        price: true,
+        quantity: true,
+        commission: true,
+        shippingFeeCharged: true,
+      },
+    });
+
+    const heldBalance = heldEscrowItems.reduce((sum, item) => {
+      const itemTotal = Number(item.price) * item.quantity;
+      const commission = Number(item.commission || 0);
+      const shippingFeeDeduction = Number(item.shippingFeeCharged || 0);
+      return sum + (itemTotal - commission - shippingFeeDeduction);
+    }, 0);
+
+    const withdrawableBalance = Number(seller.balance) - heldBalance;
+
+    if (payoutAmount > withdrawableBalance) {
+      return res.status(400).json({
+        error: `Insufficient withdrawable balance. Your total balance is UGX ${Number(seller.balance).toLocaleString()}, but UGX ${heldBalance.toLocaleString()} is currently held in escrow (buyer protection holding period). Withdrawable balance: UGX ${withdrawableBalance.toLocaleString()}.`,
+      });
     }
 
     const payoutMethod = method && ["MOBILE_MONEY", "BANK_TRANSFER", "FLUTTERWAVE"].includes(method)
@@ -1124,13 +1505,23 @@ router.post("/payouts/request", authenticate, requireSeller, asyncHandler(async 
 
     if (autoDisburseEligible) {
       try {
+        const cleanPhone = (seller.payoutPhone || "").replace(/\D/g, "");
+        let localPhone = cleanPhone;
+        if (cleanPhone.startsWith("256") && cleanPhone.length === 12) {
+          localPhone = cleanPhone.slice(3);
+        } else if (cleanPhone.startsWith("0") && cleanPhone.length === 10) {
+          localPhone = cleanPhone.slice(1);
+        }
+        const prefix2 = localPhone.slice(0, 2);
+        const accountBank = ["70", "75", "74", "20"].includes(prefix2) ? "AIR" : "MPS";
+
         const transferResult = await createFlutterwaveTransfer({
           reference: `payout-${payout.id}`,
           amount: payoutAmount,
           currency: "UGX",
           narration: `PleasureZone payout for ${seller.storeName}`,
           beneficiary: {
-            account_bank: "MPS",
+            account_bank: accountBank,
             account_number: seller.payoutPhone,
             beneficiary_name: seller.storeName,
           },
@@ -1185,6 +1576,295 @@ router.get("/payouts", authenticate, requireSeller, asyncHandler(async (req: Sel
   }
 }));
 
+// PUT /payouts/schedule — Update payout schedule
+router.put("/payouts/schedule", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const { schedule, minAmount } = req.body;
+
+    const validSchedules = ["MANUAL", "DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY"];
+    if (!schedule || !validSchedules.includes(schedule)) {
+      return res.status(400).json({ error: "Invalid schedule. Must be MANUAL, DAILY, WEEKLY, BIWEEKLY, or MONTHLY" });
+    }
+
+    const minPayout = minAmount !== undefined ? Number(minAmount) : undefined;
+    if (minPayout !== undefined && (isNaN(minPayout) || minPayout < 5000)) {
+      return res.status(400).json({ error: "Minimum payout amount must be at least UGX 5,000" });
+    }
+
+    // Calculate next payout date based on schedule
+    let nextPayoutDate: Date | null = null;
+    if (schedule !== "MANUAL") {
+      nextPayoutDate = new Date();
+      switch (schedule) {
+        case "DAILY": nextPayoutDate.setDate(nextPayoutDate.getDate() + 1); break;
+        case "WEEKLY": nextPayoutDate.setDate(nextPayoutDate.getDate() + 7); break;
+        case "BIWEEKLY": nextPayoutDate.setDate(nextPayoutDate.getDate() + 14); break;
+        case "MONTHLY": nextPayoutDate.setMonth(nextPayoutDate.getMonth() + 1); break;
+      }
+      nextPayoutDate.setHours(9, 0, 0, 0); // Process at 9 AM
+    }
+
+    await prisma.seller.update({
+      where: { id: seller.id },
+      data: {
+        payoutSchedule: schedule,
+        nextPayoutDate,
+        ...(minPayout !== undefined ? { minPayoutAmount: minPayout } : {}),
+      },
+    });
+
+    return res.json({
+      message: "Payout schedule updated",
+      schedule,
+      nextPayoutDate,
+      minPayoutAmount: minPayout ?? Number(seller.minPayoutAmount),
+    });
+  } catch (error) {
+    logger.error("Update payout schedule error", { error });
+    return res.status(500).json({ error: "Failed to update payout schedule" });
+  }
+}));
+
+// GET /profit-calculator — Per-product profit breakdown
+router.get("/profit-calculator", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+
+    // Get commission rate: seller override → category rules → default 10%
+    const sellerCommission = seller.commissionRate ? Number(seller.commissionRate) : null;
+    const categoryRules = await prisma.commissionRule.findMany({
+      where: { isActive: true },
+    });
+    const defaultRule = categoryRules.find(r => r.categoryName === "Default" || !r.categoryId);
+    const defaultRate = defaultRule ? Number(defaultRule.rate) : 10;
+
+    // Get processing fee from settings
+    const feeSetting = await prisma.setting.findUnique({ where: { key: "payment_processing_fee" } });
+    const processingFee = feeSetting ? parseFloat(feeSetting.value) : 3.8;
+
+    // Get seller's products with sales data
+    const products = await prisma.product.findMany({
+      where: { sellerId: seller.id, status: "ACTIVE" },
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        sku: true,
+        stock: true,
+        categoryId: true,
+        category: { select: { name: true } },
+        _count: { select: { orderItems: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    const breakdown = products.map(p => {
+      const price = Number(p.price);
+      // Commission: seller-specific > category rule > default
+      let commissionRate = sellerCommission ?? defaultRate;
+      if (!sellerCommission && p.categoryId) {
+        const catRule = categoryRules.find(r => r.categoryId === p.categoryId);
+        if (catRule) commissionRate = Number(catRule.rate);
+      }
+      const commission = price * (commissionRate / 100);
+      const paymentFee = price * (processingFee / 100);
+      const netEarnings = price - commission - paymentFee;
+
+      return {
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        price,
+        stock: p.stock,
+        category: p.category?.name || "Uncategorized",
+        unitsSold: p._count.orderItems,
+        commissionRate,
+        commissionAmount: Math.round(commission),
+        processingFeeRate: processingFee,
+        processingFeeAmount: Math.round(paymentFee),
+        netEarnings: Math.round(netEarnings),
+        margin: price > 0 ? Math.round((netEarnings / price) * 100) : 0,
+        totalRevenue: Math.round(netEarnings * p._count.orderItems),
+      };
+    });
+
+    return res.json({
+      products: breakdown,
+      summary: {
+        defaultCommissionRate: sellerCommission ?? defaultRate,
+        processingFeeRate: processingFee,
+        totalProducts: breakdown.length,
+        totalNetRevenue: breakdown.reduce((sum, p) => sum + p.totalRevenue, 0),
+      },
+    });
+  } catch (error) {
+    logger.error("Profit calculator error", { error });
+    return res.status(500).json({ error: "Failed to calculate profits" });
+  }
+}));
+
+// GET /conversion-funnel — Product conversion analytics
+router.get("/conversion-funnel", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const days = Math.min(parseInt(req.query.days as string) || 30, 90);
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    // Get product views from browse events
+    const productViews = await prisma.browseEvent.count({
+      where: {
+        viewedAt: { gte: since },
+        product: { sellerId: seller.id },
+      },
+    });
+
+    // Get orders containing this seller's items
+    const orders = await prisma.order.count({
+      where: {
+        createdAt: { gte: since },
+        items: { some: { sellerId: seller.id } },
+        status: { notIn: ["CANCELLED"] },
+      },
+    });
+
+    // Get completed orders (delivered)
+    const completedOrders = await prisma.order.count({
+      where: {
+        createdAt: { gte: since },
+        items: { some: { sellerId: seller.id } },
+        status: "DELIVERED",
+      },
+    });
+
+    // Estimate add-to-cart as midpoint between views and orders (no direct cart tracking)
+    const estimatedAddToCart = Math.round((productViews + orders) / 2);
+
+    // Top products by views
+    const topProducts = await prisma.browseEvent.groupBy({
+      by: ["productId"],
+      where: {
+        viewedAt: { gte: since },
+        product: { sellerId: seller.id },
+      },
+      _count: { productId: true },
+      orderBy: { _count: { productId: "desc" } },
+      take: 10,
+    });
+
+    const topProductIds = topProducts.map(t => t.productId);
+    const topProductDetails = topProductIds.length > 0
+      ? await prisma.product.findMany({
+          where: { id: { in: topProductIds } },
+          select: { id: true, name: true, price: true, _count: { select: { orderItems: true } } },
+        })
+      : [];
+
+    const topProductsWithConversion = topProducts.map(t => {
+      const product = topProductDetails.find(p => p.id === t.productId);
+      const viewCount = t._count.productId;
+      return {
+        productId: t.productId,
+        name: product?.name || "Unknown",
+        price: product ? Number(product.price) : 0,
+        views: viewCount,
+        orders: product?._count.orderItems || 0,
+        conversionRate: viewCount > 0 && product
+          ? Math.round((product._count.orderItems / viewCount) * 10000) / 100
+          : 0,
+      };
+    });
+
+    return res.json({
+      period: `${days} days`,
+      funnel: {
+        views: productViews,
+        addToCart: estimatedAddToCart,
+        orders,
+        completed: completedOrders,
+      },
+      conversionRates: {
+        viewToCart: productViews > 0 ? Math.round((estimatedAddToCart / productViews) * 10000) / 100 : 0,
+        cartToOrder: estimatedAddToCart > 0 ? Math.round((orders / estimatedAddToCart) * 10000) / 100 : 0,
+        orderToComplete: orders > 0 ? Math.round((completedOrders / orders) * 10000) / 100 : 0,
+        overall: productViews > 0 ? Math.round((orders / productViews) * 10000) / 100 : 0,
+      },
+      topProducts: topProductsWithConversion,
+    });
+  } catch (error) {
+    logger.error("Conversion funnel error", { error });
+    return res.status(500).json({ error: "Failed to load conversion data" });
+  }
+}));
+
+// POST /products/ai-generate — AI-assisted product listing generation
+router.post("/products/ai-generate", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
+  try {
+    const { name, category, keywords } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Product name is required" });
+    }
+
+    const categoryName = category || "General";
+    const keywordList = keywords ? keywords.split(",").map((k: string) => k.trim()) : [];
+
+    // Template-based AI generation (no external API required)
+    const titleVariations = [
+      `${name} - Premium Quality ${categoryName} Product`,
+      `${name} | High-Quality ${categoryName} | Fast Delivery`,
+      `Premium ${name} - Best ${categoryName} in Uganda`,
+    ];
+
+    const features = [
+      "Premium quality materials",
+      "Carefully selected and tested",
+      "Discreet and secure packaging",
+      "Fast delivery across Uganda",
+      "100% satisfaction guaranteed",
+    ];
+
+    const description = `Discover the ${name}, a premium ${categoryName.toLowerCase()} product designed for quality and satisfaction.
+
+Key Features:
+${features.map(f => `• ${f}`).join("\n")}
+
+${keywordList.length > 0 ? `\nPerfect for: ${keywordList.join(", ")}` : ""}
+
+Why Choose Us?
+We offer fast, discreet delivery across Uganda with secure packaging. Every product is carefully selected to ensure the highest quality standards.
+
+Order today and experience the difference. Satisfaction guaranteed or your money back.`;
+
+    const metaDescription = `Shop ${name} online. Premium ${categoryName.toLowerCase()} with fast discreet delivery in Uganda. ${keywordList.length > 0 ? keywordList.slice(0, 3).join(", ") + ". " : ""}Order now!`;
+
+    const suggestedTags = [
+      categoryName.toLowerCase(),
+      ...name.toLowerCase().split(" ").filter((w: string) => w.length > 3),
+      ...keywordList.map((k: string) => k.toLowerCase()),
+      "uganda",
+      "delivery",
+      "premium",
+    ].slice(0, 10);
+
+    return res.json({
+      suggestions: {
+        titles: titleVariations,
+        description,
+        metaTitle: `${name} | ${categoryName} | Buy Online Uganda`,
+        metaDescription: metaDescription.substring(0, 160),
+        tags: [...new Set(suggestedTags)],
+        seoKeywords: suggestedTags.join(", "),
+      },
+    });
+  } catch (error) {
+    logger.error("AI generate error", { error });
+    return res.status(500).json({ error: "Failed to generate listing" });
+  }
+}));
+
 // GET /profile — Get seller's own profile for settings
 router.get("/profile", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
   try {
@@ -1225,33 +1905,41 @@ router.put("/profile", authenticate, requireSeller, asyncHandler(async (req: Sel
       shippingPolicy,
       returnPolicy,
       notificationPrefs,
+      allowsCustomerPickup,
+      pickupAddress,
+      pickupCity,
+      pickupHours,
     } = req.body;
 
     const data: any = {};
-    if (storeName !== undefined) data.storeName = storeName.trim();
-    if (description !== undefined) data.description = description?.trim() || null;
+    if (storeName !== undefined) data.storeName = sanitizeInput(storeName) || "Unnamed Store";
+    if (description !== undefined) data.description = sanitizeInput(description);
     if (logo !== undefined) data.logo = logo || null;
     if (banner !== undefined) data.banner = banner || null;
-    if (phone !== undefined) data.phone = phone?.trim() || null;
-    if (email !== undefined) data.email = email?.trim() || null;
-    if (website !== undefined) data.website = website?.trim() || null;
-    if (address !== undefined) data.address = address?.trim() || null;
-    if (city !== undefined) data.city = city?.trim() || null;
-    if (country !== undefined) data.country = country?.trim() || null;
+    if (phone !== undefined) data.phone = sanitizeInput(phone);
+    if (email !== undefined) data.email = sanitizeInput(email);
+    if (website !== undefined) data.website = sanitizeInput(website);
+    if (address !== undefined) data.address = sanitizeInput(address);
+    if (city !== undefined) data.city = sanitizeInput(city);
+    if (country !== undefined) data.country = sanitizeInput(country);
     if (payoutMethod !== undefined && ["MOBILE_MONEY", "BANK_TRANSFER", "FLUTTERWAVE"].includes(payoutMethod)) {
       data.payoutMethod = payoutMethod;
     }
-    if (payoutPhone !== undefined) data.payoutPhone = payoutPhone?.trim() || null;
-    if (bankName !== undefined) data.bankName = bankName?.trim() || null;
-    if (bankAccount !== undefined) data.bankAccount = bankAccount?.trim() || null;
-    if (bankBranch !== undefined) data.bankBranch = bankBranch?.trim() || null;
-    if (idDocument !== undefined) data.idDocument = idDocument?.trim() || null;
-    if (businessLicense !== undefined) data.businessLicense = businessLicense?.trim() || null;
+    if (payoutPhone !== undefined) data.payoutPhone = sanitizeInput(payoutPhone);
+    if (bankName !== undefined) data.bankName = sanitizeInput(bankName);
+    if (bankAccount !== undefined) data.bankAccount = sanitizeInput(bankAccount);
+    if (bankBranch !== undefined) data.bankBranch = sanitizeInput(bankBranch);
+    if (idDocument !== undefined) data.idDocument = sanitizeInput(idDocument);
+    if (businessLicense !== undefined) data.businessLicense = sanitizeInput(businessLicense);
     if (socialLinks !== undefined) data.socialLinks = socialLinks || null;
     if (operatingHours !== undefined) data.operatingHours = operatingHours || null;
-    if (shippingPolicy !== undefined) data.shippingPolicy = shippingPolicy?.trim() || null;
-    if (returnPolicy !== undefined) data.returnPolicy = returnPolicy?.trim() || null;
+    if (shippingPolicy !== undefined) data.shippingPolicy = sanitizeInput(shippingPolicy);
+    if (returnPolicy !== undefined) data.returnPolicy = sanitizeInput(returnPolicy);
     if (notificationPrefs !== undefined) data.notificationPrefs = notificationPrefs || null;
+    if (allowsCustomerPickup !== undefined) data.allowsCustomerPickup = !!allowsCustomerPickup;
+    if (pickupAddress !== undefined) data.pickupAddress = sanitizeInput(pickupAddress);
+    if (pickupCity !== undefined) data.pickupCity = sanitizeInput(pickupCity);
+    if (pickupHours !== undefined) data.pickupHours = sanitizeInput(pickupHours);
 
     const updated = await prisma.seller.update({
       where: { id: seller.id },
@@ -1532,15 +2220,9 @@ router.get("/analytics", authenticate, requireSeller, asyncHandler(async (req: S
     // Customer geography (parse city from shippingAddress JSON)
     const cityMap: Record<string, number> = {};
     for (const item of orderItems) {
-      try {
-        const addr = typeof item.order.shippingAddress === "string"
-          ? JSON.parse(item.order.shippingAddress)
-          : item.order.shippingAddress;
-        const city = addr?.city || "Unknown";
-        cityMap[city] = (cityMap[city] || 0) + 1;
-      } catch {
-        cityMap["Unknown"] = (cityMap["Unknown"] || 0) + 1;
-      }
+      const addr = parseShippingAddress(item.order.shippingAddress);
+      const city = addr?.city || "Unknown";
+      cityMap[city] = (cityMap[city] || 0) + 1;
     }
     const customerGeography = Object.entries(cityMap)
       .map(([name, count]) => ({ name, count }))
@@ -2004,10 +2686,13 @@ router.post("/chat/:id/messages", authenticate, requireSeller, asyncHandler(asyn
   }
 }));
 
-// GET /api/seller/onboarding-status
-router.get("/onboarding-status", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
+// GET /api/seller/onboarding-status — accessible by PENDING and APPROVED sellers
+router.get("/onboarding-status", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
-    const seller = req.seller;
+    const seller = await prisma.seller.findUnique({ where: { userId: req.user!.id } });
+    if (!seller) {
+      return res.status(403).json({ error: "Seller account required" });
+    }
 
     const productCount = await prisma.product.count({ where: { sellerId: seller.id } });
 
@@ -2028,7 +2713,7 @@ router.get("/onboarding-status", authenticate, requireSeller, asyncHandler(async
         key: "product",
         label: "Add your first product",
         completed: productCount >= 1,
-        link: "/seller/products",
+        link: "/seller/products?action=new",
       },
       {
         key: "payout",
@@ -2167,6 +2852,26 @@ router.delete("/coupons/:id", authenticate, requireSeller, asyncHandler(async (r
   } catch (error) {
     logger.error("Delete coupon error", { error });
     return res.status(500).json({ error: "Failed to delete coupon" });
+  }
+}));
+
+// GET /disputes — List disputes against this seller
+router.get("/disputes", authenticate, requireSeller, asyncHandler(async (req: SellerRequest, res: Response) => {
+  try {
+    const seller = req.seller!;
+    const disputes = await prisma.dispute.findMany({
+      where: { sellerId: seller.id },
+      include: {
+        order: { select: { orderNumber: true, totalAmount: true, currency: true, status: true } },
+        buyer: { select: { name: true, email: true } },
+        _count: { select: { evidence: true, messages: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    return res.json(disputes);
+  } catch (error) {
+    logger.error("List seller disputes error", { error });
+    return res.status(500).json({ error: "Failed to fetch disputes" });
   }
 }));
 

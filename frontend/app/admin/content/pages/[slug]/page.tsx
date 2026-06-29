@@ -184,7 +184,7 @@ function ContactEditor({ value, onChange }: {
           value={value.phone}
           onChange={e => onChange({ ...value, phone: e.target.value })}
           className="input w-full"
-          placeholder="+256 700 000 000"
+          placeholder="Enter phone number"
         />
         <p className="text-xs text-gray-400 mt-1">Shown as a clickable link (tel:)</p>
       </div>
@@ -247,9 +247,9 @@ export default function PageEditorPage() {
           try { setFaqData(JSON.parse(s.faq_items || "[]")); } catch { setFaqData([]); }
         } else if (config.type === "contact") {
           setContactData({
-            email: s.contact_email || "support@adultstore.com",
-            phone: s.contact_phone || "+256 700 000 000",
-            whatsapp: s.contact_whatsapp || "256700000000",
+            email: s.contact_email || "support@pleasurezone.ug",
+            phone: s.contact_phone || "+256 777 123 456",
+            whatsapp: s.contact_whatsapp || "256777123456",
             hours: s.contact_hours || "Mon-Sat, 9am-6pm EAT",
           });
         } else {

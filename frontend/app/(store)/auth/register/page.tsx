@@ -7,7 +7,7 @@ import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { Eye, EyeOff, Check, Loader2 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 function getCsrfToken(): string | null {

@@ -18,6 +18,7 @@ interface Address {
   postalCode?: string;
   country?: string;
   isDefault: boolean;
+  deliveryAlias?: string;
 }
 
 export default function AddressesPage() {
@@ -35,6 +36,7 @@ export default function AddressesPage() {
     county: "",
     postalCode: "",
     country: "Uganda",
+    deliveryAlias: "",
   });
 
   useEffect(() => {
@@ -66,7 +68,7 @@ export default function AddressesPage() {
       }
       setShowForm(false);
       setEditingId(null);
-      setFormData({ name: "", phone: "", street: "", city: "", county: "", postalCode: "", country: "Uganda" });
+      setFormData({ name: "", phone: "", street: "", city: "", county: "", postalCode: "", country: "Uganda", deliveryAlias: "" });
       loadAddresses();
     } catch (error) {
       console.error("Failed to save address:", error);
@@ -82,6 +84,7 @@ export default function AddressesPage() {
       county: address.county || "",
       postalCode: address.postalCode || "",
       country: address.country || "Uganda",
+      deliveryAlias: address.deliveryAlias || "",
     });
     setEditingId(address.id);
     setShowForm(true);
@@ -161,6 +164,17 @@ export default function AddressesPage() {
                   required
                 />
               </div>
+              <div>
+                <label className="block text-small font-medium mb-1">
+                  Delivery Recipient Alias <span className="text-text-muted font-normal text-xs">(Discreet placeholder name printed on package label, e.g. "Security Gate 2")</span>
+                </label>
+                <input
+                  className="input font-mono"
+                  placeholder="e.g. Security Gate / Reception / Neutral Name"
+                  value={formData.deliveryAlias}
+                  onChange={(e) => setFormData({ ...formData, deliveryAlias: e.target.value })}
+                />
+              </div>
               <div className="grid sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-small font-medium mb-2">City</label>
@@ -200,7 +214,7 @@ export default function AddressesPage() {
                   onClick={() => {
                     setShowForm(false);
                     setEditingId(null);
-                    setFormData({ name: "", phone: "", street: "", city: "", county: "", postalCode: "", country: "Uganda" });
+                    setFormData({ name: "", phone: "", street: "", city: "", county: "", postalCode: "", country: "Uganda", deliveryAlias: "" });
                   }}
                   className="btn-secondary"
                 >
@@ -228,8 +242,11 @@ export default function AddressesPage() {
               >
                 <div className="flex justify-between">
                   <div>
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
                       <span className="font-medium">{address.name}</span>
+                      {address.deliveryAlias && (
+                        <span className="badge bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300">Label Alias: {address.deliveryAlias}</span>
+                      )}
                       {address.isDefault && (
                         <span className="badge bg-accent text-white">Default</span>
                       )}

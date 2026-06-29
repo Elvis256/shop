@@ -77,6 +77,12 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
         prisma.dispute.count({ where: { status: "SELLER_RESPONSE" } }),
         prisma.dispute.count({ where: { status: "RESOLVED" } }),
         prisma.dispute.count(),
+        // SLA metrics
+        prisma.dispute.count({ where: { sellerDeadline: { lt: new Date() }, status: { in: ["OPEN", "SELLER_RESPONSE"] } } }),
+        // Average resolution time (resolved disputes)
+        prisma.$queryRaw<[{ avg_hours: number }]>`
+          SELECT COALESCE(AVG(EXTRACT(EPOCH FROM ("resolvedAt" - "createdAt")) / 3600), 0)::float8 as avg_hours
+          FROM "Dispute" WHERE "resolvedAt" IS NOT NULL`,
       ]),
     ]);
 
@@ -91,6 +97,8 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
         sellerResponse: stats[2],
         resolved: stats[3],
         total: stats[4],
+        overdueCount: stats[5],
+        avgResolutionHours: Math.round((stats[6] as any)?.[0]?.avg_hours || 0),
       },
     });
   } catch (error) {

@@ -347,22 +347,26 @@ router.post("/sync", asyncHandler(async (req: AuthRequest, res: Response) => {
     const where: any = { aliexpressProductId: { not: null }, aliexpressAutoSync: true };
     if (productId) where.id = productId;
 
-    const products = await prisma.product.findMany({ where, take: 50 });
+    // Get USD→UGX conversion rate
+    const usdCurrency = await prisma.currency.findUnique({ where: { code: "USD" } });
+    const usdToUgx = usdCurrency ? Math.round(1 / Number(usdCurrency.exchangeRate)) : 3700;
+
+    const products = await prisma.product.findMany({ where, take: 50, include: { variants: true } });
     const results: Array<{ id: string; name: string; status: string; changes?: any }> = [];
 
     for (const product of products) {
       try {
         const detail = await getProductDetail(product.aliexpressProductId!);
         const oldCost = Number(product.aliexpressCost);
-        const newCost = detail.price;
+        const newCostUgx = Math.round(detail.price * usdToUgx);
         const changes: any = {};
 
-        if (Math.abs(oldCost - newCost) > 0.01) {
-          changes.price = { old: oldCost, new: newCost };
+        if (Math.abs(oldCost - newCostUgx) > 1) {
+          changes.price = { old: oldCost, new: newCostUgx };
         }
 
         const newSellingPrice = calculateSellingPrice(
-          newCost,
+          newCostUgx,
           product.markupType as "PERCENTAGE" | "FIXED",
           Number(product.markupValue),
         );
@@ -373,7 +377,22 @@ router.post("/sync", asyncHandler(async (req: AuthRequest, res: Response) => {
         }
 
         // Use raw SQL for Decimal fields to avoid Prisma persistence issues
-        await prisma.$executeRaw`UPDATE "Product" SET "aliexpressCost" = ${newCost}, price = ${newSellingPrice}, stock = ${newStock}, "lastSyncedAt" = NOW() WHERE id = ${product.id}`;
+        await prisma.$executeRaw`UPDATE "Product" SET "aliexpressCost" = ${newCostUgx}, price = ${newSellingPrice}, stock = ${newStock}, "lastSyncedAt" = NOW() WHERE id = ${product.id}`;
+
+        // Sync variants as well
+        if (detail.variants.length > 0) {
+          for (const ev of product.variants) {
+            const matchingDetail = detail.variants.find((v) => `AE-${product.aliexpressProductId}-${v.skuId}` === ev.sku);
+            if (matchingDetail) {
+              const variantPriceUgx = calculateSellingPrice(
+                Math.round(matchingDetail.price * usdToUgx),
+                product.markupType as "PERCENTAGE" | "FIXED",
+                Number(product.markupValue),
+              );
+              await prisma.$executeRaw`UPDATE "ProductVariant" SET price = ${variantPriceUgx}, stock = ${Math.min(matchingDetail.stock, 100)} WHERE id = ${ev.id}`;
+            }
+          }
+        }
 
         results.push({
           id: product.id,

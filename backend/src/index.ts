@@ -1,4 +1,6 @@
-import "./lib/validateEnv"; // Must be first — loads .env and validates
+import "./lib/tracing"; // Must be absolute first — instruments before any other imports
+import "./lib/validateEnv"; // Loads .env and validates
+import "./lib/sentry"; // Initializes error tracking
 import express from "express";
 import compression from "compression";
 import cors from "cors";
@@ -80,6 +82,7 @@ import supportChatRoutes from "./routes/supportChat";
 import deliveryRoutes from "./routes/delivery";
 import quickReorderRoutes from "./routes/quickReorder";
 import layawayRoutes from "./routes/layaway";
+import audioGuidesRoutes from "./routes/audioGuides";
 
 // Admin routes
 import adminDashboard from "./routes/admin/dashboard";
@@ -108,6 +111,10 @@ import adminAds from "./routes/admin/ads";
 import adminDisputes from "./routes/admin/disputes";
 import adminSellerBadges from "./routes/admin/sellerBadges";
 import adminAbandonedCarts from "./routes/admin/abandonedCarts";
+import adminFailedCheckouts from "./routes/admin/failedCheckouts";
+import adminNotifications from "./routes/admin/notifications";
+import adminPickupPoints from "./routes/admin/pickupPoints";
+import adminSizeGuides from "./routes/admin/sizeGuides";
 import disputesRoutes from "./routes/disputes";
 import settingsRoutes from "./routes/settings";
 
@@ -248,6 +255,7 @@ app.use("/api/gift", giftOrderRoutes);
 app.use("/api/advisor", advisorRoutes);
 app.use("/api/broadcast", broadcastRoutes);
 app.use("/api/smart-bundles", smartBundlesRoutes);
+app.use("/api/audio-guides", audioGuidesRoutes);
 app.use("/api/whatsapp-bot", whatsappBotRoutes);
 app.use("/api/ussd", ussdRoutes);
 // Diaspora webhook needs raw body for Stripe signature verification
@@ -287,6 +295,10 @@ app.use("/api/admin/ads", adminAds);
 app.use("/api/admin/disputes", adminDisputes);
 app.use("/api/admin/seller-badges", adminSellerBadges);
 app.use("/api/admin/abandoned-carts", adminAbandonedCarts);
+app.use("/api/admin/failed-checkouts", adminFailedCheckouts);
+app.use("/api/admin/notifications", adminNotifications);
+app.use("/api/admin/pickup-points", adminPickupPoints);
+app.use("/api/admin/size-guides", adminSizeGuides);
 app.use("/api/pickup-points", pickupPointsRoutes);
 app.use("/api/support-chat", supportChatRoutes);
 app.use("/api/disputes", disputesRoutes);
@@ -306,6 +318,11 @@ app.use((_req, res) => {
 const server = app.listen(Number(PORT), "0.0.0.0", () => {
   logger.info("server_started", { port: PORT });
 });
+
+// Prevent hanging requests — 60-second timeout
+server.timeout = 60_000;
+server.keepAliveTimeout = 65_000; // Slightly higher than timeout to avoid race conditions
+server.headersTimeout = 66_000;
 
 // Graceful shutdown
 const shutdown = async (signal: string) => {

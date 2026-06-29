@@ -45,7 +45,7 @@ router.post("/create", authenticate, asyncHandler(async (req: AuthRequest, res: 
         payments: {
           create: Array.from({ length: installments }, (_, i) => ({
             number: i + 1,
-            amount: perInstallment,
+            amount: i === installments - 1 ? totalAmount - perInstallment * (installments - 1) : perInstallment,
             status: i === 0 ? "PAID" : "PENDING",
             dueDate: new Date(Date.now() + i * intervalDays * 24 * 60 * 60 * 1000),
             paidAt: i === 0 ? new Date() : null,
@@ -113,12 +113,23 @@ router.post("/pay/:planId", authenticate, asyncHandler(async (req: AuthRequest, 
       return res.status(400).json({ error: "All installments already paid" });
     }
 
+    // Convert installment amount to target currency for payment gateway
+    let targetAmount = Number(nextPayment.amount);
+    if (plan.order.currency && plan.order.currency !== "UGX") {
+      const dbCurrency = await prisma.currency.findUnique({
+        where: { code: plan.order.currency, isActive: true },
+      });
+      if (dbCurrency && Number(dbCurrency.exchangeRate) > 0) {
+        targetAmount = Math.round(Number(nextPayment.amount) * Number(dbCurrency.exchangeRate));
+      }
+    }
+
     const tx_ref = `installment-${planId}-${nextPayment.id}`;
     const BASE_URL = process.env.FRONTEND_URL || "https://ugsex.com";
 
     const flwPayload: any = {
       tx_ref,
-      amount: Number(nextPayment.amount),
+      amount: targetAmount,
       currency: plan.order.currency || "UGX",
       customer: {
         name: plan.order.customerName,
@@ -139,7 +150,7 @@ router.post("/pay/:planId", authenticate, asyncHandler(async (req: AuthRequest, 
     await prisma.payment.create({
       data: {
         orderId: plan.order.id,
-        amount: Number(nextPayment.amount),
+        amount: targetAmount,
         currency: plan.order.currency || "UGX",
         method: paymentMethod || "MOBILE_MONEY",
         status: "PENDING",

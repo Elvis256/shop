@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Bell, X } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_KEY || "";
 const SUBSCRIBED_KEY = "pushSubscribed";
 const DISMISSED_KEY = "pushDismissedAt";

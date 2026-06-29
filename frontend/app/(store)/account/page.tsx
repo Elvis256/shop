@@ -28,9 +28,11 @@ import {
   Wallet,
   Copy,
   Check,
+  Headphones,
+  RefreshCw,
 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface DashboardOrder {
   id: string;
@@ -78,12 +80,21 @@ const tierColors: Record<string, string> = {
   PLATINUM: "from-indigo-500 to-indigo-300",
 };
 
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : null;
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const { user, isLoading, logout, isAdmin, isSeller } = useAuth();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [receiptMasked, setReceiptMasked] = useState(false);
+  const [savingMasked, setSavingMasked] = useState(false);
+  const [localShield, setLocalShield] = useState(true);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -98,7 +109,44 @@ export default function AccountPage() {
       .then((data) => setDashboard(data))
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    fetch(`${API_URL}/api/auth/me`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data) setReceiptMasked(data.receiptMasked || false);
+      })
+      .catch(() => {});
+
+    const shield = localStorage.getItem("stealth_blur_shield") !== "false";
+    setLocalShield(shield);
   }, [user]);
+
+  const handleToggleReceiptMasked = async (checked: boolean) => {
+    setSavingMasked(true);
+    try {
+      const csrf = getCsrfToken();
+      const res = await fetch(`${API_URL}/api/auth/me`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
+        body: JSON.stringify({ receiptMasked: checked }),
+      });
+      if (res.ok) {
+        setReceiptMasked(checked);
+        // Refresh dashboard data so recent orders mask dynamically
+        fetch(`${API_URL}/api/auth/dashboard`, { credentials: "include" })
+          .then((r) => r.json())
+          .then((data) => setDashboard(data))
+          .catch(() => {});
+      }
+    } catch {}
+    setSavingMasked(false);
+  };
+
+  const handleToggleLocalShield = (checked: boolean) => {
+    localStorage.setItem("stealth_blur_shield", String(checked));
+    setLocalShield(checked);
+  };
 
   const copyReferral = () => {
     if (dashboard?.referralCode) {
@@ -121,18 +169,64 @@ export default function AccountPage() {
   const fmt = (n: number) =>
     `UGX ${n.toLocaleString()}`;
 
-  const menuItems = [
+  const logisticsGroup = [
     { href: "/account/orders", icon: Package, label: "My Orders", count: dashboard?.stats.totalOrders },
+    { href: "/account/addresses", icon: MapPin, label: "Addresses" },
+    { href: "/account/returns", icon: RotateCcw, label: "Returns & Refunds" },
+  ];
+
+  const financialsGroup = [
+    { href: "/account/wallet", icon: Wallet, label: "Store Credit", text: dashboard ? fmt(dashboard.storeCredit) : undefined },
+    { href: "/account/layaway", icon: Clock, label: "Layaway Plans" },
+    { href: "/account/subscriptions", icon: RefreshCw, label: "Subscriptions" },
+  ];
+
+  const loyaltyGroup = [
+    { href: "/account/loyalty", icon: Award, label: "Loyalty Points", text: dashboard ? dashboard.loyalty.points.toLocaleString() : undefined },
+    { href: "/account/partner", icon: Users, label: "Partner Connection" },
+    { href: "/account/referrals", icon: Gift, label: "Refer & Earn" },
     { href: "/wishlist", icon: Heart, label: "Wishlist", count: dashboard?.stats.wishlistCount },
     { href: "/account/messages", icon: MessageCircle, label: "Messages", count: dashboard?.stats.unreadMessages || undefined },
-    { href: "/account/returns", icon: RotateCcw, label: "Returns & Refunds" },
-    { href: "/account/addresses", icon: MapPin, label: "Addresses" },
-    { href: "/account/wallet", icon: Wallet, label: "Store Credit" },
-    { href: "/account/loyalty", icon: Award, label: "Loyalty Points" },
-    { href: "/account/referrals", icon: Users, label: "Refer a Friend" },
+  ];
+
+  const discretionGroup = [
     { href: "/account/security", icon: Shield, label: "Security & 2FA" },
     { href: "/account/settings", icon: Settings, label: "Account Settings" },
+    { href: "/account/audio-guides", icon: Headphones, label: "Audio Guides" },
   ];
+
+  interface MenuItem {
+    href: string;
+    icon: any;
+    label: string;
+    count?: number;
+    text?: string;
+  }
+
+  const renderGroup = (title: string, items: MenuItem[]) => (
+    <div className="card p-4 space-y-3">
+      <h4 className="font-bold text-xs text-text-muted uppercase tracking-wider mb-2">{title}</h4>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <Link key={item.href} href={item.href} className="flex items-center justify-between p-2 rounded-lg hover:bg-surface-secondary transition-colors group">
+            <div className="flex items-center gap-3">
+              <item.icon className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
+              <span className="text-xs font-semibold text-text">{item.label}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {item.count !== undefined && item.count > 0 && (
+                <span className="badge text-[10px] py-0.5 px-1.5">{item.count}</span>
+              )}
+              {"text" in item && item.text && (
+                <span className="text-[10px] font-mono font-bold text-accent bg-accent/5 px-1.5 py-0.5 rounded">{item.text}</span>
+              )}
+              <ChevronRight className="w-3.5 h-3.5 text-text-muted group-hover:translate-x-0.5 transition-transform" />
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <Section>
@@ -167,200 +261,232 @@ export default function AccountPage() {
           </div>
         </div>
 
-        {/* Stats Cards */}
-        {dashboard && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-            <Link href="/account/orders" className="card hover:border-primary/30 transition-colors text-center p-4">
-              <Package className="w-6 h-6 mx-auto mb-2 text-primary" />
-              <p className="text-2xl font-bold">{dashboard.stats.totalOrders}</p>
-              <p className="text-xs text-text-muted">Total Orders</p>
-            </Link>
-
-            <div className="card text-center p-4">
-              <TrendingUp className="w-6 h-6 mx-auto mb-2 text-green-600" />
-              <p className="text-2xl font-bold">{fmt(dashboard.stats.totalSpent)}</p>
-              <p className="text-xs text-text-muted">Total Spent</p>
-            </div>
-
-            <Link href="/account/loyalty" className="card hover:border-primary/30 transition-colors text-center p-4">
-              <Award className="w-6 h-6 mx-auto mb-2 text-yellow-500" />
-              <p className="text-2xl font-bold">{dashboard.loyalty.points.toLocaleString()}</p>
-              <p className="text-xs text-text-muted">Loyalty Points</p>
-            </Link>
-
-            <Link href="/account/wallet" className="card hover:border-primary/30 transition-colors text-center p-4">
-              <Wallet className="w-6 h-6 mx-auto mb-2 text-blue-600" />
-              <p className="text-2xl font-bold">{fmt(dashboard.storeCredit)}</p>
-              <p className="text-xs text-text-muted">Store Credit</p>
-            </Link>
-          </div>
-        )}
-
-        {/* Loyalty Tier + Referral Row */}
-        {dashboard && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-            {/* Loyalty Tier */}
-            <div className="card p-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${tierColors[dashboard.loyalty.tier] || tierColors.BRONZE} flex items-center justify-center`}>
-                  <Award className="w-5 h-5 text-white" />
+        {/* 2-Column Restructured Layout */}
+        <div className="grid md:grid-cols-3 gap-6 items-start">
+          
+          {/* Left Column: Discretion Quick Settings, Order Pipeline, Recent Orders */}
+          <div className="md:col-span-1 space-y-6">
+            {/* Stealth & Discretion Dashboard Controls */}
+            <div className="card bg-surface-secondary dark:bg-gray-800/20 border-accent/20">
+              <div className="flex items-center gap-2 mb-4">
+                <Shield className="w-5 h-5 text-accent animate-pulse" />
+                <h3 className="font-bold text-sm text-text">Discretion & Privacy</h3>
+              </div>
+              <div className="space-y-3">
+                {/* Toggle 1: Receipt Masking */}
+                <div className="flex items-center justify-between p-3 bg-surface dark:bg-gray-900/40 rounded-lg border border-border">
+                  <div className="min-w-0 pr-2">
+                    <span className="block text-xs font-semibold text-text">Digital Receipt Masking</span>
+                    <span className="block text-[10px] text-text-muted leading-tight mt-0.5">
+                      Mask product names on billing & delivery passes.
+                    </span>
+                  </div>
+                  <label className="relative shrink-0 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={receiptMasked}
+                      disabled={savingMasked}
+                      onChange={(e) => handleToggleReceiptMasked(e.target.checked)}
+                    />
+                    <div className={`w-10 h-5 rounded-full transition-colors ${receiptMasked ? "bg-accent" : "bg-gray-300"}`}>
+                      <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${receiptMasked ? "translate-x-5" : "translate-x-0.5"}`} />
+                    </div>
+                  </label>
                 </div>
-                <div>
-                  <p className="font-semibold">{dashboard.loyalty.tier} Member</p>
-                  <p className="text-xs text-text-muted">{dashboard.loyalty.lifetimePoints.toLocaleString()} lifetime points</p>
+
+                {/* Toggle 2: Local Session Auto-Lock/Blur */}
+                <div className="flex items-center justify-between p-3 bg-surface dark:bg-gray-900/40 rounded-lg border border-border">
+                  <div className="min-w-0 pr-2">
+                    <span className="block text-xs font-semibold text-text">Incognito Screen Shield</span>
+                    <span className="block text-[10px] text-text-muted leading-tight mt-0.5">
+                      Blur viewport if app is backgrounded or minimized.
+                    </span>
+                  </div>
+                  <label className="relative shrink-0 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={localShield}
+                      onChange={(e) => handleToggleLocalShield(e.target.checked)}
+                    />
+                    <div className={`w-10 h-5 rounded-full transition-colors ${localShield ? "bg-accent" : "bg-gray-300"}`}>
+                      <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${localShield ? "translate-x-5" : "translate-x-0.5"}`} />
+                    </div>
+                  </label>
                 </div>
               </div>
-              {dashboard.loyalty.tier !== "PLATINUM" && (
-                <div className="mt-3">
-                  <div className="flex justify-between text-xs text-text-muted mb-1">
-                    <span>{dashboard.loyalty.tier}</span>
-                    <span>{dashboard.loyalty.tier === "BRONZE" ? "SILVER" : dashboard.loyalty.tier === "SILVER" ? "GOLD" : "PLATINUM"}</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full bg-gradient-to-r ${tierColors[dashboard.loyalty.tier] || tierColors.BRONZE}`}
-                      style={{
-                        width: `${Math.min(100, (dashboard.loyalty.lifetimePoints / (dashboard.loyalty.tier === "BRONZE" ? 5000 : dashboard.loyalty.tier === "SILVER" ? 15000 : 50000)) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
             </div>
 
-            {/* Referral Code */}
-            {dashboard.referralCode && (
+            {/* Order Pipeline */}
+            {dashboard && dashboard.stats.totalOrders > 0 && (
               <div className="card p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-400 flex items-center justify-center">
-                    <Gift className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">Refer & Earn</p>
-                    <p className="text-xs text-text-muted">Share your code with friends</p>
-                  </div>
+                <h3 className="font-semibold text-sm mb-3">Order Activity</h3>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(dashboard.stats.ordersByStatus)
+                    .filter(([, count]) => count > 0)
+                    .map(([status, count]) => {
+                      const config = statusConfig[status] || { label: status, color: "text-gray-600 bg-gray-50", icon: Clock };
+                      const Icon = config.icon;
+                      return (
+                        <Link
+                          key={status}
+                          href={`/account/orders?status=${status.toLowerCase()}`}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${config.color} hover:opacity-80 transition-opacity`}
+                        >
+                          <Icon className="w-3 h-3" />
+                          {count} {config.label}
+                        </Link>
+                      );
+                    })}
                 </div>
-                <div className="mt-3 flex items-center gap-2">
-                  <code className="flex-1 bg-gray-50 border border-dashed border-gray-300 rounded-lg px-3 py-2 text-sm font-mono text-center tracking-wider">
-                    {dashboard.referralCode}
-                  </code>
-                  <button
-                    onClick={copyReferral}
-                    className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                    title="Copy code"
-                  >
-                    {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-500" />}
-                  </button>
+              </div>
+            )}
+
+            {/* Recent Orders */}
+            {dashboard && dashboard.recentOrders.length > 0 && (
+              <div className="card">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-sm">Recent Orders</h3>
+                  <Link href="/account/orders" className="text-xs text-primary hover:underline">
+                    View all <ChevronRight className="w-3 h-3 inline" />
+                  </Link>
+                </div>
+                <div className="space-y-3">
+                  {dashboard.recentOrders.map((order) => {
+                    const config = statusConfig[order.status] || statusConfig.PENDING;
+                    return (
+                      <Link key={order.id} href={`/orders/${order.id}`} className="block">
+                        <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-surface-secondary transition-colors -mx-1">
+                          <div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                            {order.items[0]?.product?.images?.[0]?.url ? (
+                              <img
+                                src={order.items[0].product.images[0].url}
+                                alt=""
+                                className="w-full h-full object-cover rounded-lg"
+                              />
+                            ) : (
+                              <Package className="w-5 h-5 text-gray-400" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold truncate text-text">
+                              {order.items.map((i) => i.name).join(", ")}
+                            </p>
+                            <p className="text-[10px] text-text-muted mt-0.5">
+                              {order.orderNumber}
+                            </p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-xs font-bold text-text">{fmt(Number(order.totalAmount))}</p>
+                            <span className={`inline-flex items-center text-[9px] px-1.5 py-0.5 rounded-full ${config.color}`}>
+                              {config.label}
+                            </span>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
                 </div>
               </div>
             )}
           </div>
-        )}
 
-        {/* Order Pipeline */}
-        {dashboard && dashboard.stats.totalOrders > 0 && (
-          <div className="card mb-6 p-4">
-            <h3 className="font-semibold mb-3">Order Activity</h3>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(dashboard.stats.ordersByStatus)
-                .filter(([, count]) => count > 0)
-                .map(([status, count]) => {
-                  const config = statusConfig[status] || { label: status, color: "text-gray-600 bg-gray-50", icon: Clock };
-                  const Icon = config.icon;
-                  return (
-                    <Link
-                      key={status}
-                      href={`/account/orders?status=${status.toLowerCase()}`}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${config.color} hover:opacity-80 transition-opacity`}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      {count} {config.label}
-                    </Link>
-                  );
-                })}
-            </div>
-          </div>
-        )}
-
-        {/* Recent Orders */}
-        {dashboard && dashboard.recentOrders.length > 0 && (
-          <div className="card mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">Recent Orders</h3>
-              <Link href="/account/orders" className="text-sm text-primary hover:underline">
-                View all <ChevronRight className="w-3 h-3 inline" />
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {dashboard.recentOrders.map((order) => {
-                const config = statusConfig[order.status] || statusConfig.PENDING;
-                return (
-                  <Link key={order.id} href={`/orders/${order.id}`} className="block">
-                    <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors -mx-1">
-                      {/* Product thumbnail */}
-                      <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
-                        {order.items[0]?.product?.images?.[0]?.url ? (
-                          <img
-                            src={order.items[0].product.images[0].url}
-                            alt=""
-                            className="w-full h-full object-cover rounded-lg"
-                          />
-                        ) : (
-                          <Package className="w-5 h-5 text-gray-400" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {order.items.map((i) => i.name).join(", ")}
-                        </p>
-                        <p className="text-xs text-text-muted">
-                          {order.orderNumber} &middot; {new Date(order.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-sm font-semibold">{fmt(Number(order.totalAmount))}</p>
-                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${config.color}`}>
-                          {config.label}
-                        </span>
+          {/* Right Column: Circular Loyalty SVG Progress, Referral and grouped concerns grid */}
+          <div className="md:col-span-2 space-y-6">
+            
+            {dashboard && (
+              <div className="card p-5 bg-gradient-to-r from-accent/5 to-purple-500/5 border-accent/10">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+                  {/* Glowing circular loyalty progress ring SVG */}
+                  <div className="flex items-center gap-4">
+                    <div className="relative w-16 h-16 shrink-0">
+                      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 80 80">
+                        {/* Background track */}
+                        <circle
+                          cx="40"
+                          cy="40"
+                          r="30"
+                          className="stroke-gray-100 dark:stroke-gray-800"
+                          strokeWidth="6"
+                          fill="transparent"
+                        />
+                        {/* Glowing progress ring */}
+                        <circle
+                          cx="40"
+                          cy="40"
+                          r="30"
+                          className="stroke-accent transition-all duration-1000 ease-out"
+                          strokeWidth="6"
+                          strokeDasharray={2 * Math.PI * 30}
+                          strokeDashoffset={2 * Math.PI * 30 - (Math.min(100, (dashboard.loyalty.lifetimePoints / (dashboard.loyalty.tier === "BRONZE" ? 5000 : dashboard.loyalty.tier === "SILVER" ? 15000 : 50000)) * 100) / 100) * 2 * Math.PI * 30}
+                          strokeLinecap="round"
+                          fill="transparent"
+                          style={{ filter: "drop-shadow(0 0 4px rgba(236, 72, 153, 0.4))" }}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center flex-col">
+                        <span className="text-[9px] font-bold text-accent uppercase tracking-wider leading-none">{dashboard.loyalty.tier}</span>
+                        <span className="text-[9px] text-text-muted mt-0.5 leading-none">{Math.round(Math.min(100, (dashboard.loyalty.lifetimePoints / (dashboard.loyalty.tier === "BRONZE" ? 5000 : dashboard.loyalty.tier === "SILVER" ? 15000 : 50000)) * 100))}%</span>
                       </div>
                     </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                    <div>
+                      <p className="font-semibold text-sm text-text">{dashboard.loyalty.tier} Member</p>
+                      <p className="text-xs text-text-muted">{dashboard.loyalty.lifetimePoints.toLocaleString()} lifetime points</p>
+                      <p className="text-[10px] text-accent mt-0.5 font-medium">
+                        {dashboard.loyalty.tier === "PLATINUM" ? "Max tier achieved" : `${((dashboard.loyalty.tier === "BRONZE" ? 5000 : dashboard.loyalty.tier === "SILVER" ? 15000 : 50000) - dashboard.loyalty.lifetimePoints).toLocaleString()} points to next tier`}
+                      </p>
+                    </div>
+                  </div>
 
-        {/* Quick Links Menu */}
-        <div className="space-y-2">
-          <h3 className="font-semibold mb-2 text-sm text-text-muted uppercase tracking-wide">Account</h3>
-          {menuItems.map((item) => (
-            <Link key={item.href} href={item.href}>
-              <div className="card flex items-center justify-between hover:border-primary/30 transition-colors cursor-pointer">
-                <div className="flex items-center gap-4">
-                  <item.icon className="w-5 h-5 text-text-muted" />
-                  <span className="font-medium">{item.label}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {item.count !== undefined && item.count > 0 && (
-                    <span className="badge">{item.count}</span>
+                  {/* Referral Code Summary */}
+                  {dashboard.referralCode && (
+                    <div className="flex-1 min-w-[200px] border-t sm:border-t-0 sm:border-l border-border pt-4 sm:pt-0 sm:pl-6">
+                      <p className="font-bold text-xs text-text flex items-center gap-1.5">
+                        <Gift className="w-4 h-4 text-accent" /> Share referral and earn credits
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <code className="flex-1 bg-surface border border-dashed border-border rounded-lg px-3 py-1.5 text-xs font-mono text-center tracking-wider text-text">
+                          {dashboard.referralCode}
+                        </code>
+                        <button
+                          onClick={copyReferral}
+                          className="p-1.5 rounded-lg border border-border hover:bg-surface-secondary transition-colors"
+                          title="Copy code"
+                        >
+                          {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5 text-text-muted" />}
+                        </button>
+                      </div>
+                    </div>
                   )}
-                  <ChevronRight className="w-5 h-5 text-text-muted" />
                 </div>
               </div>
-            </Link>
-          ))}
+            )}
 
-          <button
-            onClick={() => {
-              logout();
-              router.push("/");
-            }}
-            className="card w-full flex items-center gap-4 text-red-600 hover:border-red-300 transition-colors cursor-pointer"
-          >
-            <LogOut className="w-5 h-5" />
-            <span className="font-medium">Sign Out</span>
-          </button>
+            {/* 2x2 Masonry Grid grouping concerns */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              {renderGroup("Logistics & Orders", logisticsGroup)}
+              {renderGroup("Financials", financialsGroup)}
+              {renderGroup("Loyalty & Social", loyaltyGroup)}
+              {renderGroup("Discretion Center", discretionGroup)}
+            </div>
+
+            {/* Sign Out Action Card */}
+            <button
+              onClick={() => {
+                logout();
+                router.push("/");
+              }}
+              className="card w-full flex items-center justify-between p-4 text-red-600 hover:border-red-300 hover:bg-red-50/5 transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-4">
+                <LogOut className="w-5 h-5" />
+                <span className="font-semibold text-xs uppercase tracking-wider">Sign Out from Account</span>
+              </div>
+              <ChevronRight className="w-5 h-5 text-red-400" />
+            </button>
+
+          </div>
         </div>
       </div>
     </Section>

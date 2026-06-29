@@ -31,7 +31,7 @@ export default function NotifyMe({ productId, waitingCount }: NotifyMeProps) {
   // Fetch waiting count
   useEffect(() => {
     if (!waitingCount) {
-      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}/api/notify/back-in-stock/count?productId=${productId}`)
+      fetch(`/api/notify/back-in-stock/count?productId=${productId}`)
         .then((r) => r.json())
         .then((data) => {
           if (data?.count) setSubscriberCount(data.count);

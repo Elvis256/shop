@@ -2,107 +2,68 @@
 set -e
 
 DOMAIN="ugsex.com"
-EMAIL="admin@ugsex.com"   # ← change to your real email for SSL cert notifications
+EMAIL="admin@ugsex.com"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "══════════════════════════════════════════════"
-echo "  Deploying shop to $DOMAIN"
+echo "  Deploying shop to $DOMAIN (PM2 + host nginx)"
 echo "══════════════════════════════════════════════"
 
-# ── 1. Install Docker ─────────────────────────────────────────────────────────
-if ! command -v docker &>/dev/null; then
-  echo "[1/6] Installing Docker..."
-  apt-get update -q
-  apt-get install -y -q ca-certificates curl gnupg
-  install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  chmod a+r /etc/apt/keyrings/docker.gpg
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-    https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-    > /etc/apt/sources.list.d/docker.list
-  apt-get update -q
-  apt-get install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin
-  echo "[1/6] Docker installed ✓"
-else
-  echo "[1/6] Docker already installed ✓"
-fi
+# ── 1. Verify host services ──────────────────────────────────────────────────
+echo "[1/5] Verifying host services..."
+for svc in postgresql redis-server nginx; do
+  if ! systemctl is-active --quiet "$svc"; then
+    echo "  ❌  $svc is not running. Start it with: systemctl start $svc"
+    exit 1
+  fi
+done
+command -v pm2 >/dev/null || { echo "  ❌  pm2 not installed. Install: npm i -g pm2"; exit 1; }
+echo "[1/5] postgres, redis, nginx, pm2 — OK ✓"
 
-# ── 2. Install Certbot ────────────────────────────────────────────────────────
-if ! command -v certbot &>/dev/null; then
-  echo "[2/6] Installing Certbot..."
-  apt-get install -y -q certbot
-  echo "[2/6] Certbot installed ✓"
-else
-  echo "[2/6] Certbot already installed ✓"
+# ── 2. Check .env files ──────────────────────────────────────────────────────
+echo "[2/5] Checking environment files..."
+if grep -q "change_this" "$DIR/.env" 2>/dev/null || grep -q "change_this" "$DIR/backend/.env" 2>/dev/null; then
+  echo "  ⚠  Edit the .env files first:"
+  echo "      $DIR/backend/.env  ← JWT_SECRET, DB password, Flutterwave keys, SMTP"
+  read -rp "  Have you updated them? (y/N): " confirm
+  [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
 fi
+echo "[2/5] Environment files OK ✓"
 
-# ── 3. Check .env files ───────────────────────────────────────────────────────
-echo "[3/6] Checking environment files..."
-if grep -q "change_this" "$DIR/.env" || grep -q "change_this" "$DIR/backend/.env"; then
-  echo ""
-  echo "  ⚠  You must fill in your real values before deploying!"
-  echo ""
-  echo "  Edit these files:"
-  echo "    $DIR/.env                ← set POSTGRES_PASSWORD"
-  echo "    $DIR/backend/.env        ← set JWT_SECRET, Flutterwave keys, SMTP"
-  echo ""
-  read -p "  Have you updated them? (y/N): " confirm
-  [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted. Edit the .env files first."; exit 1; }
-fi
-echo "[3/6] Environment files OK ✓"
+# ── 3. Build backend & frontend ──────────────────────────────────────────────
+echo "[3/5] Building backend..."
+cd "$DIR/backend" && npm ci --omit=dev=false --legacy-peer-deps && npm run build
 
-# ── 4. Start app services (without nginx) ────────────────────────────────────
-echo "[4/6] Starting app services (postgres, redis, backend, frontend)..."
+echo "[3/5] Building frontend..."
+cd "$DIR/frontend" && npm ci --legacy-peer-deps && npm run build
+echo "[3/5] Builds OK ✓"
+
+# ── 4. Reload PM2 ────────────────────────────────────────────────────────────
+echo "[4/5] Reloading PM2 apps (zero-downtime)..."
 cd "$DIR"
-docker compose up -d postgres redis backend frontend
-echo "  Waiting for services to be ready..."
-sleep 15
-echo "[4/6] App services running ✓"
+pm2 reload ecosystem.config.js --update-env
+pm2 save
+echo "[4/5] PM2 reload OK ✓"
 
-# ── 5. Get SSL certificate ────────────────────────────────────────────────────
+# ── 5. SSL + nginx reload ────────────────────────────────────────────────────
 if [ ! -d "/etc/letsencrypt/live/$DOMAIN" ]; then
-  echo "[5/6] Obtaining SSL certificate for $DOMAIN..."
-
-  # Temporarily use HTTP-only nginx to serve ACME challenge
-  cp "$DIR/nginx/nginx.http.conf" "$DIR/nginx/nginx.conf"
-  docker compose up -d nginx
-  sleep 3
-
-  # Create webroot directory
-  docker compose exec nginx mkdir -p /var/www/certbot
-
-  # Get the certificate
-  certbot certonly \
-    --webroot \
-    --webroot-path /var/www/certbot \
-    -d "$DOMAIN" \
-    -d "www.$DOMAIN" \
-    --email "$EMAIL" \
-    --agree-tos \
-    --non-interactive \
-    --rsa-key-size 4096
-
-  echo "[5/6] SSL certificate obtained ✓"
+  echo "[5/5] No SSL certificate. Obtain with:"
+  echo "  certbot --nginx -d $DOMAIN -d www.$DOMAIN --email $EMAIL --agree-tos"
 else
-  echo "[5/6] SSL certificate already exists ✓"
+  echo "[5/5] Reloading host nginx..."
+  nginx -t && systemctl reload nginx
 fi
-
-# ── 6. Switch to HTTPS nginx config and reload ───────────────────────────────
-echo "[6/6] Switching to HTTPS configuration..."
-cp "$DIR/nginx/nginx.ssl.conf" "$DIR/nginx/nginx.conf" 2>/dev/null || true
-# The final nginx.conf already has SSL — just restart nginx
-docker compose restart nginx
-sleep 3
 
 echo ""
 echo "══════════════════════════════════════════════"
 echo "  ✅  Deployment complete!"
-echo ""
 echo "  🌐  https://$DOMAIN"
 echo ""
-echo "  Next steps:"
-echo "    • Make sure DNS A record for $DOMAIN → 212.47.69.106"
-echo "    • Make sure DNS A record for www.$DOMAIN → 212.47.69.106"
-echo "    • Set up auto-renewal: certbot renew --dry-run"
-echo "    • Add to crontab: 0 3 * * * certbot renew --quiet && docker compose -f $DIR/docker-compose.yml restart nginx"
+echo "  Useful commands:"
+echo "    pm2 status                    # check apps"
+echo "    pm2 logs shop-frontend        # tail frontend logs"
+echo "    pm2 logs shop-backend         # tail backend logs"
+echo "    pm2 reload shop-frontend      # zero-downtime reload"
+echo "    nginx -t && systemctl reload nginx"
+echo "    certbot renew --dry-run       # test SSL renewal"
 echo "══════════════════════════════════════════════"

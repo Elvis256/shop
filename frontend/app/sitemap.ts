@@ -20,6 +20,11 @@ interface BlogPost {
   updatedAt: string;
 }
 
+interface Seller {
+  storeSlug: string;
+  updatedAt?: string;
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPages: MetadataRoute.Sitemap = [
     {
@@ -115,7 +120,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (res.ok) {
       const data = await res.json();
       categoryPages = (data.categories || []).map((cat: Category) => ({
-        url: `${SITE_URL}/category?cat=${cat.slug}`,
+        url: `${SITE_URL}/category/${cat.slug}`,
         lastModified: new Date(),
         changeFrequency: 'weekly' as const,
         priority: 0.7,
@@ -147,5 +152,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     console.error('Failed to fetch blog posts for sitemap:', e);
   }
 
-  return [...staticPages, ...productPages, ...categoryPages, ...blogPages];
+  // Fetch approved sellers
+  let sellerPages: MetadataRoute.Sitemap = [];
+  try {
+    const res = await fetch(`${INTERNAL_API_URL}/api/seller?status=APPROVED&limit=200`, {
+      next: { revalidate: 3600 },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      sellerPages = (data.sellers || []).map((seller: Seller) => ({
+        url: `${SITE_URL}/seller/${seller.storeSlug}`,
+        lastModified: seller.updatedAt ? new Date(seller.updatedAt) : new Date(),
+        changeFrequency: 'weekly' as const,
+        priority: 0.6,
+      }));
+    }
+  } catch (e) {
+    console.error('Failed to fetch sellers for sitemap:', e);
+  }
+
+  return [...staticPages, ...productPages, ...categoryPages, ...blogPages, ...sellerPages];
 }

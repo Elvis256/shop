@@ -1,6 +1,8 @@
 import { Router } from "express";
 import prisma from "../lib/prisma";
+import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { parseShippingAddress } from "../utils/shippingAddress";
 
 const router = Router();
 
@@ -31,11 +33,8 @@ router.get("/live-feed", asyncHandler(async (_req, res) => {
 
     // Anonymize and format
     const feed = recentOrders.map((item) => {
-      let city = "Uganda";
-      try {
-        const addr = JSON.parse(item.order.shippingAddress);
-        if (addr.city) city = addr.city;
-      } catch { /* shippingAddress may not be valid JSON */ }
+      const addr = parseShippingAddress(item.order.shippingAddress);
+      const city = addr?.city || "Uganda";
 
       return {
         productName: item.product?.name || "A product",
@@ -48,14 +47,9 @@ router.get("/live-feed", asyncHandler(async (_req, res) => {
 
     res.json({ feed });
   } catch (err) {
-    // If no orders exist yet, return mock data for social proof
-    res.json({
-      feed: [
-        { productName: "Premium Wellness Product", productSlug: null, productImage: null, city: "Kampala", timeAgo: "2 min ago" },
-        { productName: "Luxury Intimate Set", productSlug: null, productImage: null, city: "Entebbe", timeAgo: "5 min ago" },
-        { productName: "Couples Package", productSlug: null, productImage: null, city: "Jinja", timeAgo: "12 min ago" },
-      ],
-    });
+    logger.error("Live feed error", { error: err });
+    // Return empty feed on error — don't fabricate data
+    res.json({ feed: [] });
   }
 }));
 

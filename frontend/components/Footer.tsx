@@ -5,6 +5,7 @@ import BandwidthToggle from "@/components/BandwidthToggle";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
+  const showApk = process.env.NEXT_PUBLIC_SHOW_APK === "true";
 
   return (
     <footer className="border-t border-border mt-20 bg-surface">
@@ -29,6 +30,7 @@ export default function Footer() {
               <Link href="/category?cat=toys" className="block text-text-muted hover:text-text transition-colors duration-200">Toys</Link>
               <Link href="/category?cat=lingerie" className="block text-text-muted hover:text-text transition-colors duration-200">Lingerie</Link>
               <Link href="/category?cat=wellness" className="block text-text-muted hover:text-text transition-colors duration-200">Wellness</Link>
+              <Link href="/store" className="block text-text-muted hover:text-text transition-colors duration-200">Browse Stores</Link>
               <Link href="/gift-finder" className="block text-text-muted hover:text-text transition-colors duration-200">Gift Finder</Link>
               <Link href="/build-your-box" className="block text-text-muted hover:text-text transition-colors duration-200">Build Your Box</Link>
             </nav>
@@ -58,10 +60,12 @@ export default function Footer() {
                 <Store className="w-3.5 h-3.5" />
                 Sell on PleasureZone
               </Link>
-              <a href="/shop-app.apk" download="PleasureZone.apk" className="inline-flex items-center gap-1.5 text-text-muted hover:text-text transition-colors duration-200">
-                <Smartphone className="w-3.5 h-3.5" />
-                Get Android App
-              </a>
+{showApk && (
+    <a href="/shop-app.apk" download="PleasureZone.apk" className="inline-flex items-center gap-1.5 text-text-muted hover:text-text transition-colors duration-200">
+      <Smartphone className="w-3.5 h-3.5" />
+      Get Android App
+    </a>
+)}
             </nav>
           </div>
 

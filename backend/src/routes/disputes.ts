@@ -177,8 +177,10 @@ router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
     }
 
     // Only buyer, seller, or admin can view
+    const userSeller = await prisma.seller.findUnique({ where: { userId } });
+    const isDisputeSeller = !!(userSeller && dispute.sellerId === userSeller.id);
     const isAdmin = req.user!.role === "ADMIN" || req.user!.role === "MANAGER";
-    if (dispute.buyerId !== userId && dispute.sellerId !== userId && !isAdmin) {
+    if (dispute.buyerId !== userId && !isDisputeSeller && !isAdmin) {
       return res.status(403).json({ error: "Not authorized" });
     }
 
@@ -199,7 +201,9 @@ router.post("/:id/evidence", uploadDocuments, validateUploadedDocuments, asyncHa
       return res.status(404).json({ error: "Dispute not found" });
     }
 
-    if (dispute.buyerId !== userId && dispute.sellerId !== userId) {
+    const userSeller = await prisma.seller.findUnique({ where: { userId } });
+    const isDisputeSeller = !!(userSeller && dispute.sellerId === userSeller.id);
+    if (dispute.buyerId !== userId && !isDisputeSeller) {
       return res.status(403).json({ error: "Not authorized" });
     }
 
@@ -245,9 +249,10 @@ router.post("/:id/messages", asyncHandler(async (req: AuthRequest, res: Response
       return res.status(404).json({ error: "Dispute not found" });
     }
 
+    const userSeller = await prisma.seller.findUnique({ where: { userId } });
     const isAdmin = req.user!.role === "ADMIN" || req.user!.role === "MANAGER";
     const isBuyer = dispute.buyerId === userId;
-    const isSeller = dispute.sellerId === userId;
+    const isSeller = !!(userSeller && dispute.sellerId === userSeller.id);
 
     if (!isBuyer && !isSeller && !isAdmin) {
       return res.status(403).json({ error: "Not authorized" });

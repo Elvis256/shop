@@ -66,6 +66,7 @@ interface AddressAutocompleteProps
   onAddressSelect?: (address: AddressSelection) => void;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   enableGeocoding?: boolean;
+  autoDetect?: boolean;
 }
 
 export default function AddressAutocomplete({
@@ -74,6 +75,7 @@ export default function AddressAutocomplete({
   onAddressSelect,
   onChange,
   enableGeocoding = true,
+  autoDetect = false,
   ...props
 }: AddressAutocompleteProps) {
   const [query, setQuery] = useState((props.value as string) || "");
@@ -103,6 +105,15 @@ export default function AddressAutocomplete({
       setQuery(props.value as string);
     }
   }, [props.value]);
+
+  // Auto-detect location on mount if autoDetect is true and no address filled
+  const autoDetectRan = useRef(false);
+  useEffect(() => {
+    if (autoDetect && !autoDetectRan.current && enableGeocoding && !query) {
+      autoDetectRan.current = true;
+      handleUseLocation();
+    }
+  }, [autoDetect]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const searchNominatim = useCallback(async (searchQuery: string) => {
     if (searchQuery.length < 3) {

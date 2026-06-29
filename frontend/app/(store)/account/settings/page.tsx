@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;
@@ -88,6 +88,26 @@ export default function AccountSettingsPage() {
   const [smsSuccess, setSmsSuccess] = useState(false);
   const [smsError, setSmsError] = useState("");
 
+  // Receipt Masking
+  const [receiptMasked, setReceiptMasked] = useState(false);
+  const [receiptSaving, setReceiptSaving] = useState(false);
+  const [receiptSuccess, setReceiptSuccess] = useState(false);
+  const [receiptError, setReceiptError] = useState("");
+
+  const [stealthSkin, setStealthSkin] = useState("calculator");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setStealthSkin(localStorage.getItem("stealth_manifest_skin") || "calculator");
+    }
+  }, []);
+
+  const handleStealthSkinChange = (skin: string) => {
+    localStorage.setItem("stealth_manifest_skin", skin);
+    setStealthSkin(skin);
+    window.dispatchEvent(new Event("stealthSkinChanged"));
+  };
+
   useEffect(() => {
     if (!isLoading && !user) router.push("/auth/login");
   }, [user, isLoading, router]);
@@ -102,6 +122,7 @@ export default function AccountSettingsPage() {
         setSmsOptIn(data.smsOptIn || false);
         setSmsPhone(data.phone || "");
         setOrderHistoryDays(data.orderHistoryDays ?? null);
+        setReceiptMasked(data.receiptMasked || false);
       })
       .catch(() => {});
 
@@ -228,6 +249,30 @@ export default function AccountSettingsPage() {
       setHistoryError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setHistorySaving(false);
+    }
+  };
+
+  const handleSaveReceiptMasked = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReceiptSaving(true);
+    setReceiptError("");
+    setReceiptSuccess(false);
+    try {
+      const csrf = getCsrfToken();
+      const res = await fetch(`${API_URL}/api/auth/me`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
+        body: JSON.stringify({ receiptMasked }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update preference");
+      setReceiptSuccess(true);
+      setTimeout(() => setReceiptSuccess(false), 4000);
+    } catch (err: unknown) {
+      setReceiptError(err instanceof Error ? err.message : "Failed to update preference");
+    } finally {
+      setReceiptSaving(false);
     }
   };
 
@@ -362,7 +407,7 @@ export default function AccountSettingsPage() {
                         className="input pl-9"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        placeholder="+256 700 000 000"
+                        placeholder="Enter phone number"
                       />
                     </div>
                     <p className="text-xs text-text-muted mt-1.5">Used for order updates and delivery coordination</p>
@@ -576,7 +621,7 @@ export default function AccountSettingsPage() {
                           className="input pl-9"
                           value={smsPhone}
                           onChange={(e) => setSmsPhone(e.target.value)}
-                          placeholder="+256 700 000 000"
+                          placeholder="Enter phone number"
                           required
                         />
                       </div>
@@ -651,6 +696,118 @@ export default function AccountSettingsPage() {
                     <Link href="/policies/terms" className="btn-secondary text-sm text-center">
                       Terms of Service
                     </Link>
+                  </div>
+                </div>
+
+                {/* Receipt Masking Preferences */}
+                <div className="card">
+                  <div className="mb-4">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-accent animate-pulse" />Digital Receipt Hiding (Masking)
+                    </h3>
+                    <p className="text-sm text-text-muted mt-1">
+                      Replace intimate product names with generic PZ-codes on digital invoices, email templates, and delivery passes to protect your domestic privacy.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleSaveReceiptMasked} className="space-y-4">
+                    <label className="flex items-start justify-between gap-4 p-4 border border-border rounded-lg cursor-pointer hover:bg-surface-secondary transition-colors">
+                      <div>
+                        <p className="font-medium text-sm">Mask Digital Receipts</p>
+                        <p className="text-xs text-text-muted mt-0.5">Activate to replace names like "Lace Teddy" with generic codes (e.g. PZ-LGT-492) automatically.</p>
+                      </div>
+                      <div className="relative shrink-0 mt-0.5">
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={receiptMasked}
+                          onChange={(e) => setReceiptMasked(e.target.checked)}
+                        />
+                        <div
+                          onClick={() => setReceiptMasked(!receiptMasked)}
+                          className={`w-10 h-5 rounded-full transition-colors cursor-pointer ${receiptMasked ? "bg-accent" : "bg-gray-300"}`}
+                        >
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${receiptMasked ? "translate-x-5" : "translate-x-0.5"}`} />
+                        </div>
+                      </div>
+                    </label>
+
+                    {receiptError && (
+                      <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        {receiptError}
+                      </div>
+                    )}
+                    {receiptSuccess && (
+                      <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+                        <CheckCircle className="w-4 h-4 shrink-0" />
+                        Receipt masking preference updated!
+                      </div>
+                    )}
+
+                    <button type="submit" disabled={receiptSaving} className="btn-primary flex items-center gap-2">
+                      {receiptSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><Shield className="w-4 h-4" />Save Preference</>}
+                    </button>
+                  </form>
+
+                  {/* Mock Invoice Card Preview */}
+                  <div className="mt-4 p-4 rounded-xl border border-dashed border-border bg-surface dark:bg-gray-950/20 max-w-sm mx-auto shadow-inner">
+                    <p className="text-[10px] uppercase tracking-wider text-text-muted font-bold mb-2">Live Statement Preview</p>
+                    <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-border shadow-sm font-sans space-y-2">
+                      <div className="flex justify-between border-b pb-2">
+                        <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200">PLEASUREZONE INC.</span>
+                        <span className="text-[10px] text-gray-500 font-mono">INV-849204</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600 dark:text-gray-400 font-medium">
+                            {receiptMasked ? "Wellness Item #PZ-LGT-492" : "Intimate Lace Teddy (Black)"}
+                          </span>
+                          <span className="font-semibold text-gray-800 dark:text-gray-200">UGX 120,000</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600 dark:text-gray-400 font-medium">
+                            {receiptMasked ? "Personal Care #PZ-LUB-839" : "Premium Silicone Lubricant 150ml"}
+                          </span>
+                          <span className="font-semibold text-gray-800 dark:text-gray-200">UGX 45,000</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between border-t pt-2 text-xs font-bold text-accent">
+                        <span>Total Paid</span>
+                        <span>UGX 165,000</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* App Icon Customization */}
+                <div className="card">
+                  <div className="mb-4">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-accent" />App Icon Customization (Stealth Launcher)
+                    </h3>
+                    <p className="text-sm text-text-muted mt-1">
+                      Choose what icon, title, and manifest skin to use when Discreet Mode is activated.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {[
+                      { id: "calculator", label: "Generic Calculator", icon: "🧮", desc: "Displays 'Calculator' with a math icon" },
+                      { id: "notes", label: "Secure Notepad", icon: "📝", desc: "Displays 'Notes' with a notepad icon" },
+                    ].map((skinOption) => (
+                      <button
+                        key={skinOption.id}
+                        type="button"
+                        onClick={() => handleStealthSkinChange(skinOption.id)}
+                        className={`text-left p-3 border rounded-lg flex items-start gap-3 transition-colors ${stealthSkin === skinOption.id ? "border-accent bg-accent/5" : "border-border hover:bg-surface-secondary"}`}
+                      >
+                        <span className="text-2xl mt-0.5">{skinOption.icon}</span>
+                        <div>
+                          <p className="text-sm font-semibold text-text">{skinOption.label}</p>
+                          <p className="text-xs text-text-muted mt-0.5">{skinOption.desc}</p>
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 </div>
 

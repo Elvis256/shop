@@ -130,7 +130,7 @@ export default function AdminReturnsPage() {
       if (statusFilter !== "All") params.set("status", statusFilter);
       params.set("page", String(p));
       params.set("limit", String(perPage));
-      const data = await apiFetch(`/api/returns?${params}`);
+      const data = await apiFetch(`/api/returns/admin/all?${params}`);
       const list: ReturnRequest[] = data.returns || data.data || (Array.isArray(data) ? data : []);
       setReturns(list);
       setTotal(data.pagination?.total || data.total || list.length);

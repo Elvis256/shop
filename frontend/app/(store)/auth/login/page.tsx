@@ -7,7 +7,7 @@ import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 function getCsrfToken(): string | null {
@@ -80,8 +80,31 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [touched, setTouched] = useState({ email: false, password: false });
 
+  // 2FA state
+  const [requires2FA, setRequires2FA] = useState(false);
+  const [twoFAToken, setTwoFAToken] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const passwordValid = password.length >= 8;
+
+  const redirectAfterLogin = (response: any) => {
+    const userRole = (response?.user?.role || response?.role || "") as string;
+    const hasSeller = !!(response?.user?.seller);
+    if (rememberMe) {
+      try { localStorage.setItem("rememberMe", "true"); } catch {}
+    }
+    const explicitRedirect = searchParams.get("redirect");
+    let redirectTo = "/account";
+    if (explicitRedirect) {
+      redirectTo = explicitRedirect;
+    } else if (userRole === "ADMIN" || userRole === "STAFF" || userRole === "MANAGER") {
+      redirectTo = "/admin";
+    } else if (hasSeller) {
+      redirectTo = "/seller";
+    }
+    window.location.href = redirectTo;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,26 +115,44 @@ function LoginForm() {
 
     try {
       const response: any = await login(email, password);
-      const userRole = (response?.user?.role || response?.role || "") as string;
-      const hasSeller = !!(response?.user?.seller);
 
-      if (rememberMe) {
-        try { localStorage.setItem("rememberMe", "true"); } catch {}
+      // Backend returns 202 with requires2FA when TOTP is enabled
+      if (response?.requires2FA) {
+        setRequires2FA(true);
+        setTwoFAToken(response.twoFaToken);
+        setLoading(false);
+        return;
       }
 
-      const explicitRedirect = searchParams.get("redirect");
-      let redirectTo = "/account";
-      if (explicitRedirect) {
-        redirectTo = explicitRedirect;
-      } else if (userRole === "ADMIN" || userRole === "STAFF" || userRole === "MANAGER") {
-        redirectTo = "/admin";
-      } else if (hasSeller) {
-        redirectTo = "/seller";
-      }
-      router.push(redirectTo);
+      redirectAfterLogin(response);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Login failed";
       setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerify2FA = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!totpCode.trim()) return;
+    setError("");
+    setLoading(true);
+    try {
+      const csrf = getCsrfToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) headers["x-csrf-token"] = csrf;
+      const res = await fetch(`${API_URL}/api/2fa/verify`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ twoFaToken: twoFAToken, token: totpCode.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Invalid code");
+      redirectAfterLogin(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Verification failed");
     } finally {
       setLoading(false);
     }
@@ -166,6 +207,7 @@ function LoginForm() {
             </div>
           )}
 
+          {!requires2FA ? (
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-small font-medium mb-2">Email</label>
@@ -234,6 +276,47 @@ function LoginForm() {
               ) : "Sign In"}
             </button>
           </form>
+          ) : (
+          <form onSubmit={handleVerify2FA} className="space-y-6">
+            <div className="text-center mb-2">
+              <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              </div>
+              <h2 className="font-semibold text-lg">Two-Factor Authentication</h2>
+              <p className="text-sm text-text-muted mt-1">Enter the 6-digit code from your authenticator app</p>
+            </div>
+            <div>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={8}
+                className="input text-center text-2xl tracking-[0.3em] font-mono"
+                placeholder="000000"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                autoFocus
+              />
+              <p className="text-xs text-text-muted mt-2 text-center">You can also use a backup code</p>
+            </div>
+            <button
+              type="submit"
+              className="btn-primary w-full flex items-center justify-center gap-2"
+              disabled={loading || !totpCode.trim()}
+            >
+              {loading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Verifying...</>
+              ) : "Verify & Sign In"}
+            </button>
+            <button
+              type="button"
+              className="w-full text-sm text-text-muted hover:text-text-primary transition-colors"
+              onClick={() => { setRequires2FA(false); setTotpCode(""); setError(""); }}
+            >
+              Back to login
+            </button>
+          </form>
+          )}
 
           {GOOGLE_CLIENT_ID && (
             <>

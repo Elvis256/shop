@@ -6,7 +6,8 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import TrackingScripts from "@/components/TrackingScripts";
 import { DiscreetModeProvider } from "@/components/DiscreetMode";
 import { CountryProvider } from "@/contexts/CountryContext";
-import { OrganizationSchema, WebsiteSchema } from "@/components/StructuredData";
+import { WebsiteSchema } from "@/components/StructuredData";
+import LocalBusinessSchema from "@/components/schemas/LocalBusinessSchema";
 import StoreChrome from "@/components/StoreChrome";
 import LazyWidgets from "@/components/LazyWidgets";
 
@@ -34,8 +35,8 @@ export default function StoreLayout({
     <CountryProvider>
     <DiscreetModeProvider>
       <div className="min-h-screen flex flex-col pb-16 lg:pb-0">
-        <OrganizationSchema />
         <WebsiteSchema />
+        <LocalBusinessSchema />
         <PageTracker />
         <AffiliateTracker />
         <AgeGate />

@@ -47,7 +47,13 @@ const postSchema = z.object({
 router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const data = postSchema.parse(req.body);
-    const slug = data.slug || data.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    let slug = data.slug || data.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+    // Auto-suffix slug if it already exists
+    const existing = await prisma.blogPost.findFirst({ where: { slug } });
+    if (existing) {
+      slug = `${slug}-${Date.now().toString(36)}`;
+    }
 
     const post = await prisma.blogPost.create({
       data: {

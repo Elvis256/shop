@@ -73,6 +73,17 @@ export default function SellerOrders() {
   const [trackingNumber, setTrackingNumber] = useState("");
   const { showToast } = useToast();
 
+  // Courier booking modal states
+  const [showCourierModal, setShowCourierModal] = useState(false);
+  const [courierOrderId, setCourierOrderId] = useState<string | null>(null);
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
+  const [deliveryArea, setDeliveryArea] = useState("");
+  const [preferredCourier, setPreferredCourier] = useState<"safeboda" | "sendy" | "internal" | "auto">("auto");
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [quotes, setQuotes] = useState<any[]>([]);
+  const [quotesLoading, setQuotesLoading] = useState(false);
+
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
@@ -124,6 +135,63 @@ export default function SellerOrders() {
       updateStatus(trackingOrderId, "SHIPPED", trackingNumber || undefined);
       setShowTrackingModal(false);
     }
+  };
+
+  const fetchQuotes = async () => {
+    if (!deliveryArea.trim()) {
+      showToast("Please enter a delivery address to get quotes", "warning");
+      return;
+    }
+    try {
+      setQuotesLoading(true);
+      const data = await apiFetch("/api/courier/quote", {
+        method: "POST",
+        body: JSON.stringify({ deliveryArea }),
+      });
+      setQuotes(data.quotes || []);
+      showToast("Delivery quotes fetched", "success");
+    } catch (err: any) {
+      showToast(err.message || "Failed to fetch quotes", "error");
+    } finally {
+      setQuotesLoading(false);
+    }
+  };
+
+  const handleBookCourier = async () => {
+    if (!recipientName.trim() || !recipientPhone.trim() || !deliveryArea.trim()) {
+      showToast("Recipient name, phone, and delivery area are required", "warning");
+      return;
+    }
+    try {
+      setBookingLoading(true);
+      await apiFetch("/api/courier/book", {
+        method: "POST",
+        body: JSON.stringify({
+          orderId: courierOrderId,
+          deliveryArea,
+          recipientName,
+          recipientPhone,
+          preferredCourier,
+        }),
+      });
+      showToast("Courier rider booked successfully!", "success");
+      setShowCourierModal(false);
+      fetchOrders();
+    } catch (err: any) {
+      showToast(err.message || "Failed to book courier", "error");
+    } finally {
+      setBookingLoading(false);
+    }
+  };
+
+  const openCourierModal = (order: any) => {
+    setCourierOrderId(order.id);
+    setRecipientName(order.customerName || "");
+    setRecipientPhone(order.customerPhone || "");
+    setDeliveryArea(order.shippingAddress || "");
+    setPreferredCourier("auto");
+    setQuotes([]);
+    setShowCourierModal(true);
   };
 
   return (
@@ -300,13 +368,22 @@ export default function SellerOrders() {
                               </button>
                             )}
                             {order.status === "PROCESSING" && (
-                              <button
-                                onClick={() => openTrackingModal(order.id)}
-                                disabled={updatingId === order.id}
-                                className="px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium hover:bg-purple-100 disabled:opacity-50 transition-colors"
-                              >
-                                {updatingId === order.id ? "..." : "Mark Shipped"}
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => openCourierModal(order)}
+                                  disabled={updatingId === order.id}
+                                  className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-medium disabled:opacity-50 transition-colors"
+                                >
+                                  Book Rider
+                                </button>
+                                <button
+                                  onClick={() => openTrackingModal(order.id)}
+                                  disabled={updatingId === order.id}
+                                  className="px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium hover:bg-purple-100 disabled:opacity-50 transition-colors"
+                                >
+                                  {updatingId === order.id ? "..." : "Mark Shipped"}
+                                </button>
+                              </div>
                             )}
                           </div>
                         </td>
@@ -438,6 +515,123 @@ export default function SellerOrders() {
                 className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
               >
                 Mark as Shipped
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Courier Rider Booking Modal */}
+      {showCourierModal && (
+        <div className="fixed inset-0 bg-black/50 z-[400] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-900">Book Delivery Rider</h3>
+              <button
+                onClick={() => setShowCourierModal(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  Recipient Name
+                </label>
+                <input
+                  type="text"
+                  value={recipientName}
+                  onChange={(e) => setRecipientName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="Customer Name"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  Recipient Mobile Phone
+                </label>
+                <input
+                  type="text"
+                  value={recipientPhone}
+                  onChange={(e) => setRecipientPhone(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="e.g. +256770000000"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  Delivery Address / Location
+                </label>
+                <textarea
+                  value={deliveryArea}
+                  onChange={(e) => setDeliveryArea(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="Specific street name, building description, Kampala region"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  Preferred Motorcycle Service
+                </label>
+                <select
+                  value={preferredCourier}
+                  onChange={(e: any) => setPreferredCourier(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white"
+                >
+                  <option value="auto">Auto-Select Cheapest Rider</option>
+                  <option value="safeboda">SafeBoda Delivery</option>
+                  <option value="sendy">Sendy Courier</option>
+                  <option value="internal">PZ Internal Courier</option>
+                </select>
+              </div>
+
+              {/* Quotes Section */}
+              <div className="pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={fetchQuotes}
+                  disabled={quotesLoading}
+                  className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                >
+                  {quotesLoading ? "Calculating..." : "Get Delivery Cost Quote"}
+                </button>
+
+                {quotes.length > 0 && (
+                  <div className="mt-3 space-y-2 bg-gray-50 p-3 rounded-lg border border-gray-150">
+                    <h4 className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1.5">Estimated Cost Quotes</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {quotes.map((q: any) => (
+                        <div key={q.courierId} className="bg-white p-2.5 rounded-md border border-gray-100 flex flex-col justify-between">
+                          <span className="text-[10px] font-bold text-gray-800 uppercase">{q.name}</span>
+                          <span className="text-xs font-extrabold text-indigo-600 mt-1">UGX {q.cost.toLocaleString()}</span>
+                          <span className="text-[9px] text-gray-500 mt-0.5">{q.eta} mins</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50 rounded-b-xl">
+              <button
+                onClick={() => setShowCourierModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBookCourier}
+                disabled={bookingLoading}
+                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-bold hover:bg-primary/90 transition-colors flex items-center gap-1.5"
+              >
+                {bookingLoading ? "Booking..." : "Confirm Booking"}
               </button>
             </div>
           </div>

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image, { ImageProps } from "next/image";
 import { useLiteMode } from "@/components/BandwidthToggle";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 function resolveImageUrl(src: string | null | undefined): string {
   if (!src) return "";
@@ -58,8 +58,8 @@ export default function ProductImage({
     <Image
       {...props}
       src={resolvedSrc}
-      alt={alt || ""}
-      sizes={props.sizes || (props.fill ? "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" : undefined)}
+      alt={alt || "Product image"}
+      sizes={props.sizes || (props.fill ? "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" : "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw")}
       quality={isLite ? 30 : 75}
       loading={isLite ? "lazy" : (props.loading || undefined)}
       onError={() => setError(true)}

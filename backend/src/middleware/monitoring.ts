@@ -143,7 +143,7 @@ export async function getHealthStatus(): Promise<HealthResponse> {
  */
 export async function setupHealthChecks(app: Express) {
   // Main health check endpoint
-  app.get("/health", async (req: Request, res: Response) => {
+  const mainHealth = async (req: Request, res: Response) => {
     const health = await getHealthStatus();
     const statusCode =
       health.status === "healthy"
@@ -152,10 +152,12 @@ export async function setupHealthChecks(app: Express) {
           ? 206
           : 503;
     res.status(statusCode).json(health);
-  });
+  };
+  app.get("/health", mainHealth);
+  app.get("/api/health", mainHealth); // exposed via /api/ for nginx-proxied external monitoring
 
   // Quick health check (no details)
-  app.get("/health/quick", async (req: Request, res: Response) => {
+  const quickHealth = async (req: Request, res: Response) => {
     try {
       await Promise.race([
         prisma.$queryRaw`SELECT 1`,
@@ -165,7 +167,9 @@ export async function setupHealthChecks(app: Express) {
     } catch {
       res.status(503).json({ status: "error", timestamp: new Date().toISOString() });
     }
-  });
+  };
+  app.get("/health/quick", quickHealth);
+  app.get("/api/health/quick", quickHealth);
 
   // Database specific check
   app.get("/health/db", async (req: Request, res: Response) => {
@@ -192,5 +196,5 @@ export async function setupHealthChecks(app: Express) {
     res.status(statusCode).json({ memory, cpu, timestamp: new Date().toISOString() });
   });
 
-  logger.info("health_checks_registered", { endpoints: ["/health", "/health/quick", "/health/db", "/health/redis", "/health/resources"] });
+  logger.info("health_checks_registered", { endpoints: ["/health", "/api/health", "/health/quick", "/health/db", "/health/redis", "/health/resources"] });
 }

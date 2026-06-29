@@ -7,8 +7,9 @@ import { useState, useEffect, useCallback } from "react";
 import { CalendarDays, X, Check, Flame } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useToast } from "@/lib/hooks/useToast";
+import { useCart } from "@/lib/hooks/useCart";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;
@@ -53,12 +54,17 @@ function getLast7Days(): { label: string; dateStr: string }[] {
 export default function DailyCheckIn() {
   const { user, isLoading: authLoading } = useAuth();
   const { showToast } = useToast();
+  const { addItem } = useCart();
   const [status, setStatus] = useState<CheckInStatus | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [checking, setChecking] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
   const [bonusEarned, setBonusEarned] = useState(0);
+
+  // Mystery drops state
+  const [mysteryDrops, setMysteryDrops] = useState<any[]>([]);
+  const [dropsLoading, setDropsLoading] = useState(false);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -70,6 +76,19 @@ export default function DailyCheckIn() {
       })
       .catch(() => {});
   }, [user, authLoading]);
+
+  useEffect(() => {
+    if (showModal && status && status.currentStreak >= 3) {
+      setDropsLoading(true);
+      fetch(`${API_URL}/api/social/check-in/mystery-drops`, { credentials: "include" })
+        .then((r) => r.ok ? r.json() : { products: [] })
+        .then((data) => {
+          setMysteryDrops(data.products || []);
+        })
+        .catch(() => {})
+        .finally(() => setDropsLoading(false));
+    }
+  }, [showModal, status]);
 
   const handleCheckIn = useCallback(async () => {
     if (checking) return;
@@ -264,6 +283,49 @@ export default function DailyCheckIn() {
                   ? "✓ Checked in today!"
                   : "Check In Now"}
               </button>
+
+              {/* Mystery Drops */}
+              {status.currentStreak >= 3 && (
+                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2 text-left">
+                  <p className="text-xs font-bold text-red-500 flex items-center gap-1">
+                    🎁 Unlocked: Mystery Drops! ({status.currentStreak}-day streak)
+                  </p>
+                  {dropsLoading ? (
+                    <div className="text-[10px] text-gray-400 animate-pulse">Loading special drops...</div>
+                  ) : mysteryDrops.length === 0 ? (
+                    <p className="text-[10px] text-gray-400">No active mystery drops today. Check back tomorrow!</p>
+                  ) : (
+                    <div className="space-y-2 max-h-[150px] overflow-y-auto pr-1">
+                      {mysteryDrops.map((prod) => (
+                        <div key={prod.id} className="flex items-center justify-between gap-3 p-2 bg-rose-50/50 dark:bg-gray-800 rounded-lg border border-rose-100/10">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate">{prod.name}</p>
+                            <p className="text-[10px] text-red-500 font-bold">UGX {Number(prod.price).toLocaleString()}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              addItem({
+                                id: prod.id,
+                                productId: prod.id,
+                                name: prod.name,
+                                slug: prod.slug,
+                                price: Number(prod.price),
+                                imageUrl: prod.images?.[0]?.url || null,
+                                stock: prod.stock || 10,
+                                quantity: 1,
+                              });
+                              showToast(`${prod.name} added to cart! 🛒`, "success");
+                            }}
+                            className="bg-red-500 hover:bg-red-600 text-white px-2.5 py-1 text-[10px] font-bold rounded-lg shrink-0 transition-colors"
+                          >
+                            Claim
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

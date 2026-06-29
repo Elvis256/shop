@@ -112,8 +112,9 @@ export async function invalidateAllRefreshTokens(userId: string): Promise<void> 
   await prisma.refreshToken.deleteMany({ where: { userId } });
 }
 
-// Cache user auth data in Redis (30s TTL) to avoid DB hit on every request
-const AUTH_CACHE_TTL = 30;
+// Cache user auth data in Redis (5 min TTL) to avoid DB hit on every request
+// Safe because invalidateAuthCache() is called on user block/update
+const AUTH_CACHE_TTL = 300;
 
 async function getCachedUser(userId: string): Promise<{ id: string; email: string; role: string; isBlocked: boolean } | null> {
   try {

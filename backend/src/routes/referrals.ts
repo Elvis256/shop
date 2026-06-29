@@ -8,7 +8,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 const router = Router();
 
 // Referral reward amounts
-const REFERRER_REWARD = 500; // KES discount for referrer
+const REFERRER_REWARD = 15000; // UGX discount for referrer (approx ~500 KES / $4 USD)
 const REFEREE_DISCOUNT = 10; // 10% off first order
 
 // Generate unique referral code

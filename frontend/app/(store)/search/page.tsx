@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Section from "@/components/Section";
 import ProductCard from "@/components/ProductCard";
 import SearchBar from "@/components/SearchBar";
 import { api } from "@/lib/api";
+import { trackSearch } from "@/components/GoogleAnalytics";
 import { Search as SearchIcon, SlidersHorizontal, Loader2, X, Star } from "lucide-react";
 
 interface Product {
@@ -38,7 +39,7 @@ const SORT_OPTIONS = [
   { value: "rating", label: "Top Rated" },
 ];
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -71,6 +72,14 @@ function SearchContent() {
       .then((d) => setCategories(d.categories || []))
       .catch(() => {});
   }, []);
+
+  const lastTrackedQuery = useRef("");
+  useEffect(() => {
+    if (query && query !== lastTrackedQuery.current) {
+      lastTrackedQuery.current = query;
+      trackSearch(query);
+    }
+  }, [query]);
 
   useEffect(() => {
     if (!query) {

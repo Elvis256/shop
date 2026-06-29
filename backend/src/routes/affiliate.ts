@@ -5,6 +5,7 @@ import { authenticate, AuthRequest } from "../middleware/auth";
 import { cacheGetOrSet, SHORT_TTL, LONG_TTL } from "../lib/cache";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { createFlutterwaveTransfer } from "../services/flutterwave";
 
 const router = Router();
 
@@ -172,7 +173,7 @@ router.get("/featured", asyncHandler(async (_req: Request, res: Response) => {
 // ─── Our Affiliate Program: Public Signup & Dashboard ────────────────────────
 
 // POST /api/affiliate/signup - Apply to become an affiliate
-router.post("/signup", asyncHandler(async (req: Request, res: Response) => {
+router.post("/signup", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const data = z.object({
       name: z.string().min(2),
@@ -180,6 +181,14 @@ router.post("/signup", asyncHandler(async (req: Request, res: Response) => {
       website: z.string().url().optional(),
       socialMedia: z.string().optional(),
     }).parse(req.body);
+
+    const userId = req.user!.id;
+
+    // Check if user already has an affiliate account or application
+    const userExisting = await prisma.affiliate.findUnique({ where: { userId } });
+    if (userExisting) {
+      return res.status(400).json({ error: "You already have an affiliate account or application" });
+    }
 
     // Check if already exists
     const existing = await prisma.affiliate.findUnique({ where: { email: data.email } });
@@ -190,6 +199,7 @@ router.post("/signup", asyncHandler(async (req: Request, res: Response) => {
 
     const affiliate = await prisma.affiliate.create({
       data: {
+        userId,
         name: data.name,
         email: data.email,
         website: data.website,
@@ -241,6 +251,9 @@ router.get("/dashboard/:code", authenticate, asyncHandler(async (req: AuthReques
       pendingPayout: Number(affiliate.pendingPayout),
       totalPaid: Number(affiliate.totalPaid),
       referralLink: `${process.env.BASE_URL || "https://ugsex.com"}/?ref=${affiliate.code}`,
+      paymentPhone: affiliate.paymentPhone,
+      paymentProvider: affiliate.paymentProvider,
+      paymentName: affiliate.paymentName,
       recentConversions: affiliate.conversions.map((c) => ({
         id: c.id,
         orderId: c.orderId,
@@ -259,6 +272,166 @@ router.get("/dashboard/:code", authenticate, asyncHandler(async (req: AuthReques
   } catch (error) {
     logger.error("Affiliate dashboard error", { error });
     return res.status(500).json({ error: "Failed to load dashboard" });
+  }
+}));
+
+// PUT /api/affiliate/settings/:code - Update payment details
+router.put("/settings/:code", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { code } = req.params;
+    const data = z.object({
+      paymentPhone: z.string().min(9),
+      paymentProvider: z.string().min(2),
+      paymentName: z.string().min(2),
+    }).parse(req.body);
+
+    const affiliate = await prisma.affiliate.findUnique({ where: { code } });
+    if (!affiliate) return res.status(404).json({ error: "Affiliate not found" });
+
+    // Verify the authenticated user owns this affiliate account
+    if (affiliate.userId !== req.user!.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const updated = await prisma.affiliate.update({
+      where: { id: affiliate.id },
+      data: {
+        paymentPhone: data.paymentPhone,
+        paymentProvider: data.paymentProvider,
+        paymentName: data.paymentName,
+      },
+    });
+
+    return res.json({
+      message: "Payment details updated successfully",
+      paymentPhone: updated.paymentPhone,
+      paymentProvider: updated.paymentProvider,
+      paymentName: updated.paymentName,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: error.errors });
+    logger.error("Update affiliate settings error", { error });
+    return res.status(500).json({ error: "Failed to update payment details" });
+  }
+}));
+
+// POST /api/affiliate/payout/request - Request a self-serve mobile money payout
+router.post("/payout/request", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const affiliate = await prisma.affiliate.findUnique({
+      where: { userId: req.user!.id },
+    });
+
+    if (!affiliate) {
+      return res.status(404).json({ error: "Affiliate profile not found" });
+    }
+
+    if (affiliate.status !== "APPROVED") {
+      return res.status(403).json({ error: "Affiliate account is not approved" });
+    }
+
+    const pendingAmount = Number(affiliate.pendingPayout);
+    if (pendingAmount < 20000) {
+      return res.status(400).json({ error: "Minimum payout threshold is 20,000 UGX" });
+    }
+
+    if (!affiliate.paymentPhone || !affiliate.paymentProvider) {
+      return res.status(400).json({
+        error: "Please configure your Mobile Money Phone Number and Network Provider in settings first.",
+      });
+    }
+
+    let accountBank = "";
+    const provider = affiliate.paymentProvider.toUpperCase().trim();
+    if (provider.includes("MTN")) {
+      accountBank = "MPS"; // MTN Uganda Mobile Money bank code
+    } else if (provider.includes("AIR")) {
+      accountBank = "AIR"; // Airtel Uganda Mobile Money bank code
+    } else {
+      accountBank = provider; // fallback
+    }
+
+    const transferRef = `aff-payout-${Date.now()}`;
+    let flwNotes = "";
+
+    try {
+      const transferResult = await createFlutterwaveTransfer({
+        reference: transferRef,
+        amount: pendingAmount,
+        narration: `Self-serve affiliate payout for ${affiliate.name}`,
+        beneficiary: {
+          account_bank: accountBank,
+          account_number: affiliate.paymentPhone,
+          beneficiary_name: affiliate.paymentName || affiliate.name,
+        },
+      });
+      flwNotes = `Flutterwave transfer initiated. FLW ID: ${transferResult.data?.id || "pending"}.`;
+    } catch (err: any) {
+      logger.error("Flutterwave affiliate payout failed", { error: err.message, affiliateId: affiliate.id });
+      return res.status(500).json({ error: `Flutterwave mobile money transfer failed: ${err.message}` });
+    }
+
+    // Process database updates in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const aff = await tx.affiliate.findUnique({ where: { id: affiliate.id } });
+      if (!aff) throw new Error("NOT_FOUND");
+      if (Number(aff.pendingPayout) < pendingAmount) throw new Error("INSUFFICIENT_BALANCE");
+
+      await tx.affiliatePayout.create({
+        data: {
+          affiliateId: aff.id,
+          amount: pendingAmount,
+          method: "mobile_money",
+          reference: transferRef,
+          notes: flwNotes,
+        },
+      });
+
+      await tx.affiliate.update({
+        where: { id: aff.id },
+        data: {
+          pendingPayout: { decrement: pendingAmount },
+          totalPaid: { increment: pendingAmount },
+        },
+      });
+
+      // Mark associated APPROVED conversions as PAID (oldest first, up to pendingAmount)
+      const conversions = await tx.affiliateConversion.findMany({
+        where: { affiliateId: aff.id, status: "APPROVED" },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, commission: true },
+      });
+
+      let remaining = pendingAmount;
+      const conversionIds: string[] = [];
+      for (const c of conversions) {
+        if (remaining <= 0) break;
+        conversionIds.push(c.id);
+        remaining -= Number(c.commission);
+      }
+
+      if (conversionIds.length > 0) {
+        await tx.affiliateConversion.updateMany({
+          where: { id: { in: conversionIds } },
+          data: { status: "PAID", paidAt: new Date() },
+        });
+      }
+
+      return { paid: conversionIds.length };
+    });
+
+    return res.json({
+      message: "Automated Mobile Money transfer initiated",
+      conversionsPaid: result.paid,
+      reference: transferRef,
+    });
+  } catch (error: any) {
+    if (error?.message === "NOT_FOUND") return res.status(404).json({ error: "Affiliate not found" });
+    if (error?.message === "INSUFFICIENT_BALANCE") {
+      return res.status(400).json({ error: "Payout amount exceeds pending balance" });
+    }
+    logger.error("Affiliate self-serve payout error", { error });
+    return res.status(500).json({ error: "Failed to process payout" });
   }
 }));
 
@@ -294,8 +467,6 @@ router.post("/track-referral", asyncHandler(async (req: Request, res: Response) 
         where: { id: affiliate.id },
         data: {
           totalOrders: { increment: 1 },
-          totalEarnings: { increment: commission },
-          pendingPayout: { increment: commission },
         },
       }),
     ]);

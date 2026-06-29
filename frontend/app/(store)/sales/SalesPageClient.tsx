@@ -5,7 +5,7 @@ import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
 import { Clock, Tag, ArrowRight, SlidersHorizontal } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -361,7 +361,7 @@ export default function SalesPageClient() {
   }, []);
 
   const filteredAndSorted = useMemo(() => {
-    let items =
+    const items =
       selectedCategory === "all"
         ? [...allDeals]
         : allDeals.filter(

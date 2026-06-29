@@ -2,12 +2,24 @@ import { Metadata } from "next";
 import HomeClient from "./HomeClient";
 
 const API_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
 
 export const revalidate = 300; // ISR: revalidate every 5 minutes
 
 export const metadata: Metadata = {
-  title: "PleasureZone Uganda - Premium Intimate Wellness Products",
+  title: "PleasureZone Uganda - Premium Intimate Wellness",
   description: "Shop premium intimate wellness products online at PleasureZone Uganda. Fast discreet delivery, secure checkout, and earn rewards on every order.",
+  alternates: {
+    canonical: SITE_URL,
+  },
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "PleasureZone Uganda",
+    title: "PleasureZone Uganda - Premium Intimate Wellness",
+    description: "Shop premium intimate wellness products online at PleasureZone Uganda. Fast discreet delivery, secure checkout, and earn rewards on every order.",
+    images: [`${SITE_URL}/og-image.png`],
+  },
 };
 
 async function fetchJSON(url: string) {
@@ -34,14 +46,16 @@ export default async function Home() {
   const flashProducts = (flashRes?.products || []).filter((p: { flashSalePrice?: number }) => p.flashSalePrice);
 
   return (
-    <HomeClient
-      initialNewArrivals={newRes?.products || []}
-      initialBestsellers={bestRes?.products || []}
-      initialFlashSaleProducts={flashProducts}
-      initialCategories={catRes?.categories || []}
-      initialTrending={trendRes?.products || []}
-      initialTopRated={topRes?.products || []}
-      initialFeaturedProducts={featRes?.products || []}
-    />
+    <>
+      <HomeClient
+        initialNewArrivals={newRes?.products || []}
+        initialBestsellers={bestRes?.products || []}
+        initialFlashSaleProducts={flashProducts}
+        initialCategories={catRes?.categories || []}
+        initialTrending={trendRes?.products || []}
+        initialTopRated={topRes?.products || []}
+        initialFeaturedProducts={featRes?.products || []}
+      />
+    </>
   );
 }

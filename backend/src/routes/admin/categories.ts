@@ -88,9 +88,23 @@ router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Prevent setting self as parent
-    if (body.parentId === id) {
-      return res.status(400).json({ error: "Category cannot be its own parent" });
+    // Prevent circular parent references (walk up chain, max 10 levels)
+    if (body.parentId) {
+      if (body.parentId === id) {
+        return res.status(400).json({ error: "Category cannot be its own parent" });
+      }
+      let currentId: string | null = body.parentId;
+      for (let depth = 0; depth < 10 && currentId; depth++) {
+        const ancestor: { parentId: string | null } | null = await prisma.category.findUnique({
+          where: { id: currentId },
+          select: { parentId: true },
+        });
+        if (!ancestor) break;
+        if (ancestor.parentId === id) {
+          return res.status(400).json({ error: "Circular parent reference detected" });
+        }
+        currentId = ancestor.parentId;
+      }
     }
 
     const updated = await prisma.category.update({

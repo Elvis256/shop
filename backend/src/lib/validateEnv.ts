@@ -69,9 +69,23 @@ const envSchema = z.object({
   WHATSAPP_VERIFY_TOKEN: z.string().optional(),
   SUPPORT_PHONE: z.string().optional(),
 
+  // Telegram bots
+  // Admin/ops alerts bot (existing — stored in /etc/shop-alerts/telegram.env)
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_CHAT_ID: z.string().optional(),
+  // Customer-facing bot ("Ug Connect" — @Ugconnectbot)
+  TELEGRAM_CUSTOMER_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_CUSTOMER_BOT_USERNAME: z.string().optional(),
+
   // Uploads
   UPLOAD_DIR: z.string().optional(),
   MAX_FILE_SIZE: z.string().optional(),
+
+  // Monitoring
+  SENTRY_DSN: z.string().optional(),
+
+  // SEO / IndexNow
+  INDEXNOW_KEY: z.string().optional(),
 });
 
 const result = envSchema.safeParse(process.env);

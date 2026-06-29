@@ -58,6 +58,7 @@ const CouponSchema = z.object({
   minOrderAmount: z.number().positive().optional().nullable(),
   maxDiscount: z.number().positive().optional().nullable(),
   usageLimit: z.number().int().positive().optional().nullable(),
+  perUserLimit: z.number().int().positive().optional().nullable(),
   validFrom: z.string().transform((s) => new Date(s)),
   validUntil: z.string().transform((s) => new Date(s)),
   active: z.boolean().default(true),

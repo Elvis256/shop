@@ -9,7 +9,7 @@ import { useCart } from "@/lib/hooks/useCart";
 import { useToast } from "@/lib/hooks/useToast";
 import { apiFetch } from "@/lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface Product {
   id: string;

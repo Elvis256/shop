@@ -1,14 +1,44 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
-import { authenticate, AuthRequest } from "../middleware/auth";
+import redis from "../lib/redis";
+import { optionalAuth, authenticate, AuthRequest } from "../middleware/auth";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
+// Rate limit coupon validation/apply to prevent brute-force code enumeration (10 req/min per IP)
+async function couponRateLimit(req: Request, res: Response, next: NextFunction) {
+  const ip = (req.headers["x-forwarded-for"] as string || req.ip || "").split(",")[0].trim();
+  const key = `rl:coupon:${ip}`;
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) await redis.expire(key, 60);
+    if (count > 10) {
+      return res.status(429).json({ error: "Too many coupon attempts. Please wait a moment." });
+    }
+  } catch {}
+  next();
+}
+
+// Helper: Check per-user coupon usage
+async function checkPerUserLimit(coupon: any, userEmail?: string, userId?: string): Promise<boolean> {
+  if (!coupon.perUserLimit) return true; // No per-user limit
+  if (!userEmail && !userId) return true; // Guest checkout, can't track
+
+  const where: any = { couponId: coupon.id };
+  if (userId) {
+    where.userId = userId;
+  } else if (userEmail) {
+    where.customerEmail = userEmail;
+  }
+  const userUsageCount = await prisma.order.count({ where });
+  return userUsageCount < coupon.perUserLimit;
+}
+
 // GET /api/coupons/validate
-router.get("/validate", asyncHandler(async (req: Request, res: Response) => {
+router.get("/validate", couponRateLimit, optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { code, amount } = req.query;
 
@@ -16,8 +46,10 @@ router.get("/validate", asyncHandler(async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Coupon code required" });
     }
 
+    const upperCode = code.toUpperCase();
+
     const coupon = await prisma.coupon.findUnique({
-      where: { code: code.toUpperCase() },
+      where: { code: upperCode },
     });
 
     if (!coupon) {
@@ -35,6 +67,14 @@ router.get("/validate", asyncHandler(async (req: Request, res: Response) => {
 
     if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
       return res.status(400).json({ error: "Coupon usage limit reached" });
+    }
+
+    // Per-user limit check
+    if (coupon.perUserLimit && req.user?.id) {
+      const allowed = await checkPerUserLimit(coupon, req.user.email, req.user.id);
+      if (!allowed) {
+        return res.status(400).json({ error: "You have already used this coupon the maximum number of times" });
+      }
     }
 
     const orderAmount = parseFloat(amount as string) || 0;
@@ -74,7 +114,7 @@ router.get("/validate", asyncHandler(async (req: Request, res: Response) => {
 }));
 
 // POST /api/coupons/apply (used during checkout)
-router.post("/apply", asyncHandler(async (req: Request, res: Response) => {
+router.post("/apply", couponRateLimit, optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const schema = z.object({
       code: z.string(),
@@ -83,9 +123,11 @@ router.post("/apply", asyncHandler(async (req: Request, res: Response) => {
     });
 
     const body = schema.parse(req.body);
-    
+
+    const upperCode = body.code.toUpperCase();
+
     const coupon = await prisma.coupon.findUnique({
-      where: { code: body.code.toUpperCase() },
+      where: { code: upperCode },
     });
 
     if (!coupon || !coupon.active) {

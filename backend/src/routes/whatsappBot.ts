@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { sendWhatsApp } from "../services/whatsapp";
-import { createFlutterwavePayment } from "../services/flutterwave";
+import { createFlutterwavePayment, chargeMobileMoneyUganda } from "../services/flutterwave";
 import { generateAIResponse } from "../services/aiAssistant";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -541,22 +541,24 @@ async function placeWhatsAppOrder(phone: string, lang: string): Promise<void> {
         text: `✅ *Order Placed!*\n\n🔢 Order #: *${orderNumber}*\n💰 Total: UGX ${total.toLocaleString()}\n💳 Cash on Delivery\n\nWe'll deliver in discreet packaging. 🔒\n\nReply *menu* for main menu.`,
       });
     } else {
-      // Mobile Money payment
+      // Mobile Money payment - direct charge prompt (STK Push)
       try {
-        const paymentResponse = await createFlutterwavePayment({
+        let momoPhone = session.data.momoPhone || phone;
+        let cleanedPhone = momoPhone.replace(/[^0-9]/g, "");
+        if (cleanedPhone.startsWith("07")) {
+          cleanedPhone = "256" + cleanedPhone.slice(1);
+        } else if (cleanedPhone.startsWith("7")) {
+          cleanedPhone = "256" + cleanedPhone;
+        }
+
+        const paymentResponse = await chargeMobileMoneyUganda({
           tx_ref: order.id,
           amount: total,
           currency: "UGX",
-          customer: {
-            name: session.shipping.name || "Customer",
-            email: `${phone}@whatsapp.placeholder`,
-          },
-          paymentMethod: "mobile_money",
-          mobileMoney: {
-            network: session.data.network as "MTN" | "AIRTEL" | "MPESA",
-            phone: session.data.momoPhone || phone,
-          },
-          redirect_url: `${process.env.BASE_URL}/checkout/confirm?orderId=${order.id}`,
+          email: `${phone.replace(/[^0-9]/g, "")}@whatsapp.ugsex.com`,
+          phone_number: cleanedPhone,
+          network: (session.data.network === "AIRTEL" ? "AIRTEL" : "MTN") as "MTN" | "AIRTEL",
+          fullname: session.shipping.name || "WhatsApp Customer",
         });
 
         await prisma.payment.create({
@@ -567,7 +569,7 @@ async function placeWhatsAppOrder(phone: string, lang: string): Promise<void> {
             status: "PENDING",
             amount: total,
             currency: "UGX",
-            flwRef: paymentResponse.data?.flw_ref,
+            flwRef: paymentResponse.data?.flw_ref || paymentResponse.data?.id?.toString(),
           },
         });
 
@@ -576,7 +578,7 @@ async function placeWhatsAppOrder(phone: string, lang: string): Promise<void> {
 
         await sendWhatsApp({
           to: phone,
-          text: `📱 *Payment Initiated*\n\n🔢 Order #: *${orderNumber}*\n💰 Total: UGX ${total.toLocaleString()}\n\nCheck your ${session.data.network} phone for the payment prompt. Approve to complete your order.\n\nReply *menu* for main menu.`,
+          text: `📱 *Payment Initiated*\n\n🔢 Order #: *${orderNumber}*\n💰 Total: UGX ${total.toLocaleString()}\n\nCheck your ${session.data.network} phone for the payment prompt. Enter your PIN to approve and complete your order.\n\nReply *menu* for main menu.`,
         });
       } catch (payErr: any) {
         await sendWhatsApp({

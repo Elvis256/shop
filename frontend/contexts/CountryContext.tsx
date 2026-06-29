@@ -48,7 +48,7 @@ const CountryContext = createContext<CountryContextType>({
   allCountries: [DEFAULT_COUNTRY],
 });
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 export function CountryProvider({ children }: { children: ReactNode }) {
   const [country, setCountryState] = useState<Country>(DEFAULT_COUNTRY);

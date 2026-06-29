@@ -31,9 +31,11 @@ import { useCompare } from "@/contexts/CompareContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { useCart } from "@/lib/hooks/useCart";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { trackViewItem } from "@/components/GoogleAnalytics";
 
 interface ProductVariant {
   id: string;
+  name?: string;
   sku?: string;
   size?: string;
   color?: string;
@@ -108,7 +110,7 @@ function PriceAlertInline({ productId, currentPrice }: { productId: string; curr
     if (!targetPrice || !phone) return;
     setAlertLoading(true);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+      const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
       await fetch(`${API_URL}/api/price-alerts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -199,6 +201,25 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
   const { showToast } = useToast();
   const { addItem: addToCart } = useCart();
   const { user } = useAuth();
+  const [activePriceSlash, setActivePriceSlash] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!user || !product?.id) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/social/price-slash/product/${product.id}`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.priceSlash) {
+            setActivePriceSlash(data.priceSlash);
+          }
+        }
+      } catch (err) {
+        // fail silently
+      }
+    })();
+  }, [product?.id, user]);
+
   const addToCartRef = useRef<HTMLDivElement>(null);
   const shareMenuRef = useRef<HTMLDivElement>(null);
 
@@ -211,6 +232,12 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
         slug: initialProduct.slug,
         price: Number(initialProduct.price),
         imageUrl: initialProduct.imageUrl ?? undefined,
+      });
+      trackViewItem({
+        id: initialProduct.id,
+        name: initialProduct.name,
+        price: Number(initialProduct.price),
+        category: initialProduct.category?.name ?? undefined,
       });
       if (initialProduct.hasVariants && initialProduct.variants?.length) {
         const availableVariant = initialProduct.variants.find((v: ProductVariant) => v.stock > 0);
@@ -226,7 +253,7 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
   // Track browse event for logged-in users
   useEffect(() => {
     if (!product?.id || !user) return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+    const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
     fetch(`${API_URL}/api/browse/track`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -268,6 +295,13 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
         slug: data.slug,
         price: Number(data.price),
         imageUrl: data.imageUrl,
+      });
+
+      trackViewItem({
+        id: data.id,
+        name: data.name,
+        price: Number(data.price),
+        category: data.category?.name ?? undefined,
       });
 
       if (data.hasVariants && data.variants?.length > 0) {
@@ -329,7 +363,11 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
   // ── Derived pricing/stock values ──
   const basePrice = selectedVariant?.price || product?.price || 0;
   const hasFlashSale = product?.flashSalePrice && product?.flashSaleEndsAt && new Date(product.flashSaleEndsAt) > new Date();
-  const effectivePrice = hasFlashSale ? product.flashSalePrice! : basePrice;
+  const effectivePrice = activePriceSlash
+    ? Number(activePriceSlash.currentPrice)
+    : hasFlashSale
+    ? Number(product.flashSalePrice!)
+    : Number(basePrice);
   const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
   const isLowStock = product && effectiveStock > 0 && effectiveStock <= product.lowStockAlert;
 
@@ -625,7 +663,9 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
               productId={product.id}
               productSlug={product.slug}
               productName={product.name}
-              originalPrice={Number(effectivePrice)}
+              originalPrice={hasFlashSale ? Number(product.flashSalePrice!) : Number(basePrice)}
+              activeSlash={activePriceSlash}
+              onSlashCreated={(slash) => setActivePriceSlash(slash)}
             />
 
             {/* Price Drop Alert */}
@@ -648,6 +688,8 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
                   imageUrl: product.imageUrl,
                   stock: effectiveStock,
                 }}
+                variantId={selectedVariant?.id}
+                variantName={selectedVariant?.name}
                 showQuantity
                 className="w-full"
                 label={product.isPreOrder ? "Pre-Order Now 📦" : undefined}
@@ -760,7 +802,7 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
             {product.seller && (
               <div className="border border-gray-100 rounded-lg p-4 bg-gray-50">
                 <p className="text-xs text-gray-500 mb-1">Sold by</p>
-                <Link href={`/seller/${product.seller.storeSlug}`} className="font-semibold text-gray-900 hover:text-pink-600 transition-colors">
+                <Link href={`/store/${product.seller.storeSlug}`} className="font-semibold text-gray-900 hover:text-pink-600 transition-colors">
                   {product.seller.storeName}
                 </Link>
                 {product.seller.rating > 0 && (
@@ -770,7 +812,7 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
                   </div>
                 )}
                 <div className="flex items-center gap-2 mt-2">
-                  <Link href={`/seller/${product.seller.storeSlug}`} className="text-xs text-pink-600 hover:underline">
+                  <Link href={`/store/${product.seller.storeSlug}`} className="text-xs text-pink-600 hover:underline">
                     Visit Store →
                   </Link>
                   <button

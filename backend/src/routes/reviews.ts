@@ -9,6 +9,7 @@ import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { parseShippingAddress } from "../utils/shippingAddress";
 
 const router = Router();
 const REVIEW_UPLOAD_DIR = process.env.UPLOAD_DIR || "uploads";
@@ -92,7 +93,7 @@ router.post("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respon
       title: z.string().max(100).optional(),
       content: z.string().max(2000).optional(),
       isAnonymous: z.boolean().default(true),
-      images: z.array(z.string().url()).max(3).optional(),
+      images: z.array(z.string().startsWith("/uploads/")).max(3).optional(),
     });
 
     const body = schema.parse(req.body);
@@ -127,7 +128,7 @@ router.post("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respon
         orderBy: { createdAt: "desc" },
       });
       if (order?.shippingAddress) {
-        try { displayCity = JSON.parse(order.shippingAddress)?.city || null; } catch {}
+        displayCity = parseShippingAddress(order.shippingAddress)?.city || null;
       }
     }
 

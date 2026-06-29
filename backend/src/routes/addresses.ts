@@ -19,6 +19,7 @@ const AddressSchema = z.object({
   postalCode: z.string().optional(),
   country: z.string().default("Uganda"),
   isDefault: z.boolean().default(false),
+  deliveryAlias: z.string().optional().nullable(),
 });
 
 // GET /api/addresses

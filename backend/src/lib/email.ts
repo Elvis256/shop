@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { logger } from "./logger";
+import prisma from "./prisma";
 
 function isSmtpConfigured(): boolean {
   const user = process.env.SMTP_USER || "";
@@ -14,7 +15,7 @@ if (!smtpReady) {
   logger.warn("Email sending disabled: SMTP credentials not configured (placeholder values detected)");
 }
 
-const transporter = smtpReady
+const envTransporter = smtpReady
   ? nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || "587"),
@@ -26,7 +27,61 @@ const transporter = smtpReady
     })
   : null;
 
-type EmailTemplate = "welcome" | "order-received" | "order-confirmation" | "order-shipped" | "order-processing" | "order-delivered" | "order-cancelled" | "password-reset" | "seller-approved" | "seller-rejected" | "seller-warning";
+// Dynamic SMTP: check Settings DB first, fall back to .env transporter
+let cachedDbTransporter: nodemailer.Transporter | null = null;
+let dbTransporterCacheTime = 0;
+const DB_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export function invalidateSmtpCache() {
+  cachedDbTransporter = null;
+  dbTransporterCacheTime = 0;
+}
+
+async function getTransporter(): Promise<nodemailer.Transporter | null> {
+  // Try cached DB transporter
+  if (cachedDbTransporter && Date.now() - dbTransporterCacheTime < DB_CACHE_TTL) {
+    return cachedDbTransporter;
+  }
+
+  // Try loading from Settings DB
+  try {
+    const smtpSettings = await prisma.setting.findMany({
+      where: { key: { in: ["email_smtp_host", "email_smtp_port", "email_smtp_user", "email_smtp_password", "email_smtp_secure"] } },
+    });
+    const cfg = Object.fromEntries(smtpSettings.map((s) => [s.key, s.value]));
+
+    if (cfg.email_smtp_host && cfg.email_smtp_user && cfg.email_smtp_password) {
+      const port = parseInt(cfg.email_smtp_port || "587");
+      cachedDbTransporter = nodemailer.createTransport({
+        host: cfg.email_smtp_host,
+        port,
+        secure: cfg.email_smtp_secure === "true" || port === 465,
+        auth: { user: cfg.email_smtp_user, pass: cfg.email_smtp_password },
+      });
+      dbTransporterCacheTime = Date.now();
+      return cachedDbTransporter;
+    }
+  } catch (e) {
+    // DB not ready — fall back to env
+  }
+
+  return envTransporter;
+}
+
+// Export for test endpoint
+export async function verifySmtpConnection(): Promise<{ success: boolean; error?: string }> {
+  invalidateSmtpCache();
+  const t = await getTransporter();
+  if (!t) return { success: false, error: "No SMTP transporter configured" };
+  try {
+    await t.verify();
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
+type EmailTemplate = "welcome" | "order-received" | "order-confirmation" | "order-shipped" | "order-processing" | "order-delivered" | "order-cancelled" | "order-refunded" | "password-reset" | "seller-approved" | "seller-rejected" | "seller-warning" | "seller-product-approved" | "seller-product-rejected" | "seller-product-changes" | "review-prompt" | "abandoned-cart" | "back-in-stock" | "price-drop";
 
 interface SendEmailOptions {
   to: string;
@@ -82,12 +137,12 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
         <p>Thank you for your order. Here are your order details:</p>
         <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
           <p><strong>Order Number:</strong> ${data.orderNumber}</p>
-          <p><strong>Total:</strong> KES ${data.total.toLocaleString()}</p>
+          <p><strong>Total:</strong> ${data.currency || 'UGX'} ${data.total.toLocaleString()}</p>
           <p><strong>Payment Method:</strong> ${data.paymentMethod}</p>
         </div>
         <h3>Items:</h3>
         <ul>
-          ${data.items.map((item: any) => `<li>${item.name} x ${item.quantity} - KES ${item.price.toLocaleString()}</li>`).join("")}
+          ${data.items.map((item: any) => `<li>${item.name} x ${item.quantity} - ${data.currency || 'UGX'} ${item.price.toLocaleString()}</li>`).join("")}
         </ul>
         <p style="color: #666; font-size: 14px;"><em>Your order will be shipped in plain, unmarked packaging.</em></p>
         <a href="${process.env.BASE_URL}/account/orders/${data.orderId}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Track Order</a>
@@ -117,7 +172,7 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
         <p>Great news! We've started processing your order #${data.orderNumber}.</p>
         <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
           <p><strong>Order Number:</strong> ${data.orderNumber}</p>
-          <p><strong>Total:</strong> KES ${Number(data.total).toLocaleString()}</p>
+          <p><strong>Total:</strong> ${data.currency || 'UGX'} ${Number(data.total).toLocaleString()}</p>
         </div>
         <p>We'll notify you once your order has been shipped.</p>
         <p style="color: #666; font-size: 14px;"><em>Your order will be shipped in plain, unmarked packaging.</em></p>
@@ -134,7 +189,7 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
         <p>Your order #${data.orderNumber} has been delivered successfully.</p>
         <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
           <p><strong>Order Number:</strong> ${data.orderNumber}</p>
-          <p><strong>Total:</strong> KES ${Number(data.total).toLocaleString()}</p>
+          <p><strong>Total:</strong> ${data.currency || 'UGX'} ${Number(data.total).toLocaleString()}</p>
         </div>
         <p>We hope you enjoy your purchase! If you have any issues, please contact our support.</p>
         <a href="${process.env.BASE_URL}/account/orders/${data.orderId}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">View Order</a>
@@ -150,11 +205,29 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
         <p>Your order #${data.orderNumber} has been cancelled.</p>
         <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
           <p><strong>Order Number:</strong> ${data.orderNumber}</p>
-          <p><strong>Total:</strong> KES ${Number(data.total).toLocaleString()}</p>
+          <p><strong>Total:</strong> ${data.currency || 'UGX'} ${Number(data.total).toLocaleString()}</p>
         </div>
         ${data.reason ? `<p><strong>Reason:</strong> ${data.reason}</p>` : ""}
         <p>If you believe this is an error or have questions, please contact our support team.</p>
         <a href="${process.env.BASE_URL}/account/orders" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">View Orders</a>
+      </div>
+    `,
+  },
+  "order-refunded": {
+    subject: "Refund Processed - Order #${orderNumber}",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2a2a2a;">Refund Processed</h1>
+        <p>Hi ${data.customerName},</p>
+        <p>A refund has been processed for your order #${data.orderNumber}.</p>
+        <div style="background: #f0fdf4; padding: 16px; border-radius: 8px; margin: 16px 0; border: 1px solid #bbf7d0;">
+          <p><strong>Refund Amount:</strong> ${data.currency || 'UGX'} ${Number(data.refundAmount).toLocaleString()}</p>
+          <p><strong>Order Number:</strong> ${data.orderNumber}</p>
+        </div>
+        ${data.reason ? `<p><strong>Reason:</strong> ${data.reason}</p>` : ""}
+        <p>Please allow 3-5 business days for the refund to reflect in your account.</p>
+        <p>If you have any questions, please contact our support team.</p>
+        <a href="${process.env.BASE_URL}/account/orders/${data.orderId}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">View Order</a>
       </div>
     `,
   },
@@ -223,10 +296,108 @@ const templates: Record<EmailTemplate, { subject: string; html: (data: any) => s
       </div>
     `,
   },
+  "seller-product-approved": {
+    subject: "Your Product Has Been Approved!",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #16a34a;">Product Approved!</h1>
+        <p>Great news! Your product <strong>"${data.productName}"</strong> has been reviewed and approved.</p>
+        <p>It is now live and visible to customers on the store.</p>
+        <a href="${process.env.FRONTEND_URL || process.env.BASE_URL}/seller" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">View Dashboard</a>
+      </div>
+    `,
+  },
+  "seller-product-rejected": {
+    subject: "Product Review: Changes Required",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #dc2626;">Product Not Approved</h1>
+        <p>Your product <strong>"${data.productName}"</strong> was not approved for the following reason:</p>
+        <div style="background: #fef2f2; padding: 16px; border-radius: 8px; margin: 16px 0; border: 1px solid #fecaca;">
+          <p>${data.reason}</p>
+        </div>
+        <p>Please update your product and resubmit for review.</p>
+        <a href="${process.env.FRONTEND_URL || process.env.BASE_URL}/seller" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Edit Product</a>
+      </div>
+    `,
+  },
+  "seller-product-changes": {
+    subject: "Product Review: Changes Requested",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #ca8a04;">Changes Requested</h1>
+        <p>The review team has requested changes to your product <strong>"${data.productName}"</strong>:</p>
+        <div style="background: #fefce8; padding: 16px; border-radius: 8px; margin: 16px 0; border: 1px solid #fde68a;">
+          <p>${data.reason}</p>
+        </div>
+        <p>Please make the requested changes and the product will be reviewed again.</p>
+        <a href="${process.env.FRONTEND_URL || process.env.BASE_URL}/seller" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Edit Product</a>
+      </div>
+    `,
+  },
+  "review-prompt": {
+    subject: "How was your order? Leave a review!",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2a2a2a;">How was your order?</h1>
+        <p>Hi ${data.name},</p>
+        <p>Your order <strong>#${data.orderNumber}</strong> was delivered ${data.daysAgo} days ago. We'd love to hear what you think!</p>
+        <p>Your feedback helps other customers and helps us improve.</p>
+        <a href="${process.env.FRONTEND_URL || process.env.BASE_URL}/account/orders/${data.orderId}" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Write a Review</a>
+        <p style="color: #666; font-size: 14px; margin-top: 16px;">Thank you for shopping with us!</p>
+      </div>
+    `,
+  },
+  "abandoned-cart": {
+    subject: "You left something behind!",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2a2a2a;">Still interested?</h1>
+        <p>Hi${data.name ? ` ${data.name}` : ""},</p>
+        <p>You left ${data.itemCount} item${data.itemCount > 1 ? "s" : ""} in your cart worth <strong>${data.currency || "UGX"} ${Number(data.total).toLocaleString()}</strong>.</p>
+        ${data.discount ? `<div style="background: #f0fdf4; padding: 16px; border-radius: 8px; margin: 16px 0; border: 1px solid #bbf7d0;"><p style="margin:0;"><strong>Special offer:</strong> Use code <strong>${data.discount}</strong> for ${data.discountAmount} off your order!</p></div>` : ""}
+        <a href="${process.env.FRONTEND_URL || process.env.BASE_URL}/checkout" style="display: inline-block; padding: 12px 24px; background: #2a2a2a; color: white; text-decoration: none; border-radius: 4px;">Complete Your Order</a>
+        <p style="color: #666; font-size: 14px; margin-top: 16px;">Items in your cart are not reserved and may sell out.</p>
+      </div>
+    `,
+  },
+  "back-in-stock": {
+    subject: "Intimate Wellness: \\${productName} is back in stock!",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+        <h2 style="color: #2a2a2a; border-bottom: 2px solid #eaeaea; padding-bottom: 10px;">Back In Stock Alert!</h2>
+        <p>Good news! The item you were waiting for, <strong>"${data.productName}"</strong>, is now back in stock.</p>
+        <p>We wanted you to be the first to know so you don't miss out again.</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${data.productUrl}" style="display: inline-block; padding: 12px 28px; background: #c2410c; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">Shop Now</a>
+        </div>
+        <p style="color: #666; font-size: 13px; border-top: 1px solid #eaeaea; padding-top: 15px; margin-top: 20px;">
+          You received this email because you subscribed to receive notifications when this product became available.
+        </p>
+      </div>
+    `,
+  },
+  "price-drop": {
+    subject: "Price Drop Alert: \\${productName} is now \\${newPrice}!",
+    html: (data) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+        <h2 style="color: #2a2a2a; border-bottom: 2px solid #eaeaea; padding-bottom: 10px;">Price Drop Alert!</h2>
+        <p>Good news! The item you were watching, <strong>"${data.productName}"</strong>, has dropped in price.</p>
+        <p>It is now available for <strong>${data.currency || "UGX"} ${Number(data.newPrice).toLocaleString()}</strong> (your target price was ${data.currency || "UGX"} ${Number(data.targetPrice).toLocaleString()}).</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${data.productUrl}" style="display: inline-block; padding: 12px 28px; background: #c2410c; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">Shop Now</a>
+        </div>
+        <p style="color: #666; font-size: 13px; border-top: 1px solid #eaeaea; padding-top: 15px; margin-top: 20px;">
+          You received this email because you subscribed to receive notifications when this product dropped in price.
+        </p>
+      </div>
+    `,
+  },
 };
 
 export async function sendEmail({ to, template, data }: SendEmailOptions): Promise<boolean> {
   try {
+    const transporter = await getTransporter();
     if (!transporter) {
       logger.info(`Email sending skipped (${template} to ${to}): SMTP not configured`);
       return false;
@@ -243,8 +414,18 @@ export async function sendEmail({ to, template, data }: SendEmailOptions): Promi
       subject = subject.replace(`\${${key}}`, String(value));
     });
 
+    // Check for from address in settings, fall back to env
+    let fromAddress = process.env.EMAIL_FROM;
+    try {
+      const fromSetting = await prisma.setting.findUnique({ where: { key: "email_from_address" } });
+      const fromName = await prisma.setting.findUnique({ where: { key: "email_from_name" } });
+      if (fromSetting?.value) {
+        fromAddress = fromName?.value ? `"${fromName.value}" <${fromSetting.value}>` : fromSetting.value;
+      }
+    } catch {}
+
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
+      from: fromAddress,
       to,
       subject,
       html: emailTemplate.html(data),
@@ -292,6 +473,7 @@ export async function sendOrderConfirmation(order: any) {
       orderNumber: order.orderNumber,
       orderId: order.id,
       total: Number(order.totalAmount),
+      currency: order.currency || "UGX",
       paymentMethod: order.payments?.[0]?.method || "Card",
       items: order.items.map((item: any) => ({
         name: item.name,
@@ -341,6 +523,7 @@ export async function sendProcessingNotification(order: any) {
       orderNumber: order.orderNumber,
       orderId: order.id,
       total: Number(order.totalAmount),
+      currency: order.currency || "UGX",
     },
   });
 }
@@ -354,6 +537,7 @@ export async function sendDeliveredNotification(order: any) {
       orderNumber: order.orderNumber,
       orderId: order.id,
       total: Number(order.totalAmount),
+      currency: order.currency || "UGX",
     },
   });
 }
@@ -367,6 +551,7 @@ export async function sendCancelledNotification(order: any, reason?: string) {
       orderNumber: order.orderNumber,
       orderId: order.id,
       total: Number(order.totalAmount),
+      currency: order.currency || "UGX",
       reason,
     },
   });

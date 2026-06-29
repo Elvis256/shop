@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Mail, CheckCircle, Loader2 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface NewsletterSignupProps {
   source?: string;
@@ -66,11 +66,16 @@ export default function NewsletterSignup({
   if (variant === "compact") {
     return (
       <form onSubmit={handleSubmit} className={`flex gap-2 ${className}`}>
+        <label htmlFor="newsletter-email-compact" className="sr-only">Email address</label>
         <input
+          id="newsletter-email-compact"
           type="email"
+          name="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Your email"
+          aria-label="Email address"
+          autoComplete="email"
           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent focus:border-accent text-sm"
           disabled={status === "loading"}
           suppressHydrationWarning
@@ -99,11 +104,16 @@ export default function NewsletterSignup({
             Subscribe to our newsletter for exclusive deals, new arrivals, and wellness tips.
           </p>
           <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
+            <label htmlFor="newsletter-email-hero" className="sr-only">Email address</label>
             <input
+              id="newsletter-email-hero"
               type="email"
+              name="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Enter your email address"
+              aria-label="Email address"
+              autoComplete="email"
               className="flex-1 px-4 py-3 rounded-lg text-gray-900 focus:ring-2 focus:ring-white"
               disabled={status === "loading"}
               suppressHydrationWarning
@@ -136,13 +146,18 @@ export default function NewsletterSignup({
         Get exclusive offers, new arrivals, and tips delivered to your inbox.
       </p>
       <form onSubmit={handleSubmit} className="space-y-3">
+        <label htmlFor="newsletter-email" className="sr-only">Email address</label>
         <div className="relative">
           <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
+            id="newsletter-email"
             type="email"
+            name="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Enter your email"
+            aria-label="Email address"
+            autoComplete="email"
             className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent focus:border-accent"
             disabled={status === "loading"}
             suppressHydrationWarning

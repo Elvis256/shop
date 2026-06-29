@@ -9,11 +9,20 @@ import { useCurrency } from "@/contexts/CurrencyContext";
 import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
 import FreeShippingBar from "@/components/FreeShippingBar";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface CartItem {
   id: string;
   quantity: number;
+  variantId?: string | null;
+  variant?: {
+    id: string;
+    name: string;
+    size?: string | null;
+    color?: string | null;
+    material?: string | null;
+    stock: number;
+  } | null;
   product: {
     id: string;
     name: string;
@@ -93,11 +102,11 @@ export default function CartPage() {
     const savedItem: SavedItem = {
       id: item.id,
       productId: item.product.id,
-      name: item.product.name,
+      name: item.variant ? `${item.product.name} — ${item.variant.name}` : item.product.name,
       slug: item.product.slug,
       price: Number(item.product.price),
       imageUrl: item.product.images?.[0]?.url,
-      stock: item.product.stock,
+      stock: item.variant?.stock ?? item.product.stock,
     };
     const updated = [...savedForLater.filter((s) => s.productId !== savedItem.productId), savedItem];
     setSavedForLater(updated);
@@ -444,7 +453,10 @@ export default function CartPage() {
                     >
                       {item.product.name}
                     </Link>
-                    
+                    {item.variant && (
+                      <p className="text-sm text-gray-500 mt-0.5">{item.variant.name}</p>
+                    )}
+
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-gray-900">
                         {formatPrice(Number(item.product.price))}

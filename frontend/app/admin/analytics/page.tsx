@@ -11,6 +11,9 @@ import {
   AlertTriangle,
   Info,
   CheckCircle,
+  Briefcase,
+  Percent,
+  Coins,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -232,9 +235,14 @@ function ChartTooltip({ active, payload, label }: any) {
 
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState(30);
+  const [activeTab, setActiveTab] = useState<"standard" | "investor">("standard");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [investorData, setInvestorData] = useState<any>(null);
+  const [investorLoading, setInvestorLoading] = useState(false);
+  const [marketingSpend, setMarketingSpend] = useState(2000000);
 
   const load = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -250,7 +258,27 @@ export default function AnalyticsPage() {
     }
   }, [period]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadInvestor = useCallback(async (showRefresh = false) => {
+    if (showRefresh) setRefreshing(true);
+    else setInvestorLoading(true);
+    try {
+      const res = await api.admin.getInvestorAnalytics(period, marketingSpend) as any;
+      setInvestorData(res);
+    } catch {
+      setInvestorData(null);
+    } finally {
+      setInvestorLoading(false);
+      setRefreshing(false);
+    }
+  }, [period, marketingSpend]);
+
+  useEffect(() => {
+    if (activeTab === "standard") {
+      load();
+    } else {
+      loadInvestor();
+    }
+  }, [activeTab, load, loadInvestor]);
 
   const exportCSV = () => {
     if (!data) return;
@@ -267,7 +295,7 @@ export default function AnalyticsPage() {
 
   // ─── Loading skeleton ──────────────────────────────────────────────────────
 
-  if (loading) {
+  if (loading || (activeTab === "investor" && investorLoading && !investorData)) {
     return (
       <div className="space-y-5">
         <div className="h-7 w-40 bg-gray-100 rounded animate-pulse" />
@@ -287,7 +315,7 @@ export default function AnalyticsPage() {
 
   // ─── Error state ───────────────────────────────────────────────────────────
 
-  if (!data) {
+  if (activeTab === "standard" && !data) {
     return (
       <div className="space-y-5">
         <h1 className="text-lg font-semibold text-gray-900">Analytics</h1>
@@ -297,6 +325,25 @@ export default function AnalyticsPage() {
           <p className="text-[13px] text-gray-400 mb-5">Something went wrong fetching your data.</p>
           <button
             onClick={() => load()}
+            className="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeTab === "investor" && !investorData) {
+    return (
+      <div className="space-y-5">
+        <h1 className="text-lg font-semibold text-gray-900">Investor Analytics</h1>
+        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+          <Activity className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+          <p className="text-[13px] text-gray-900 font-medium mb-1">Unable to load investor analytics</p>
+          <p className="text-[13px] text-gray-400 mb-5">Something went wrong fetching investor data.</p>
+          <button
+            onClick={() => loadInvestor()}
             className="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Try again
@@ -402,41 +449,69 @@ export default function AnalyticsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-gray-900">Analytics</h1>
         <div className="flex items-center gap-2">
-          <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5">
-            {[1, 7, 14, 30, 90].map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={
-                  "px-3 py-1.5 text-[12px] font-medium rounded-md transition-colors " +
-                  (period === p ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")
-                }
-              >
-                {p === 1 ? "Today" : `${p}D`}
-              </button>
-            ))}
-          </div>
+          {activeTab === "standard" && (
+            <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5">
+              {[1, 7, 14, 30, 90].map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={
+                    "px-3 py-1.5 text-[12px] font-medium rounded-md transition-colors " +
+                    (period === p ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")
+                  }
+                >
+                  {p === 1 ? "Today" : `${p}D`}
+                </button>
+              ))}
+            </div>
+          )}
           <button
-            onClick={() => load(true)}
+            onClick={() => activeTab === "standard" ? load(true) : loadInvestor(true)}
             disabled={refreshing}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
           </button>
-          <button
-            onClick={exportCSV}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
-          </button>
+          {activeTab === "standard" && (
+            <button
+              onClick={exportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </button>
+          )}
         </div>
       </div>
 
-      {/* B) KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <KPICard
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setActiveTab("standard")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium transition-colors ${
+            activeTab === "standard" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          <Activity className="w-3.5 h-3.5" />
+          Standard Performance
+        </button>
+        <button
+          onClick={() => setActiveTab("investor")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium transition-colors ${
+            activeTab === "investor" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          <Briefcase className="w-3.5 h-3.5" />
+          Investor BI & LTV
+        </button>
+      </div>
+
+      {activeTab === "standard" ? (
+        <>
+          {/* B) KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <KPICard
           label="Revenue"
           value={fmt(rev.total)}
           sub={`${fmt(rev.collected ?? rev.thisMonth)} collected`}
@@ -915,6 +990,181 @@ export default function AnalyticsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+        </>
+      ) : (
+        <div className="space-y-5">
+          {/* Marketing Spend Controller */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[13px] font-semibold text-gray-900">Marketing & Acquisition Cost Input</h2>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  Adjust marketing spend to calculate real-time Customer Acquisition Cost (CAC) and LTV:CAC ratio
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[12px] text-gray-400 pointer-events-none">UGX</span>
+                  <input
+                    type="number"
+                    value={marketingSpend}
+                    onChange={(e) => setMarketingSpend(Number(e.target.value))}
+                    className="w-40 pl-11 pr-3 py-1.5 text-[13px] text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-500 font-semibold"
+                  />
+                </div>
+                <button
+                  onClick={() => loadInvestor()}
+                  disabled={investorLoading}
+                  className="px-3 py-1.5 text-[12px] font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                >
+                  Recalculate
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Investor KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <KPICard
+              label="Monthly Recurring Revenue"
+              value={fmt(investorData?.metrics?.mrr)}
+              sub="From active subscriptions"
+            />
+            <KPICard
+              label="Customer Acquisition Cost"
+              value={fmt(investorData?.metrics?.cac)}
+              sub={`For ${investorData?.metrics?.newCustomersAcquired ?? 0} new customers`}
+            />
+            <KPICard
+              label="Lifetime Value"
+              value={fmt(investorData?.metrics?.ltv)}
+              sub={`Based on ${investorData?.metrics?.totalCustomersBase ?? 0} buyers`}
+            />
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[13px] text-gray-400">LTV : CAC Ratio</span>
+                <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
+                  (investorData?.metrics?.ltvToCacRatio || 0) >= 3
+                    ? "bg-green-50 text-green-700 border border-green-200"
+                    : (investorData?.metrics?.ltvToCacRatio || 0) >= 1
+                    ? "bg-yellow-50 text-yellow-700 border border-yellow-200"
+                    : "bg-red-50 text-red-700 border border-red-200"
+                }`}>
+                  {(investorData?.metrics?.ltvToCacRatio || 0) >= 3 ? "Healthy" : (investorData?.metrics?.ltvToCacRatio || 0) >= 1 ? "Moderate" : "At Risk"}
+                </span>
+              </div>
+              <p className="text-[22px] font-semibold text-gray-900 leading-tight truncate">
+                {investorData?.metrics?.ltvToCacRatio ? `${investorData.metrics.ltvToCacRatio}x` : "—"}
+              </p>
+              <p className="text-[11px] text-gray-400 mt-1 truncate">Target: &gt; 3.0x</p>
+            </div>
+            <KPICard
+              label="Average Order Value"
+              value={fmt(investorData?.metrics?.aov)}
+              sub="Successful order average"
+            />
+            <KPICard
+              label="Subscription Churn Rate"
+              value={fmtPct(investorData?.metrics?.subscriptionChurnRate)}
+              sub="Monthly cancel estimate"
+            />
+          </div>
+
+          {/* Business Model Payback Analysis & Info */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 lg:col-span-1 flex flex-col justify-between">
+              <div>
+                <h3 className="text-[13px] font-semibold text-gray-900 mb-2">LTV : CAC Viability Analysis</h3>
+                <p className="text-[12px] text-gray-500 leading-relaxed mb-4">
+                  An LTV:CAC ratio of <span className="font-semibold text-gray-950">{investorData?.metrics?.ltvToCacRatio || 0}x</span> indicates that the lifetime value of a customer is {investorData?.metrics?.ltvToCacRatio || 0} times the cost to acquire them.
+                </p>
+                <div className="space-y-2 text-[11px] text-gray-500">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                    <span>&gt; 3.0x : Excellent (High VC investment grade)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-yellow-500" />
+                    <span>1.0x - 3.0x : Moderate (Needs pricing or marketing optimization)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                    <span>&lt; 1.0x : Loss making (Acquisition costs exceed customer value)</span>
+                  </div>
+                </div>
+              </div>
+              <div className="border-t border-gray-100 pt-3 mt-3">
+                <p className="text-[11px] text-gray-400">
+                  Calculated against {investorData?.metrics?.newCustomersAcquired ?? 0} acquisitions and {fmt(investorData?.metrics?.totalRevenuePeriod)} total successful revenue.
+                </p>
+              </div>
+            </div>
+
+            {/* Heatmap Matrix */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4 lg:col-span-2">
+              <div className="mb-3">
+                <h3 className="text-[13px] font-semibold text-gray-900">Cohort Retention Matrix</h3>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  Percentage of customers who place at least one successful order in subsequent months after registration
+                </p>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px] border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-gray-400 font-medium">
+                      <th className="py-2 pr-3 text-left font-normal pb-2">Cohort (Month)</th>
+                      <th className="py-2 pr-3 text-right font-normal pb-2">Size</th>
+                      <th className="py-2 px-2 text-center font-normal pb-2">Month 0</th>
+                      <th className="py-2 px-2 text-center font-normal pb-2">Month 1</th>
+                      <th className="py-2 px-2 text-center font-normal pb-2">Month 2</th>
+                      <th className="py-2 px-2 text-center font-normal pb-2">Month 3</th>
+                      <th className="py-2 px-2 text-center font-normal pb-2">Month 4</th>
+                      <th className="py-2 px-2 text-center font-normal pb-2">Month 5</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!investorData?.cohortMatrix?.length ? (
+                      <tr>
+                        <td colSpan={8} className="py-8 text-center text-gray-400 text-[12px]">
+                          No cohort cohort data available
+                        </td>
+                      </tr>
+                    ) : (
+                      investorData.cohortMatrix.map((c: any) => (
+                        <tr key={c.cohort} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="py-2.5 pr-3 font-semibold text-gray-900">{c.cohort}</td>
+                          <td className="py-2.5 pr-3 text-right text-gray-500 font-medium">{c.size} users</td>
+                          {[0, 1, 2, 3, 4, 5].map((idx) => {
+                            const retItem = c.retention?.find((r: any) => r.monthOffset === idx);
+                            const rate = retItem ? retItem.rate : 0;
+                            // Color density based on rate
+                            let bgClass = "bg-gray-50 text-gray-400";
+                            if (rate > 50) bgClass = "bg-indigo-600 text-white font-semibold";
+                            else if (rate >= 30) bgClass = "bg-indigo-400 text-white font-medium";
+                            else if (rate >= 15) bgClass = "bg-indigo-200 text-indigo-900 font-medium";
+                            else if (rate > 0) bgClass = "bg-indigo-50 text-indigo-700 font-medium";
+
+                            return (
+                              <td
+                                key={idx}
+                                className={`py-2 px-2 text-center rounded-sm text-[11px] transition-colors border border-white ${bgClass}`}
+                                title={retItem ? `${retItem.activeUsers} active users` : ""}
+                              >
+                                {rate.toFixed(1)}%
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -86,6 +86,18 @@ export default function SellerPromotionsPage() {
     setShowModal(true);
   };
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("action") === "new") {
+        openCreate();
+        // Remove query param to prevent modal reopening on refresh
+        const newUrl = window.location.pathname;
+        window.history.replaceState({ path: newUrl }, "", newUrl);
+      }
+    }
+  }, []);
+
   const openEdit = (coupon: Coupon) => {
     setEditingId(coupon.id);
     setForm({

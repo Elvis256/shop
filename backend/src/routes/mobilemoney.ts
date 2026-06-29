@@ -1,8 +1,9 @@
-import { Router } from "express";
+import { Router, Request } from "express";
 import prisma from "../lib/prisma";
-import { authenticate, requireAdmin } from "../middleware/auth";
+import { authenticate, optionalAuth, requireAdmin, AuthRequest } from "../middleware/auth";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { confirmPaidOrder } from "../services/orderConfirmation";
 
 const router = Router();
 
@@ -31,10 +32,11 @@ router.get("/providers", asyncHandler(async (req, res) => {
   }
 }));
 
-// Initiate mobile money payment
-router.post("/initiate", asyncHandler(async (req, res) => {
+// FIX H2: Require optionalAuth — authenticated users must own the order;
+// guests must supply the order's customer email as a secondary verification.
+router.post("/initiate", optionalAuth, asyncHandler(async (req: AuthRequest, res) => {
   try {
-    const { orderId, provider, phoneNumber, amount, currency = "UGX" } = req.body;
+    const { orderId, provider, phoneNumber, amount, currency = "UGX", customerEmail } = req.body;
 
     if (!orderId || !provider || !phoneNumber || !amount) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -71,6 +73,25 @@ router.post("/initiate", asyncHandler(async (req, res) => {
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
     }
+
+    // FIX H2: Verify caller owns this order.
+    // Authenticated users: must match userId or customerEmail.
+    // Guest callers: must supply the order's customerEmail as proof.
+    const user = (req as AuthRequest).user;
+    if (user) {
+      const ownsOrder = order.userId === user.id || order.customerEmail === user.email;
+      if (!ownsOrder) {
+        logger.warn("mobilemoney_initiate_unauthorized", { userId: user.id, orderId });
+        return res.status(403).json({ error: "You are not authorized to initiate payment for this order" });
+      }
+    } else {
+      // Guest order — require email verification
+      if (!customerEmail || order.customerEmail.toLowerCase() !== String(customerEmail).toLowerCase()) {
+        logger.warn("mobilemoney_initiate_guest_unverified", { orderId });
+        return res.status(403).json({ error: "Please provide the email used at checkout to verify this order" });
+      }
+    }
+
 
     // Use order's total amount (authoritative) instead of client-supplied amount
     const orderAmount = Number(order.totalAmount);
@@ -272,13 +293,6 @@ router.post("/callback/:provider", asyncHandler(async (req, res) => {
       }
 
       await prisma.$transaction(async (tx) => {
-        await tx.order.update({
-          where: { id: orderId },
-          data: { 
-            paymentStatus: "SUCCESSFUL",
-            status: "CONFIRMED",
-          },
-        });
         await tx.orderEvent.create({
           data: {
             orderId: orderId,
@@ -287,23 +301,9 @@ router.post("/callback/:provider", asyncHandler(async (req, res) => {
           },
         });
 
-        // Finalize stock: decrement actual stock, release reservation
-        const reservations = await tx.stockReservation.findMany({
-          where: { orderId: orderId, released: false },
-        });
-        for (const reservation of reservations) {
-          await tx.product.update({
-            where: { id: reservation.productId },
-            data: {
-              stock: { decrement: reservation.quantity },
-              reservedStock: { decrement: reservation.quantity },
-            },
-          });
-          await tx.stockReservation.update({
-            where: { id: reservation.id },
-            data: { released: true },
-          });
-        }
+        // Use shared confirmation logic (status update, stock finalization,
+        // seller earnings, escrow, variant support)
+        await confirmPaidOrder(tx, orderId);
       });
 
       // Note: Cart is cleared on the frontend upon redirect to success page
@@ -362,23 +362,8 @@ router.post("/simulate-complete/:transactionId", authenticate, requireAdmin, asy
           },
         });
 
-        // Finalize stock: decrement actual stock, release reservation
-        const reservations = await tx.stockReservation.findMany({
-          where: { orderId: transaction.orderId!, released: false },
-        });
-        for (const reservation of reservations) {
-          await tx.product.update({
-            where: { id: reservation.productId },
-            data: {
-              stock: { decrement: reservation.quantity },
-              reservedStock: { decrement: reservation.quantity },
-            },
-          });
-          await tx.stockReservation.update({
-            where: { id: reservation.id },
-            data: { released: true },
-          });
-        }
+        // Use shared confirmation logic (stock, seller earnings, escrow, variants)
+        await confirmPaidOrder(tx, transaction.orderId!);
       });
     }
 

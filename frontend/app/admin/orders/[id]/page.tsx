@@ -70,6 +70,12 @@ interface OrderDetail {
     note: string | null;
     createdAt: string;
   }>;
+  isSplitPayment: boolean;
+  splitShowItems: boolean;
+  splitPaidAmount: number;
+  splitPartnerPhone: string | null;
+  splitPartnerPaid: boolean;
+  expiresAt: string | null;
 }
 
 const statusOptions = [
@@ -80,6 +86,48 @@ const statusOptions = [
   { value: "DELIVERED", label: "Delivered", color: "bg-green-100 text-green-700" },
   { value: "CANCELLED", label: "Cancelled", color: "bg-red-100 text-red-700" },
   { value: "REFUNDED", label: "Refunded", color: "bg-orange-100 text-orange-700" },
+];
+
+function ReservationCountdown({ expiresAt }: { expiresAt: string }) {
+  const [timeLeft, setTimeLeft] = useState<string>("");
+
+  useEffect(() => {
+    const update = () => {
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeLeft("Expired");
+        return;
+      }
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${mins}m ${secs}s`);
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [expiresAt]);
+
+  if (timeLeft === "Expired") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-red-100 text-red-700 border border-red-200">
+        <Clock className="w-4 h-4" />
+        Reservation Expired
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">
+      <Clock className="w-4 h-4" />
+      Reservation Ends In: {timeLeft}
+    </span>
+  );
+}
+
+const RIDERS = [
+  { id: "moses", name: "Moses Mukasa", phone: "+256701122334" },
+  { id: "ivan", name: "Ivan Ssewankambo", phone: "+256782233445" },
+  { id: "sandra", name: "Sandra Nsubuga", phone: "+256753344556" },
 ];
 
 export default function OrderDetailPage() {
@@ -109,6 +157,9 @@ export default function OrderDetailPage() {
   const [selectedCourier, setSelectedCourier] = useState("auto");
   const [bookingCourier, setBookingCourier] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<{ bookingRef: string; trackingUrl?: string; courier: string } | null>(null);
+  const [selectedRiderId, setSelectedRiderId] = useState("");
+  const [riderName, setRiderName] = useState("");
+  const [riderPhone, setRiderPhone] = useState("");
 
   const loadOrder = async () => {
     setLoading(true);
@@ -191,6 +242,9 @@ export default function OrderDetailPage() {
     setCourierQuotes([]);
     setDispatchResult(null);
     setSelectedCourier("auto");
+    setSelectedRiderId("");
+    setRiderName("");
+    setRiderPhone("");
     setShowDispatchModal(true);
   };
 
@@ -228,6 +282,8 @@ export default function OrderDetailPage() {
           recipientPhone: dispatchRecipientPhone,
           notes: dispatchNotes,
           preferredCourier: selectedCourier,
+          riderName: selectedCourier === "internal" ? riderName : undefined,
+          riderPhone: selectedCourier === "internal" ? riderPhone : undefined,
         }),
       });
       const data = await res.json();
@@ -320,6 +376,63 @@ export default function OrderDetailPage() {
     );
   }
 
+  // Calculate split payment display details
+  const isTerminalState = ["CANCELLED", "REFUNDED", "FAILED"].includes(order.status) || ["FAILED", "REFUNDED"].includes(order.paymentStatus);
+
+  const isInitiatorRefunded = order.timeline?.some(event => 
+    event.note?.includes("Split Payment Refund") || 
+    event.note?.includes("refunded to their customer wallet balance") ||
+    event.note?.toLowerCase().includes("split refund")
+  ) || false;
+
+  const isInitiatorPaid = order.splitPaidAmount >= Math.floor(order.totalAmount / 2) || isInitiatorRefunded;
+
+  // For initiator:
+  let initiatorStatus = "PENDING (50%)";
+  let initiatorStatusColor = "bg-yellow-100 text-yellow-700";
+  let initiatorAmount = 0;
+
+  if (isInitiatorPaid) {
+    if (isInitiatorRefunded || order.status === "REFUNDED") {
+      initiatorStatus = "REFUNDED (50%)";
+      initiatorStatusColor = "bg-orange-100 text-orange-700";
+    } else {
+      initiatorStatus = "PAID (50%)";
+      initiatorStatusColor = "bg-green-100 text-green-700";
+    }
+    initiatorAmount = Math.ceil(order.totalAmount / 2);
+  } else if (isTerminalState) {
+    initiatorStatus = "EXPIRED";
+    initiatorStatusColor = "bg-red-100 text-red-700";
+  }
+
+  // For partner:
+  let partnerStatus = "PENDING (50%)";
+  let partnerStatusColor = "bg-yellow-100 text-yellow-700";
+  let partnerAmount = 0;
+
+  if (order.splitPartnerPaid) {
+    if (order.status === "REFUNDED") {
+      partnerStatus = "REFUNDED (50%)";
+      partnerStatusColor = "bg-orange-100 text-orange-700";
+    } else {
+      partnerStatus = "PAID (50%)";
+      partnerStatusColor = "bg-green-100 text-green-700";
+    }
+    partnerAmount = Math.floor(order.totalAmount / 2);
+  } else if (isTerminalState) {
+    partnerStatus = "EXPIRED";
+    partnerStatusColor = "bg-red-100 text-red-700";
+  }
+
+  const initiatorAmountColor = isInitiatorPaid 
+    ? (isInitiatorRefunded || order.status === "REFUNDED" ? "text-orange-600" : "text-green-600") 
+    : "text-gray-500";
+
+  const partnerAmountColor = order.splitPartnerPaid 
+    ? (order.status === "REFUNDED" ? "text-orange-600" : "text-green-600") 
+    : "text-gray-500";
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -410,11 +523,64 @@ export default function OrderDetailPage() {
             Discreet Packaging
           </span>
         )}
+        {order.status === "PENDING" && order.expiresAt && (
+          <ReservationCountdown expiresAt={order.expiresAt} />
+        )}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Split Payment details card */}
+          {order.isSplitPayment && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="p-1.5 rounded-lg bg-blue-500 text-white">
+                  <Zap className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-blue-900">Split Payment Order</h3>
+                  <p className="text-xs text-blue-600">This order is split 50/50 between the customer and their partner.</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mt-3">
+                <div className="bg-white/80 backdrop-blur rounded-lg p-3 border border-blue-50">
+                  <span className="block text-xs text-gray-500 font-medium">Initiator (Customer)</span>
+                  <span className={`inline-flex items-center gap-1 text-xs font-bold mt-1 px-2 py-0.5 rounded-full ${initiatorStatusColor}`}>
+                    {initiatorStatus}
+                  </span>
+                  <span className={`text-xs font-medium block mt-0.5 ${initiatorAmountColor}`}>
+                    {order.currency || "UGX"} {Number(initiatorAmount).toLocaleString()}
+                  </span>
+                </div>
+                <div className="bg-white/80 backdrop-blur rounded-lg p-3 border border-blue-50">
+                  <span className="block text-xs text-gray-500 font-medium">Partner Phone</span>
+                  <span className="font-semibold text-gray-950 mt-1 block font-mono">
+                    {order.splitPartnerPhone || "Not specified"}
+                  </span>
+                  <span className="text-xs text-gray-400 block mt-0.5">Sent SMS/WhatsApp link</span>
+                </div>
+                <div className="bg-white/80 backdrop-blur rounded-lg p-3 border border-blue-50">
+                  <span className="block text-xs text-gray-500 font-medium">Partner Payment Status</span>
+                  <span className={`inline-flex items-center gap-1 text-xs font-bold mt-1 px-2 py-0.5 rounded-full ${partnerStatusColor}`}>
+                    {partnerStatus}
+                  </span>
+                  <span className={`text-xs font-medium block mt-0.5 ${partnerAmountColor}`}>
+                    {order.currency || "UGX"} {Number(partnerAmount).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-4 flex items-center gap-2 text-xs text-blue-800">
+                <span className="font-semibold">Partner Discretion Mode:</span>
+                <span>
+                  {order.splitShowItems
+                    ? "Visible: Cart items were shown to the partner on checkout page."
+                    : "Stealth: Product names and details were hidden from the partner during checkout."}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Order Items */}
           <div className="bg-white rounded-xl border shadow-sm">
             <div className="px-6 py-4 border-b">
@@ -792,6 +958,59 @@ export default function OrderDetailPage() {
                       </div>
                     </div>
                   )}
+
+                  {selectedCourier === "internal" && (
+                    <div className="border border-indigo-100 bg-indigo-50/30 rounded-lg p-4 space-y-3">
+                      <p className="text-xs font-semibold text-indigo-900 uppercase tracking-wider">Assign In-House Rider</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="col-span-2 sm:col-span-1">
+                          <label className="block text-xs text-gray-500 font-medium mb-1">Select Active Rider</label>
+                          <select
+                            value={selectedRiderId}
+                            onChange={(e) => {
+                              const r = RIDERS.find(x => x.id === e.target.value);
+                              setSelectedRiderId(e.target.value);
+                              setRiderName(r ? r.name : "");
+                              setRiderPhone(r ? r.phone : "");
+                            }}
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 text-gray-900"
+                          >
+                            <option value="">-- Custom / Manual Entry --</option>
+                            {RIDERS.map(r => (
+                              <option key={r.id} value={r.id}>{r.name} ({r.phone})</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-span-2 sm:col-span-1">
+                          <label className="block text-xs text-gray-500 font-medium mb-1">Rider Name *</label>
+                          <input
+                            type="text"
+                            value={riderName}
+                            onChange={(e) => {
+                              setSelectedRiderId("");
+                              setRiderName(e.target.value);
+                            }}
+                            placeholder="Moses"
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 text-gray-950"
+                            required={selectedCourier === "internal"}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs text-gray-500 font-medium mb-1">Rider Phone (for WhatsApp Dispatch Task Alert)</label>
+                          <input
+                            type="text"
+                            value={riderPhone}
+                            onChange={(e) => {
+                              setSelectedRiderId("");
+                              setRiderPhone(e.target.value);
+                            }}
+                            placeholder="+2567..."
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 text-gray-950"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -802,7 +1021,13 @@ export default function OrderDetailPage() {
                 </button>
                 <button
                   onClick={handleDispatch}
-                  disabled={bookingCourier || !dispatchArea || !dispatchRecipientName || !dispatchRecipientPhone}
+                  disabled={
+                    bookingCourier ||
+                    !dispatchArea ||
+                    !dispatchRecipientName ||
+                    !dispatchRecipientPhone ||
+                    (selectedCourier === "internal" && !riderName.trim())
+                  }
                   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                 >
                   <Truck className="w-4 h-4" />

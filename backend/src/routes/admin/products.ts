@@ -7,6 +7,9 @@ import { cacheDel } from "../../lib/cache";
 import { uploadMultiple, validateUploadedFiles } from "../../middleware/upload";
 import { logger } from "../../lib/logger";
 import { asyncHandler } from "../../middleware/errorHandler";
+import { notifyBackInStock } from "../backInStock";
+import { checkPriceDropAlerts } from "../priceDropAlerts";
+import { notifyProductChange } from "../../services/indexNow";
 
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -210,6 +213,7 @@ router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
         category: true,
         images: { orderBy: { position: "asc" } },
         variants: { orderBy: { createdAt: "asc" } },
+        sizeGuide: { select: { id: true, name: true, content: true } },
       },
     });
 
@@ -254,6 +258,10 @@ const ProductSchema = z.object({
   metaDescription: z.string().optional(),
   flashSalePrice: z.number().nonnegative().optional().nullable(),
   flashSaleEndsAt: z.string().datetime().optional().nullable(),
+  allowedDeliveryMethods: z.array(z.string()).default([]),
+  codAllowed: z.boolean().default(true),
+  shippingFee: z.number().nonnegative().optional().nullable(),
+  sizeGuideId: z.string().optional().nullable(),
 });
 
 // POST /api/admin/products
@@ -284,6 +292,9 @@ router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
     const product = await prisma.product.create({
       data,
     });
+
+    // Notify search engines via IndexNow
+    if (product.slug) notifyProductChange(product.slug);
 
     return res.status(201).json(product);
   } catch (error) {
@@ -346,6 +357,16 @@ router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
       data,
     });
 
+    // Notify waiting subscribers if product went from out-of-stock to restocked
+    if (product.stock === 0 && updated.stock > 0) {
+      notifyBackInStock(id).catch(err => logger.error("Failed to notify back-in-stock subscribers", { productId: id, error: err }));
+    }
+
+    // Notify subscribers if price dropped
+    if (body.price !== undefined && Number(updated.price) < Number(product.price)) {
+      checkPriceDropAlerts(id, Number(updated.price)).catch(err => logger.error("Failed to check price drop alerts", { productId: id, error: err }));
+    }
+
     // Invalidate product cache
     await cacheDel(`product:${product.slug}`);
     if (body.slug && body.slug !== product.slug) await cacheDel(`product:${body.slug}`);
@@ -354,6 +375,9 @@ router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
     const now = new Date();
     const hourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
     await cacheDel(`products:flash-sale:${hourStart.getTime()}`);
+
+    // Notify search engines via IndexNow
+    notifyProductChange(updated.slug);
 
     return res.json({ message: "Product updated", product: updated });
   } catch (error) {
@@ -627,11 +651,24 @@ router.patch("/bulk-stock", asyncHandler(async (req: AuthRequest, res: Response)
       })
       .parse(req.body);
 
+    // Identify which products go from out-of-stock (0) to restocked (>0)
+    const targetIds = updates.filter((u) => u.stock > 0).map((u) => u.id);
+    const restockCandidates = targetIds.length > 0 ? await prisma.product.findMany({
+      where: { id: { in: targetIds }, stock: 0 },
+      select: { id: true },
+    }) : [];
+    const restockedIds = restockCandidates.map((p) => p.id);
+
     await prisma.$transaction(
       updates.map((u) =>
         prisma.product.update({ where: { id: u.id }, data: { stock: u.stock } })
       )
     );
+
+    // Trigger notifications for restocked products in background
+    restockedIds.forEach((id) => {
+      notifyBackInStock(id).catch(err => logger.error("Failed to notify back-in-stock subscribers on bulk restock", { productId: id, error: err }));
+    });
 
     return res.json({ message: "Stock updated", count: updates.length });
   } catch (error) {
@@ -678,6 +715,10 @@ router.post("/import-csv", csvUpload.single("file"), asyncHandler(async (req: Au
     // Cache category lookups
     const categoryCache: Record<string, string | null> = {};
 
+    const BATCH_SIZE = 50;
+    const records = [];
+
+    // Parse all lines first
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
@@ -703,42 +744,58 @@ router.post("/import-csv", csvUpload.single("file"), asyncHandler(async (req: Au
         continue;
       }
 
-      try {
-        const categoryName = categoryIdx >= 0 ? cols[categoryIdx]?.trim() : "";
-        let categoryId: string | null = null;
+      records.push({
+        rowIndex: i + 1,
+        name,
+        price,
+        description: descIdx >= 0 ? (cols[descIdx] || "") : "",
+        stock: stockIdx >= 0 ? (parseInt(cols[stockIdx]) || 0) : 0,
+        sku: skuIdx >= 0 ? (cols[skuIdx] || null) : null,
+        categoryName: categoryIdx >= 0 ? cols[categoryIdx]?.trim() : "",
+      });
+    }
 
-        if (categoryName) {
-          if (categoryCache[categoryName] !== undefined) {
-            categoryId = categoryCache[categoryName];
-          } else {
-            const cat = await prisma.category.findFirst({
-              where: { name: { equals: categoryName, mode: "insensitive" } },
+    // Process in parallel batches to prevent event loop blocking
+    for (let idx = 0; idx < records.length; idx += BATCH_SIZE) {
+      const batch = records.slice(idx, idx + BATCH_SIZE);
+      await Promise.all(
+        batch.map(async (rec) => {
+          try {
+            let categoryId: string | null = null;
+            if (rec.categoryName) {
+              if (categoryCache[rec.categoryName] !== undefined) {
+                categoryId = categoryCache[rec.categoryName];
+              } else {
+                const cat = await prisma.category.findFirst({
+                  where: { name: { equals: rec.categoryName, mode: "insensitive" } },
+                });
+                categoryId = cat?.id || null;
+                categoryCache[rec.categoryName] = categoryId;
+              }
+            }
+
+            const slug = rec.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") +
+              "-" + Date.now() + "-" + rec.rowIndex;
+
+            await prisma.product.create({
+              data: {
+                name: rec.name,
+                slug,
+                description: rec.description,
+                price: rec.price,
+                stock: rec.stock,
+                sku: rec.sku,
+                categoryId,
+                status: "ACTIVE",
+              },
             });
-            categoryId = cat?.id || null;
-            categoryCache[categoryName] = categoryId;
+            imported++;
+          } catch (err: any) {
+            errors.push(`Row ${rec.rowIndex}: ${err?.message || "unknown error"}`);
+            failed++;
           }
-        }
-
-        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") +
-          "-" + Date.now() + "-" + i;
-
-        await prisma.product.create({
-          data: {
-            name,
-            slug,
-            description: descIdx >= 0 ? (cols[descIdx] || "") : "",
-            price,
-            stock: stockIdx >= 0 ? (parseInt(cols[stockIdx]) || 0) : 0,
-            sku: skuIdx >= 0 ? (cols[skuIdx] || null) : null,
-            categoryId,
-            status: "ACTIVE",
-          },
-        });
-        imported++;
-      } catch (err: any) {
-        errors.push(`Row ${i + 1}: ${err?.message || "unknown error"}`);
-        failed++;
-      }
+        })
+      );
     }
 
     return res.json({ imported, failed, errors: errors.slice(0, 20) });

@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
@@ -22,6 +23,44 @@ import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
+// Helper: Verify Telegram WebApp initData
+export function verifyTelegramInitData(initData: string, botToken: string): boolean {
+  try {
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
+    if (!hash) return false;
+
+    // Delete hash from params list for signature generation
+    params.delete("hash");
+
+    // Sort params alphabetically
+    const keys = Array.from(params.keys()).sort();
+    const dataCheckString = keys
+      .map((key) => `${key}=${params.get(key)}`)
+      .join("\n");
+
+    // Secret key is HMAC-SHA256(botToken, "WebAppData")
+    const secretKey = crypto
+      .createHmac("sha256", "WebAppData")
+      .update(botToken)
+      .digest();
+
+    const calculatedHash = crypto
+      .createHmac("sha256", secretKey)
+      .update(dataCheckString)
+      .digest("hex");
+
+    // Timing-safe comparison to prevent timing attacks
+    if (calculatedHash.length !== hash.length) return false;
+    return crypto.timingSafeEqual(
+      Buffer.from(calculatedHash, "utf8"),
+      Buffer.from(hash, "utf8")
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
 // Strong password validation regex
 const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{}|;:,.<>])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{}|;:,.<>]{8,}$/;
 
@@ -33,11 +72,13 @@ const RegisterSchema = z.object({
     .regex(strongPasswordRegex, "Password must contain uppercase, lowercase, number, and special character"),
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
+  telegramUserId: z.string().optional(),
 });
 
 const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
+  telegramUserId: z.string().optional(),
 });
 
 const ForgotPasswordSchema = z.object({
@@ -55,6 +96,7 @@ const UpdateProfileSchema = z.object({
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
   smsOptIn: z.boolean().optional(),
+  receiptMasked: z.boolean().optional(),
   orderHistoryDays: z.number().int().positive().nullable().optional(),
 });
 
@@ -71,10 +113,11 @@ router.post("/register", asyncHandler(async (req, res: Response) => {
     const body = RegisterSchema.parse(req.body);
     const normalizedEmail = body.email.toLowerCase().trim();
 
-    // Check if email already exists
+    // Check if email already exists — return generic error to prevent enumeration
+    // (especially important for a discreet adult wellness store)
     const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) {
-      return res.status(400).json({ error: "Email already registered" });
+      return res.status(400).json({ error: "Registration failed. Please try again or use a different email." });
     }
 
     // Hash password
@@ -88,8 +131,41 @@ router.post("/register", asyncHandler(async (req, res: Response) => {
         name: body.name,
         phone: body.phone,
       },
-      select: { id: true, email: true, name: true, role: true },
+      select: { id: true, email: true, name: true, role: true, phone: true },
     });
+
+    // Link Telegram account if telegramUserId is provided
+    if (body.telegramUserId) {
+      try {
+        const tgUserId = BigInt(body.telegramUserId);
+        const telegramUser = await prisma.telegramUser.findFirst({
+          where: {
+            OR: [
+              { telegramChatId: tgUserId },
+              { telegramUserId: tgUserId }
+            ]
+          }
+        });
+        if (telegramUser) {
+          await prisma.$transaction([
+            prisma.telegramUser.updateMany({
+              where: { userId: user.id },
+              data: { userId: null, linkedAt: null, linkedPhone: null }
+            }),
+            prisma.telegramUser.update({
+              where: { id: telegramUser.id },
+              data: {
+                userId: user.id,
+                linkedAt: new Date(),
+                linkedPhone: user.phone || null
+              }
+            })
+          ]);
+        }
+      } catch (err: any) {
+        logger.error("telegram_link_during_registration_failed", { error: err?.message, userId: user.id });
+      }
+    }
 
     // Generate tokens
     const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal: "customer" });
@@ -110,14 +186,13 @@ router.post("/register", asyncHandler(async (req, res: Response) => {
     res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
 
     // Send verification email (async, don't wait)
+    // Welcome email is sent on successful verification (see /verify-email)
     sendVerificationEmail(user.email, verificationToken, user.name || undefined).catch(err => logger.error('send_verification_email_failed', { error: err }));
-
-    // Also send legacy welcome email
-    sendWelcomeEmail({ email: user.email, name: user.name || undefined });
 
     return res.status(201).json({
       message: "Registration successful. Please check your email to verify your account.",
       user,
+      accessToken,
     });
   } catch (error) {
     logger.error("Register error", { error });
@@ -231,7 +306,7 @@ router.post("/login", asyncHandler(async (req, res: Response) => {
     // Find user
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
-      select: { id: true, email: true, name: true, password: true, role: true, isBlocked: true },
+      select: { id: true, email: true, name: true, password: true, role: true, isBlocked: true, phone: true },
     });
 
     if (!user) {
@@ -281,23 +356,57 @@ router.post("/login", asyncHandler(async (req, res: Response) => {
     await clearLoginAttempts(normalizedEmail);
     await clearIpAttempts(clientIp);
 
-    // For admin/manager: check if 2FA is enabled — require TOTP code if so
-    if (user.role === "ADMIN" || user.role === "MANAGER") {
+    // Link Telegram account if telegramUserId is provided
+    if (body.telegramUserId) {
       try {
-        const twoFactor = await prisma.twoFactorAuth.findUnique({
-          where: { userId: user.id },
-          select: { isEnabled: true },
+        const tgUserId = BigInt(body.telegramUserId);
+        const telegramUser = await prisma.telegramUser.findFirst({
+          where: {
+            OR: [
+              { telegramChatId: tgUserId },
+              { telegramUserId: tgUserId }
+            ]
+          }
         });
-        if (twoFactor?.isEnabled) {
-          return res.status(202).json({
-            message: "2FA required",
-            requires2FA: true,
-            userId: user.id,
-          });
+        if (telegramUser) {
+          await prisma.$transaction([
+            prisma.telegramUser.updateMany({
+              where: { userId: user.id },
+              data: { userId: null, linkedAt: null, linkedPhone: null }
+            }),
+            prisma.telegramUser.update({
+              where: { id: telegramUser.id },
+              data: {
+                userId: user.id,
+                linkedAt: new Date(),
+                linkedPhone: user.phone || null
+              }
+            })
+          ]);
         }
-      } catch {
-        // Table may not exist yet — skip 2FA check
+      } catch (err: any) {
+        logger.error("telegram_link_during_login_failed", { error: err?.message, userId: user.id });
       }
+    }
+
+    // Check if 2FA is enabled for this user — require TOTP code if so
+    try {
+      const twoFactor = await prisma.twoFactorAuth.findUnique({
+        where: { userId: user.id },
+        select: { isEnabled: true },
+      });
+      if (twoFactor?.isEnabled) {
+        // Generate opaque temporary token instead of exposing userId
+        const twoFaToken = crypto.randomBytes(32).toString("hex");
+        await redis.set(`2fa:pending:${twoFaToken}`, user.id, "EX", 300); // 5 min expiry
+        return res.status(202).json({
+          message: "2FA required",
+          requires2FA: true,
+          twoFaToken,
+        });
+      }
+    } catch {
+      // Table may not exist yet — skip 2FA check
     }
 
     // Generate tokens — portal based on admin role; sellers use "customer" portal
@@ -319,6 +428,7 @@ router.post("/login", asyncHandler(async (req, res: Response) => {
     return res.json({
       message: "Login successful",
       user: { id: user.id, email: user.email, name: user.name, role: user.role, seller: seller || null },
+      accessToken,
     });
   } catch (error) {
     logger.error("Login error", { error });
@@ -423,6 +533,7 @@ router.get("/me", authenticate, asyncHandler(async (req: AuthRequest, res: Respo
         role: true,
         emailVerified: true,
         smsOptIn: true,
+        receiptMasked: true,
         orderHistoryDays: true,
         createdAt: true,
         _count: { select: { orders: true, wishlist: true } },
@@ -482,6 +593,7 @@ router.get("/dashboard", authenticate, asyncHandler(async (req: AuthRequest, res
           totalAmount: true,
           currency: true,
           createdAt: true,
+          receiptMasked: true,
           items: { take: 3, select: { name: true, quantity: true, price: true, productId: true, product: { select: { images: { take: 1, select: { url: true } } } } } },
         },
       }),
@@ -527,8 +639,25 @@ router.get("/dashboard", authenticate, asyncHandler(async (req: AuthRequest, res
     const ordersByStatus: Record<string, number> = {};
     statusCounts.forEach((s) => { ordersByStatus[s.status] = s._count; });
 
+    const maskedRecentOrders = recentOrders.map((order) => {
+      const isMasked = (order as any).receiptMasked;
+      return {
+        ...order,
+        items: order.items.map((item) => {
+          if (isMasked) {
+            return {
+              ...item,
+              name: `Discreet Wellness Item (PZ-${item.productId.slice(-4).toUpperCase()})`,
+              product: { images: [] }
+            };
+          }
+          return item;
+        })
+      };
+    });
+
     return res.json({
-      recentOrders,
+      recentOrders: maskedRecentOrders,
       stats: {
         totalOrders: orderStats._count,
         totalSpent: Number(orderStats._sum?.totalAmount || 0),
@@ -554,7 +683,7 @@ router.put("/me", authenticate, asyncHandler(async (req: AuthRequest, res: Respo
     const user = await prisma.user.update({
       where: { id: req.user!.id },
       data: body,
-      select: { id: true, email: true, name: true, phone: true, role: true },
+      select: { id: true, email: true, name: true, phone: true, role: true, receiptMasked: true },
     });
 
     return res.json({ message: "Profile updated", user });
@@ -715,7 +844,13 @@ router.post("/logout-all", authenticate, asyncHandler(async (req: AuthRequest, r
 // POST /api/auth/refresh - Refresh access token
 router.post("/refresh", asyncHandler(async (req, res: Response) => {
   try {
-    const refreshToken = req.cookies?.refresh_token;
+    let refreshToken = req.cookies?.refresh_token;
+    if (!refreshToken) {
+      refreshToken = req.body?.refreshToken;
+    }
+    if (!refreshToken) {
+      refreshToken = req.headers["x-refresh-token"] as string;
+    }
     
     if (!refreshToken) {
       return res.status(401).json({ error: "No refresh token" });
@@ -736,10 +871,133 @@ router.post("/refresh", asyncHandler(async (req, res: Response) => {
     return res.json({ 
       message: "Token refreshed",
       user: result.user,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
     });
   } catch (error) {
     logger.error("Refresh token error", { error });
     return res.status(500).json({ error: "Token refresh failed" });
+  }
+}));
+
+// POST /api/auth/telegram-twa - Authenticate with Telegram WebApp initData
+const TelegramTwaSchema = z.object({
+  initData: z.string(),
+});
+
+router.post("/telegram-twa", asyncHandler(async (req, res: Response) => {
+  try {
+    const { initData } = TelegramTwaSchema.parse(req.body);
+    const botToken = process.env.TELEGRAM_CUSTOMER_BOT_TOKEN;
+    if (!botToken) {
+      logger.error("TELEGRAM_CUSTOMER_BOT_TOKEN is not configured");
+      return res.status(500).json({ error: "Telegram bot is not configured on server" });
+    }
+
+    const isValid = verifyTelegramInitData(initData, botToken);
+    if (!isValid) {
+      return res.status(400).json({ error: "Invalid Telegram signature" });
+    }
+
+    const params = new URLSearchParams(initData);
+    const userJson = params.get("user");
+    if (!userJson) {
+      return res.status(400).json({ error: "User data not found in initData" });
+    }
+
+    const tgUser = JSON.parse(userJson);
+    const tgUserId = BigInt(tgUser.id);
+
+    let telegramUser = await prisma.telegramUser.findFirst({
+      where: {
+        OR: [
+          { telegramChatId: tgUserId },
+          { telegramUserId: tgUserId }
+        ]
+      }
+    });
+
+    if (!telegramUser) {
+      telegramUser = await prisma.telegramUser.create({
+        data: {
+          telegramChatId: tgUserId,
+          telegramUserId: tgUserId,
+          username: tgUser.username || null,
+          firstName: tgUser.first_name || null,
+          lastName: tgUser.last_name || null,
+          languageCode: tgUser.language_code || null,
+          ageVerified: false,
+        }
+      });
+    } else {
+      telegramUser = await prisma.telegramUser.update({
+        where: { id: telegramUser.id },
+        data: {
+          username: tgUser.username || telegramUser.username,
+          firstName: tgUser.first_name || telegramUser.firstName,
+          lastName: tgUser.last_name || telegramUser.lastName,
+          languageCode: tgUser.language_code || telegramUser.languageCode,
+        }
+      });
+    }
+
+    if (telegramUser.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: telegramUser.userId },
+        select: { id: true, email: true, name: true, role: true, isBlocked: true }
+      });
+
+      if (user) {
+        if (user.isBlocked) {
+          return res.status(403).json({ error: "Account has been suspended" });
+        }
+
+        const portal = (user.role === "ADMIN" || user.role === "MANAGER") ? "admin" : "customer";
+        const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal });
+        const refreshToken = await createRefreshToken(user.id);
+
+        res.cookie("auth_token", accessToken, COOKIE_OPTIONS);
+        res.cookie("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
+
+        const seller = await prisma.seller.findUnique({
+          where: { userId: user.id },
+          select: { id: true, status: true, storeName: true },
+        });
+
+        return res.json({
+          success: true,
+          authenticated: true,
+          accessToken,
+          refreshToken,
+          user: { id: user.id, email: user.email, name: user.name, role: user.role, seller: seller || null },
+          telegramUser: {
+            id: telegramUser.id,
+            telegramChatId: telegramUser.telegramChatId.toString(),
+            telegramUserId: telegramUser.telegramUserId?.toString(),
+            ageVerified: telegramUser.ageVerified,
+          }
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      authenticated: false,
+      telegramUserId: tgUser.id.toString(),
+      telegramUser: {
+        id: telegramUser.id,
+        telegramChatId: telegramUser.telegramChatId.toString(),
+        telegramUserId: telegramUser.telegramUserId?.toString(),
+        ageVerified: telegramUser.ageVerified,
+      }
+    });
+
+  } catch (error) {
+    logger.error("Telegram TWA auth error", { error });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: error.errors });
+    }
+    return res.status(500).json({ error: "Telegram TWA auth failed" });
   }
 }));
 

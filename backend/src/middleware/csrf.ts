@@ -56,6 +56,18 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction) {
     return next();
   }
 
+  // Skip CSRF validation for Telegram Mini App (TWA) context.
+  // SECURITY: Only skip if the request also carries a Bearer token — this proves the client
+  // is a TWA app using localStorage tokens (not cookies), making it naturally CSRF-immune.
+  // Without requiring the Bearer token, any attacker could set x-twa-context to bypass CSRF.
+  if (req.headers["x-twa-context"] === "true") {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      return next();
+    }
+    // No Bearer token — fall through to standard CSRF validation
+  }
+
   const cookieToken = req.cookies[CSRF_COOKIE_NAME];
   const headerToken = req.headers[CSRF_HEADER_NAME] as string;
 

@@ -5,7 +5,7 @@ import Link from "next/link";
 import Section from "@/components/Section";
 import { Gift, Mail, CreditCard, CheckCircle, Loader2, Sparkles } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 const GIFT_CARD_AMOUNTS = [
   { value: 50000, label: "UGX 50,000" },

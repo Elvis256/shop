@@ -13,7 +13,7 @@ export default function PrivacyPolicyPage() {
         <div className="bg-white rounded-xl p-8 prose prose-gray max-w-none">
           <h2>Introduction</h2>
           <p>
-            At Adult Store ("we," "our," or "us"), we take your privacy extremely seriously. 
+            At PleasureZone Uganda ("we," "our," or "us"), we take your privacy extremely seriously. 
             This Privacy Policy explains how we collect, use, disclose, and safeguard your 
             information when you visit our website or make a purchase.
           </p>
@@ -118,8 +118,8 @@ export default function PrivacyPolicyPage() {
             For privacy-related questions or to exercise your rights, contact us at:
           </p>
           <ul>
-            <li>Email: privacy@adultstore.com</li>
-            <li>Phone: +254 700 000 000</li>
+            <li>Email: privacy@pleasurezone.ug</li>
+            <li>Phone: +256 777 000 000</li>
           </ul>
         </div>
       </div>

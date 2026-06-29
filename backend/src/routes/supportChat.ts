@@ -82,12 +82,19 @@ router.post("/:chatId/messages", (req: Request, res: Response) => {
       id: uuidv4(),
       senderId: "agent",
       senderType: "agent",
-      message: "Thanks for your message! Our team will get back to you shortly. For faster support, you can also reach us on WhatsApp at +256 700 000 000.",
+      message: "Thanks for your message! Our team will get back to you shortly. For faster support, you can also reach us on WhatsApp.",
       createdAt: new Date().toISOString(),
     });
   }, 3000);
 
   res.json(msg);
+});
+
+// DELETE /api/support-chat/:chatId — Wipe chat history immediately
+router.delete("/:chatId", (req: Request, res: Response) => {
+  const deleted = chats.delete(req.params.chatId);
+  if (!deleted) return res.status(404).json({ error: "Chat not found" });
+  res.json({ message: "Chat session and history wiped from memory successfully" });
 });
 
 export default router;

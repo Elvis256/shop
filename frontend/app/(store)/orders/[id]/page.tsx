@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Section from "@/components/Section";
@@ -8,11 +8,18 @@ import Breadcrumbs from "@/components/Breadcrumbs";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import ProductImage from "@/components/ProductImage";
 import { apiFetch } from "@/lib/api";
+import { trackPurchase } from "@/components/GoogleAnalytics";
 import {
   Package, Truck, CheckCircle, Clock, AlertCircle, CreditCard,
   Smartphone, Banknote, MapPin, ShieldCheck, Eye, Copy, Check,
-  FileText, RefreshCw, Loader2, Shield, AlertTriangle, ThumbsUp,
+  FileText, RefreshCw, Loader2, Shield, AlertTriangle, ThumbsUp, Navigation
 } from "lucide-react";
+import dynamic from "next/dynamic";
+
+const GPSMapPicker = dynamic(() => import("@/components/GPSMapPicker"), {
+  ssr: false,
+  loading: () => <div className="h-[250px] flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded-lg"><Loader2 className="w-6 h-6 animate-spin text-accent" /></div>
+});
 
 interface OrderItem {
   id: string;
@@ -45,6 +52,9 @@ interface Order {
   trackingNumber?: string | null;
   customerName?: string;
   shippingAddress: any;
+  deliveryMethod?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   items: OrderItem[];
   payments?: Array<{ method: string; status: string }>;
   events?: OrderEvent[];
@@ -103,9 +113,48 @@ export default function OrderDetailPage() {
   const [deliveryConfirmed, setDeliveryConfirmed] = useState(false);
   const [escrow, setEscrow] = useState<{ status: string; releaseDate: string; amount: number } | null>(null);
 
+  // Redirection states
+  const [showRedirect, setShowRedirect] = useState(false);
+  const [redirectMethod, setRedirectMethod] = useState<"home" | "pickup">("home");
+  const [redirectAddress, setRedirectAddress] = useState("");
+  const [redirectLat, setRedirectLat] = useState<number | null>(null);
+  const [redirectLng, setRedirectLng] = useState<number | null>(null);
+  const [pickupPoints, setPickupPoints] = useState<any[]>([]);
+  const [selectedPickup, setSelectedPickup] = useState("");
+  const [redirecting, setRedirecting] = useState(false);
+  const [redirectSuccess, setRedirectSuccess] = useState(false);
+  const [redirectError, setRedirectError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (showRedirect && pickupPoints.length === 0) {
+      apiFetch("/api/pickup-points")
+        .then((data) => {
+          setPickupPoints(Array.isArray(data) ? data : data.pickupPoints || []);
+        })
+        .catch(() => {});
+    }
+  }, [showRedirect]);
+
   useEffect(() => {
     loadOrder();
   }, [orderId]);
+
+  const hasTrackedPurchase = useRef(false);
+  useEffect(() => {
+    if (order && isSuccess && !hasTrackedPurchase.current) {
+      hasTrackedPurchase.current = true;
+      trackPurchase(
+        order.id,
+        Number(order.totalAmount),
+        order.items.map((item) => ({
+          id: item.productId,
+          name: item.productName,
+          price: Number(item.price),
+          quantity: item.quantity,
+        }))
+      );
+    }
+  }, [order, isSuccess]);
 
   const loadOrder = async () => {
     try {
@@ -161,6 +210,7 @@ export default function OrderDetailPage() {
 
   const canCancel = order && ["PENDING", "CONFIRMED"].includes(order.status);
   const canModify = order && order.status === "PENDING";
+  const canRedirect = order && !["DELIVERED", "CANCELLED", "REFUNDED"].includes(order.status);
 
   const handleModifyOrder = async () => {
     if (!order) return;
@@ -186,6 +236,43 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleRedirectOrder = async () => {
+    if (!order) return;
+    setRedirecting(true);
+    setRedirectSuccess(false);
+    setRedirectError(null);
+    try {
+      const payload: any = {
+        deliveryMethod: redirectMethod,
+      };
+      if (redirectMethod === "pickup") {
+        payload.pickupPointId = selectedPickup;
+      } else {
+        payload.shippingAddress = {
+          address: redirectAddress,
+          city: "Kampala",
+          country: "Uganda",
+          latitude: redirectLat || undefined,
+          longitude: redirectLng || undefined,
+        };
+      }
+
+      await apiFetch(`/api/orders/${order.id}/redirect`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setRedirectSuccess(true);
+      setShowRedirect(false);
+      loadOrder();
+      setTimeout(() => setRedirectSuccess(false), 4000);
+    } catch (err: any) {
+      setRedirectError(err.message || "Failed to redirect order. Please try again.");
+    } finally {
+      setRedirecting(false);
+    }
+  };
+
   const handleReorder = async () => {
     if (!order) return;
     setReordering(true);
@@ -202,7 +289,7 @@ export default function OrderDetailPage() {
 
   const handleDownloadInvoice = () => {
     if (!order) return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+    const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
     const url = `${API_URL}/api/invoices/${order.id}?format=html`;
     const win = window.open(url, "_blank");
     if (win) {
@@ -493,8 +580,23 @@ export default function OrderDetailPage() {
           <div className="card">
             <h3 className="font-semibold mb-3 flex items-center gap-2">
               <MapPin className="w-5 h-5 text-accent" />
-              Shipping Address
+              {order.deliveryMethod === "seller_pickup" ? "Pickup Location" : order.deliveryMethod === "pickup" ? "Pickup Point" : "Shipping Address"}
             </h3>
+            {order.deliveryMethod && (
+              <div className="mb-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                  order.deliveryMethod === "home" ? "bg-blue-100 text-blue-700" :
+                  order.deliveryMethod === "pickup" ? "bg-purple-100 text-purple-700" :
+                  order.deliveryMethod === "seller_pickup" ? "bg-green-100 text-green-700" :
+                  "bg-gray-100 text-gray-700"
+                }`}>
+                  {order.deliveryMethod === "home" ? "Home Delivery" :
+                   order.deliveryMethod === "pickup" ? "Pickup Point" :
+                   order.deliveryMethod === "seller_pickup" ? "Seller Pickup" :
+                   order.deliveryMethod}
+                </span>
+              </div>
+            )}
             {address ? (
               <div className="text-gray-600 space-y-1 text-sm">
                 <p className="font-medium text-gray-900">{address.name || order.customerName}</p>
@@ -604,6 +706,120 @@ export default function OrderDetailPage() {
           </div>
         )}
 
+        {/* Redirect Order Success */}
+        {redirectSuccess && (
+          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
+            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <p className="text-sm text-green-700 font-medium">Order route updated successfully!</p>
+          </div>
+        )}
+
+        {/* Redirect Order Section */}
+        {canRedirect && showRedirect && (
+          <div className="mb-4 card border border-accent/20 bg-accent/5">
+            <h3 className="font-semibold mb-4 flex items-center gap-2 text-text">
+              <MapPin className="w-5 h-5 text-accent animate-pulse" />
+              Redirect Delivery Route
+            </h3>
+            {["SHIPPED", "PROCESSING"].includes(order.status) && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span><strong>In-Transit Routing:</strong> Since the courier has already dispatched, a <strong>5,000 UGX</strong> redirection fee will be applied to your balance.</span>
+              </div>
+            )}
+            <div className="space-y-4">
+              <div className="flex gap-4 border-b border-border pb-2">
+                <button
+                  type="button"
+                  onClick={() => setRedirectMethod("home")}
+                  className={`pb-1 text-sm font-semibold border-b-2 transition-all ${redirectMethod === "home" ? "border-accent text-accent" : "border-transparent text-text-muted"}`}
+                >
+                  📍 Home / Coordinates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRedirectMethod("pickup")}
+                  className={`pb-1 text-sm font-semibold border-b-2 transition-all ${redirectMethod === "pickup" ? "border-accent text-accent" : "border-transparent text-text-muted"}`}
+                >
+                  📦 Pickup Point
+                </button>
+              </div>
+
+              {redirectMethod === "home" ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-text mb-1">New Delivery Address</label>
+                    <textarea
+                      value={redirectAddress}
+                      onChange={(e) => setRedirectAddress(e.target.value)}
+                      placeholder="Type the new street name or landmark address..."
+                      className="w-full border border-border bg-surface dark:bg-gray-800 rounded-lg px-3 py-2 text-sm min-h-[60px] focus:ring-1 focus:ring-accent outline-none text-text"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-text mb-1.5">Pinpoint GPS Coordinate</label>
+                    <GPSMapPicker
+                      initialLat={order.latitude}
+                      initialLng={order.longitude}
+                      onChange={(lat, lng, addr) => {
+                        setRedirectLat(lat);
+                        setRedirectLng(lng);
+                        if (!redirectAddress) setRedirectAddress(addr);
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <label className="block text-xs font-semibold text-text mb-1">Select PleasureZone Pickup Point</label>
+                  <select
+                    value={selectedPickup}
+                    onChange={(e) => setSelectedPickup(e.target.value)}
+                    className="w-full border border-border bg-surface dark:bg-gray-800 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-accent outline-none text-text"
+                  >
+                    <option value="">-- Choose a nearby agent spot --</option>
+                    {pickupPoints.map((pt) => (
+                      <option key={pt.id} value={pt.id}>
+                        {pt.name} ({pt.city} - {pt.county}) - {pt.hours}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="block text-[10px] text-text-muted">
+                    We will route your package to this secure agent location for private self-pickup.
+                  </span>
+                </div>
+              )}
+
+              {redirectError && (
+                <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  {redirectError}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleRedirectOrder}
+                  disabled={redirecting || (redirectMethod === "home" ? !redirectAddress : !selectedPickup)}
+                  className="px-4 py-2 bg-accent text-white rounded-lg text-sm font-semibold hover:bg-accent/90 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {redirecting ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Updating Route...</>
+                  ) : (
+                    "Confirm Redirection"
+                  )}
+                </button>
+                <button
+                  onClick={() => { setShowRedirect(false); setRedirectError(null); }}
+                  className="px-4 py-2 bg-surface border border-border rounded-lg text-sm hover:bg-surface-secondary text-text"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Modify Order Section */}
         {canModify && showModify && (
           <div className="mb-4 card border border-blue-200 bg-blue-50/30">
@@ -696,15 +912,29 @@ export default function OrderDetailPage() {
         {/* Actions */}
         <div className="flex flex-wrap gap-3">
           <Link href="/account/orders" className="btn-secondary">← My Orders</Link>
-          <Link href={`/track-order?order=${order.orderNumber}`} className="btn-secondary flex items-center gap-2">
-            <Eye className="w-4 h-4" />Track Order
-          </Link>
+          {["SHIPPED", "DELIVERED", "PROCESSING"].includes(order.status) ? (
+            <Link href={`/orders/${order.id}/track`} className="btn-primary flex items-center gap-2">
+              <Navigation className="w-4 h-4 animate-pulse" /> Live Tracker
+            </Link>
+          ) : (
+            <Link href={`/track-order?order=${order.orderNumber}`} className="btn-secondary flex items-center gap-2">
+              <Eye className="w-4 h-4" />Track Order
+            </Link>
+          )}
           {canModify && !showModify && (
             <button
               onClick={() => setShowModify(true)}
               className="btn-secondary flex items-center gap-2"
             >
               <FileText className="w-4 h-4" />Modify Order
+            </button>
+          )}
+          {canRedirect && !showRedirect && (
+            <button
+              onClick={() => setShowRedirect(true)}
+              className="px-4 py-2 border border-accent/30 text-accent hover:bg-accent/5 rounded-lg text-sm font-medium flex items-center gap-2"
+            >
+              <MapPin className="w-4 h-4" /> Redirect Shipment
             </button>
           )}
           <button

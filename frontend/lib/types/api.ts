@@ -12,6 +12,7 @@ export interface User {
   phone: string | null;
   role: "CUSTOMER" | "SELLER" | "ADMIN" | "MANAGER";
   emailVerified: boolean;
+  receiptMasked?: boolean;
   createdAt: string;
 }
 

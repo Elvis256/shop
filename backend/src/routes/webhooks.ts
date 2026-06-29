@@ -4,8 +4,9 @@ import { verifyFlutterwaveTransaction } from "../services/flutterwave";
 import prisma from "../lib/prisma";
 import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
 import { placeCJOrdersForOrder } from "../services/cjOrder";
-import { getCommissionRate } from "./seller";
 import { handleLayawayPayment } from "./layaway";
+import { awardPurchasePoints } from "./loyalty";
+import { confirmPaidOrder, releaseOrderStock } from "../services/orderConfirmation";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
 const router = Router();
@@ -29,6 +30,10 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
       const amount = data.amount;
       const currency = data.currency;
 
+      const orderId = tx_ref.startsWith("split-init-") || tx_ref.startsWith("split-part-")
+        ? tx_ref.split("-").slice(2).join("-")
+        : tx_ref;
+
       // Idempotency: use INSERT with unique constraint first (atomic)
       // This prevents race conditions from concurrent duplicate webhooks
       try {
@@ -49,12 +54,12 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
 
       // Find the order
       const order = await prisma.order.findUnique({
-        where: { id: tx_ref },
-        include: { payments: true },
+        where: { id: orderId },
+        include: { payments: true, items: true },
       });
 
       if (!order) {
-        logger.warn(`Order not found for tx_ref: ${tx_ref}`);
+        logger.warn(`Order not found for tx_ref: ${tx_ref} (orderId: ${orderId})`);
         return res.status(200).json({ error: "Order not found", received: true });
       }
 
@@ -66,7 +71,10 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
         const verifiedCurrency = verification?.data?.currency;
         if (verifiedStatus !== "successful" && status === "successful") {
           logger.warn(`Flutterwave verification mismatch for ${tx_ref}: webhook says successful, API says ${verifiedStatus}`);
-          return res.status(200).json({ error: "Verification mismatch", received: true });
+          // Return 4xx so Flutterwave retries the webhook. A genuine transient
+          // verification delay will then be processed; persistent mismatches will
+          // eventually be flagged below after retries exhaust.
+          return res.status(422).json({ error: "Verification mismatch", received: false });
         }
         if (verifiedAmount !== undefined && verifiedAmount !== amount) {
           logger.warn(`Flutterwave verified amount mismatch for ${tx_ref}: webhook ${amount}, API ${verifiedAmount}`);
@@ -74,12 +82,14 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
         }
       } catch (verifyErr) {
         logger.error(`Flutterwave server-side verification failed for ${tx_ref}, flagging for manual review`, { error: verifyErr });
-        // Do NOT proceed with unverified payment — flag the order for review
+        // Do NOT proceed with unverified payment — flag the order for review.
+        // Return 503 so Flutterwave retries; if it keeps failing the order is
+        // flagged for manual intervention rather than silently accepted.
         await prisma.order.update({
-          where: { id: tx_ref },
+          where: { id: orderId },
           data: { notes: "FLAGGED: Flutterwave server-side verification failed. Manual review required." },
         }).catch(() => {});
-        return res.status(200).json({ received: true, flagged: true });
+        return res.status(503).json({ received: false, flagged: true, error: "Verification service unavailable" });
       }
 
       // Verify amount AND currency match
@@ -88,8 +98,11 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
         return res.status(200).json({ error: "Currency mismatch", received: true });
       }
       // Compare against the payment record amount (handles installments correctly)
-      const matchingPayment = order.payments.find(p => p.flwRef === flw_ref);
-      const expectedAmount = matchingPayment ? Number(matchingPayment.amount) : Number(order.totalAmount);
+      const matchingPayment = order.payments.find(p => p.flwRef === flw_ref || p.flwRef === tx_ref);
+      let expectedAmount = matchingPayment ? Number(matchingPayment.amount) : Number(order.totalAmount);
+      if (order.isSplitPayment && !matchingPayment) {
+        expectedAmount = Math.ceil(Number(order.totalAmount) / 2);
+      }
       if (expectedAmount !== amount) {
         logger.warn(`Amount mismatch for order ${tx_ref}: expected ${expectedAmount}, got ${amount}`);
         return res.status(200).json({ error: "Amount mismatch", received: true });
@@ -99,135 +112,162 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
       await prisma.$transaction(async (tx) => {
         // Get stock reservations for this order
         const reservations = await tx.stockReservation.findMany({
-          where: { orderId: tx_ref, released: false },
+          where: { orderId, released: false },
         });
 
         if (status === "successful") {
           // Guard: reject if order already has a terminal payment status
           const existingOrder = await tx.order.findUnique({
-            where: { id: tx_ref },
-            select: { paymentStatus: true },
+            where: { id: orderId },
+            select: { 
+              paymentStatus: true, 
+              totalAmount: true, 
+              currency: true, 
+              isSplitPayment: true, 
+              splitPaidAmount: true, 
+              splitPartnerPaid: true,
+              splitPartnerPhone: true,
+              customerName: true
+            },
           });
           if (existingOrder?.paymentStatus === "SUCCESSFUL") {
-            logger.info(`Order ${tx_ref} already paid, skipping duplicate confirmation`);
+            logger.info(`Order ${orderId} already paid, skipping duplicate confirmation`);
             return;
           }
 
           await tx.payment.updateMany({
-            where: { orderId: tx_ref, flwRef: flw_ref },
+            where: { orderId, flwRef: flw_ref },
             data: {
               status: "SUCCESSFUL",
               flwTxId: flw_ref,
             },
           });
 
-          await tx.order.update({
-            where: { id: tx_ref },
-            data: { status: "CONFIRMED", paymentStatus: "SUCCESSFUL" },
-          });
+          let isFullyPaid = true;
+          const hasPendingCod = order.payments.some(p => p.method === "COD" && p.status === "PENDING");
 
-          // Finalize stock: decrement actual stock, release reservation
-          for (const reservation of reservations) {
-            await tx.product.update({
-              where: { id: reservation.productId },
+          if (existingOrder?.isSplitPayment && !existingOrder?.splitPartnerPaid) {
+            const currentPaid = Number(existingOrder.splitPaidAmount) + amount;
+            isFullyPaid = currentPaid >= Number(existingOrder.totalAmount);
+            
+            await tx.order.update({
+              where: { id: orderId },
               data: {
-                stock: { decrement: reservation.quantity },
-                reservedStock: { decrement: reservation.quantity },
+                splitPaidAmount: currentPaid,
+                splitPartnerPaid: isFullyPaid,
+                paymentStatus: isFullyPaid ? "SUCCESSFUL" : "PENDING",
+                status: isFullyPaid ? "CONFIRMED" : "PENDING",
               },
             });
             
-            await tx.stockReservation.update({
-              where: { id: reservation.id },
-              data: { released: true },
-            });
-          }
+            if (!isFullyPaid) {
+              // Extend stock reservation to 24 hours to give partner time to pay
+              const newExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+              await tx.stockReservation.updateMany({
+                where: { orderId, released: false },
+                data: { expiresAt: newExpiry },
+              });
+              logger.info(`Split payment part successful for order ${orderId}. Reservation extended for 24h. Waiting for second half.`);
 
-          // Credit seller earnings for marketplace items
-          const sellerItems = await tx.orderItem.findMany({
-            where: { orderId: tx_ref, sellerId: { not: null } },
-            include: { product: { select: { categoryId: true } } },
-          });
-
-          // Group earnings by seller
-          const sellerEarnings: Record<string, { net: number; sales: number }> = {};
-          for (const item of sellerItems) {
-            const rate = await getCommissionRate(item.sellerId!, item.product?.categoryId || null);
-            const itemTotal = Number(item.price) * item.quantity;
-            const commission = Math.round((itemTotal * rate) / 100);
-            const net = itemTotal - commission;
-
-            await tx.orderItem.update({
-              where: { id: item.id },
-              data: { commission },
-            });
-
-            if (!sellerEarnings[item.sellerId!]) {
-              sellerEarnings[item.sellerId!] = { net: 0, sales: 0 };
+              // Trigger secure partner payment link via SMS/WhatsApp
+              if (existingOrder.splitPartnerPhone) {
+                const { sendWhatsApp } = await import("../services/whatsapp");
+                const { sendSMS } = await import("../services/sms");
+                const paymentUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/checkout/split/${orderId}`;
+                const initiatorLabel = existingOrder.customerName || "Your partner";
+                const shareAmount = Math.ceil(Number(existingOrder.totalAmount) / 2);
+                const formattedAmount = `USh ${shareAmount.toLocaleString()}`;
+                
+                const message = `👥 ${initiatorLabel} has split a payment with you 50/50 for their order!\n\nThey paid their half, and your share is ${formattedAmount}.\n\nComplete your secure payment here to process the order:\n${paymentUrl}`;
+                
+                sendWhatsApp({ to: existingOrder.splitPartnerPhone, text: message })
+                  .then((waSent) => {
+                    if (!waSent) sendSMS(existingOrder.splitPartnerPhone!, message).catch(() => {});
+                  })
+                  .catch(() => {
+                    sendSMS(existingOrder.splitPartnerPhone!, message).catch(() => {});
+                  });
+              }
+              return;
             }
-            sellerEarnings[item.sellerId!].net += net;
-            sellerEarnings[item.sellerId!].sales += item.quantity;
-          }
-
-          // Update each seller's balance, totalEarnings, totalSales
-          for (const [sellerId, earnings] of Object.entries(sellerEarnings)) {
-            await tx.seller.update({
-              where: { id: sellerId },
-              data: {
-                balance: { increment: earnings.net },
-                totalEarnings: { increment: earnings.net },
-                totalSales: { increment: earnings.sales },
-              },
+          } else if (hasPendingCod) {
+            // For COD orders: confirmation of 20% deposit transitions status to CONFIRMED,
+            // but paymentStatus remains PENDING until courier confirms the remainder (80%) on delivery.
+            await tx.order.update({
+              where: { id: orderId },
+              data: { status: "CONFIRMED", paymentStatus: "PENDING" },
             });
+          } else {
+            // Standard fully-paid order: use shared confirmation service.
+            await confirmPaidOrder(tx, orderId, { order });
+            logger.info(`Order ${orderId} marked as CONFIRMED`);
           }
-
-          logger.info(`Order ${tx_ref} marked as CONFIRMED`);
         } else {
           await tx.payment.updateMany({
-            where: { orderId: tx_ref },
+            where: { orderId },
             data: { status: "FAILED" },
           });
 
           await tx.order.update({
-            where: { id: tx_ref },
+            where: { id: orderId },
             data: { status: "CANCELLED", paymentStatus: "FAILED" },
           });
 
-          // Release reserved stock back to available
-          for (const reservation of reservations) {
-            await tx.product.update({
-              where: { id: reservation.productId },
-              data: {
-                reservedStock: { decrement: reservation.quantity },
-              },
-            });
-            
-            await tx.stockReservation.update({
-              where: { id: reservation.id },
-              data: { released: true },
-            });
-          }
+          const { refundStoreCreditForOrder } = await import("../utils/storeCredit");
+          await refundStoreCreditForOrder(tx, orderId);
 
-          logger.info(`Order ${tx_ref} payment failed`);
+          // Release reserved stock back to available
+          await releaseOrderStock(tx, orderId);
+
+          logger.info(`Order ${orderId} payment failed`);
         }
       });
 
-      // After successful payment: place dropshipping orders
+      // After successful payment: place dropshipping orders & award loyalty points
       // Note: Cart is cleared on the frontend upon redirect to success page
       if (status === "successful") {
+        if (order.userId) {
+          awardPurchasePoints(order.userId, Number(order.totalAmount), order.id)
+            .catch(err => logger.error("Failed to award purchase points", { error: err }));
+        }
 
-        placeAliExpressOrdersForOrder(tx_ref).catch((err) => {
-          logger.error(`AliExpress auto-order failed for ${tx_ref}`, { error: err.message });
-        });
-        placeCJOrdersForOrder(tx_ref).catch((err) => {
-          logger.error(`CJ auto-order failed for ${tx_ref}`, { error: err.message });
-        });
+        // Notify recipient if it's a gift order
+        if (order.isGift && order.giftToken && order.giftRecipientPhone) {
+          const { sendWhatsApp } = await import("../services/whatsapp");
+          const { sendSMS } = await import("../services/sms");
+          const addressUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/gift/${order.giftToken}`;
+          const senderLabel = order.customerName || "Someone special";
+          const message = order.giftMessage
+            ? `🎁 ${senderLabel} sent you a gift!\n\n"${order.giftMessage}"\n\nChoose where to deliver it (plain packaging, discreet):\n${addressUrl}`
+            : `🎁 ${senderLabel} sent you a gift from PleasureZone!\n\nChoose your delivery address (plain packaging):\n${addressUrl}`;
+          
+          sendWhatsApp({ to: order.giftRecipientPhone, text: message })
+            .then((waSent) => {
+              if (!waSent) sendSMS(order.giftRecipientPhone!, message).catch(() => {});
+            })
+            .catch(() => {
+              sendSMS(order.giftRecipientPhone!, message).catch(() => {});
+            });
+        }
+
+        // Delay placement if hold queue / dispatch delay is active
+        if (!order.dispatchScheduledAt || new Date(order.dispatchScheduledAt) <= new Date()) {
+          placeAliExpressOrdersForOrder(orderId).catch((err) => {
+            logger.error(`AliExpress auto-order failed for ${orderId}`, { error: err.message });
+          });
+          placeCJOrdersForOrder(orderId).catch((err) => {
+            logger.error(`CJ auto-order failed for ${orderId}`, { error: err.message });
+          });
+        } else {
+          logger.info(`[Dropship] Delayed dispatch active for order ${orderId} until ${order.dispatchScheduledAt}. Order added to hold queue.`);
+        }
       }
     }
 
     // Handle installment payment webhooks
     if (event === "charge.completed" && data.tx_ref?.startsWith("installment-")) {
       const parts = data.tx_ref.split("-");
-      // format: installment-{planId}-{paymentId}
+      // format: installment-{planId}-{paymentId} (CUIDs, no hyphens in IDs)
       if (parts.length >= 3) {
         const planId = parts[1];
         const paymentId = parts.slice(2).join("-");
@@ -347,6 +387,20 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
     return res.status(200).json({ received: true });
   } catch (error) {
     logger.error("Webhook error", { error });
+    // Queue failed webhook for retry
+    try {
+      await prisma.webhookRetry.create({
+        data: {
+          provider: "flutterwave",
+          eventType: req.body?.event || "unknown",
+          payload: req.body || {},
+          maxAttempts: 5,
+          nextRetryAt: new Date(Date.now() + 5 * 60 * 1000),
+        },
+      });
+    } catch (retryErr) {
+      logger.error("Failed to queue webhook retry", { error: retryErr });
+    }
     // Return 200 to prevent payment provider retries on processing errors
     return res.status(200).json({ error: "Webhook processing failed", received: true });
   }

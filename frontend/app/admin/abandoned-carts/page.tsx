@@ -21,6 +21,26 @@ function formatDate(dateStr: string) {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
+function getStayDuration(cart: AbandonedCart) {
+  const start = new Date(cart.createdAt).getTime();
+  const end = cart.recoveredAt ? new Date(cart.recoveredAt).getTime() : Date.now();
+  const diffMs = end - start;
+  
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Less than a minute";
+  if (mins < 60) return `${mins}m`;
+  
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) {
+    const remainingMins = mins % 60;
+    return `${hrs}h ${remainingMins}m`;
+  }
+  
+  const days = Math.floor(hrs / 24);
+  const remainingHrs = hrs % 24;
+  return `${days}d ${remainingHrs}h`;
+}
+
 interface AbandonedCart {
   id: string;
   cartId: string;
@@ -51,6 +71,7 @@ export default function AbandonedCartsPage() {
   const [filter, setFilter] = useState<"all" | "pending" | "reminded" | "recovered">("all");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [expandedCartId, setExpandedCartId] = useState<string | null>(null);
 
   const fetchCarts = useCallback(async () => {
     setLoading(true);
@@ -179,9 +200,15 @@ export default function AbandonedCartsPage() {
                 const status = getStatus(cart);
                 const items = Array.isArray(cart.cartData) ? cart.cartData : [];
                 return (
-                  <tr key={cart.id} className="hover:bg-gray-50">
+                  <tr key={cart.id} className="hover:bg-gray-50/50 cursor-pointer select-none" onClick={(e) => {
+                    if ((e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("svg")) return;
+                    setExpandedCartId(expandedCartId === cart.id ? null : cart.id);
+                  }}>
                     <td className="px-4 py-3">
-                      <span className="text-gray-900">{cart.email || "—"}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] text-gray-400 transition-transform ${expandedCartId === cart.id ? "rotate-90" : ""}`}>▶</span>
+                        <span className="text-gray-900">{cart.email || "—"}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-medium">
                       {fmt(Number(cart.cartValue))}
@@ -213,6 +240,58 @@ export default function AbandonedCartsPage() {
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Expandable drawer for cart items rendering below mapping */}
+              {carts.map((cart) => {
+                const items = Array.isArray(cart.cartData) ? cart.cartData : [];
+                if (expandedCartId !== cart.id) return null;
+                return (
+                  <tr key={`expanded-${cart.id}`} className="bg-gray-50/50">
+                    <td colSpan={6} className="px-6 py-4 border-t border-b border-gray-100">
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+                          <div className="flex items-center gap-1.5 text-xs text-gray-400 uppercase tracking-wider font-semibold">
+                            <ShoppingCart className="w-3.5 h-3.5 text-gray-500" />
+                            Cart Contents
+                          </div>
+                          <div className="text-xs text-gray-500 flex gap-4">
+                            <span>
+                              <strong>Placed in cart:</strong> {new Date(cart.createdAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}
+                            </span>
+                            <span>
+                              <strong>Time in cart:</strong> {getStayDuration(cart)} {cart.recoveredAt ? "(Recovered)" : "(Active)"}
+                            </span>
+                          </div>
+                        </div>
+                        {items.length === 0 ? (
+                          <p className="text-xs text-gray-400">No item details captured</p>
+                        ) : (
+                          <div className="grid gap-2 max-w-3xl">
+                            {items.map((item: any, idx: number) => {
+                              const prodName = item.productName || item.product?.name || item.name || "Product " + (item.productId || idx);
+                              const prodPrice = item.price || item.product?.price || 0;
+                              return (
+                                <div key={item.id || idx} className="flex justify-between items-center bg-white border border-gray-100 rounded-xl p-3 shadow-xs text-xs">
+                                  <div className="font-semibold text-gray-800 flex-1 pr-4 truncate">
+                                    {prodName}
+                                  </div>
+                                  <div className="text-gray-500 font-mono flex items-center gap-2">
+                                    <span className="bg-gray-100 text-gray-700 font-sans font-medium px-1.5 py-0.5 rounded text-[10px]">
+                                      Qty: {item.quantity}
+                                    </span>
+                                    <span>
+                                      {cart.currency} {Number(prodPrice).toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>

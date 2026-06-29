@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Outfit, Playfair_Display } from "next/font/google";
 import { Suspense } from "react";
 import LoadingBar from "@/components/LoadingBar";
 import { AuthProvider } from "@/lib/hooks/useAuth";
@@ -15,6 +15,7 @@ import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorker";
 import OrganizationSchema from "@/components/schemas/OrganizationSchema";
+import CsrfFetchInterceptor from "@/components/CsrfFetchInterceptor";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -23,11 +24,25 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+const outfit = Outfit({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+  display: "swap",
+  variable: "--font-outfit",
+});
+
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-playfair",
+});
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ugsex.com";
 
 export const metadata: Metadata = {
   title: {
-    default: "PleasureZone Uganda - Intimate Wellness Products | Discreet Delivery",
+    default: "PleasureZone Uganda — Intimate Wellness, Discreet Delivery",
     template: "%s | PleasureZone Uganda",
   },
   description: "Uganda's #1 online store for intimate wellness products. Shop vibrators, lingerie, lubricants & more with fast discreet delivery, plain packaging & secure checkout.",
@@ -86,7 +101,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${outfit.variable} ${playfair.variable}`} suppressHydrationWarning>
       <head>
         {/* Google tag (gtag.js) — placed first in <head> for detection */}
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-9533LL81DP" />
@@ -95,11 +110,15 @@ export default function RootLayout({
             __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-9533LL81DP');`,
           }}
         />
+        {/* Bing Webmaster Tools Verification */}
+        {process.env.NEXT_PUBLIC_BING_VERIFICATION && (
+          <meta name="msvalidate.01" content={process.env.NEXT_PUBLIC_BING_VERIFICATION} />
+        )}
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
         <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="manifest" id="pwa-manifest" href="/manifest.json" />
         <link rel="preconnect" href="https://www.googletagmanager.com" />
         <link rel="preconnect" href="https://res.cloudinary.com" />
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
@@ -111,6 +130,7 @@ export default function RootLayout({
       <body className="min-h-screen flex flex-col bg-bg text-text transition-colors" suppressHydrationWarning>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:bg-pink-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm">Skip to content</a>
         <ServiceWorkerRegistration />
+        <CsrfFetchInterceptor />
         <OrganizationSchema />
         <ThemeProvider>
         <LanguageProvider>

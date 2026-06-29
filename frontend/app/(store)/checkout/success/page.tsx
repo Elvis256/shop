@@ -12,6 +12,7 @@ function SuccessContent() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
   const txRef = searchParams.get("tx_ref");
+  const payForMe = searchParams.get("payForMe") === "true";
 
   const { clearCart } = useCart();
   const cartCleared = useRef(false);
@@ -53,10 +54,11 @@ function SuccessContent() {
           <CheckCircle className="w-12 h-12 text-green-600 dark:text-green-400" />
         </div>
 
-        <h1 className="text-3xl font-bold mb-3 text-text">Order Confirmed!</h1>
+        <h1 className="text-3xl font-bold mb-3 text-text">{payForMe ? "Order Placed! 💸" : "Order Confirmed!"}</h1>
         <p className="text-text-muted mb-8 leading-relaxed">
-          Thank you for your order. We&apos;ve received your payment and will begin processing shortly.
-          You&apos;ll receive a WhatsApp confirmation within a few minutes.
+          {payForMe 
+            ? "Your order has been saved. We've sent a secure payment link to your friend to complete the payment."
+            : "Thank you for your order. We've received your payment and will begin processing shortly. You'll receive a WhatsApp confirmation within a few minutes."}
         </p>
 
         {/* Order Number Card */}
@@ -75,20 +77,54 @@ function SuccessContent() {
           </div>
         ) : null}
 
+        {payForMe && orderData && (
+          <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6 mb-8 text-left space-y-4 font-sans">
+            <h3 className="font-semibold text-text text-sm flex items-center gap-2">
+              🔗 Share Secure Payment Link
+            </h3>
+            <p className="text-xs text-text-muted">
+              Copy and send this link to your friend or partner via WhatsApp/SMS to complete the payment:
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                value={`${typeof window !== "undefined" ? window.location.origin : ""}/checkout/split/${orderData.id}`}
+                className="input text-xs font-mono bg-white dark:bg-gray-800 border border-border rounded-lg p-2.5 flex-1"
+                id="shareLinkInput"
+                onClick={(e) => (e.target as HTMLInputElement).select()}
+              />
+              <button
+                onClick={() => {
+                  const input = document.getElementById("shareLinkInput") as HTMLInputElement;
+                  input.select();
+                  navigator.clipboard.writeText(input.value);
+                  alert("Payment link copied to clipboard!");
+                }}
+                className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 transition-colors shrink-0 font-sans"
+              >
+                Copy Link
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* What's Next */}
         <div className="text-left bg-surface border border-border rounded-2xl p-6 mb-8 space-y-5">
           <h3 className="font-semibold text-text">What happens next?</h3>
           {[
             {
               icon: MessageCircle,
-              title: "WhatsApp Confirmation",
-              desc: "You'll receive an order confirmation on WhatsApp with your order details and tracking updates.",
-              color: "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400",
+              title: payForMe ? "Waiting for Payment" : "WhatsApp Confirmation",
+              desc: payForMe
+                ? "Once your friend or partner completes the secure payment, we will immediately start processing your order."
+                : "You'll receive an order confirmation on WhatsApp with your order details and tracking updates.",
+              color: payForMe ? "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" : "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400",
             },
             {
               icon: Mail,
-              title: "Email Receipt",
-              desc: "A receipt will be sent to your email address shortly.",
+              title: "Order Email Record",
+              desc: "An email with order information has been sent to your email address.",
               color: "bg-accent/10 text-accent",
             },
             {

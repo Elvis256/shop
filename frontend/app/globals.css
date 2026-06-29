@@ -32,8 +32,8 @@
   --surface-secondary: rgb(var(--surface-secondary-rgb));
   --surface-tertiary: rgb(var(--surface-tertiary-rgb));
 
-  --font-head: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Display", sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text", sans-serif;
+  --font-head: var(--font-outfit), var(--font-inter), -apple-system, sans-serif;
+  --font-body: var(--font-inter), -apple-system, sans-serif;
   --radius-lg: 12px;
   --radius-xl: 16px;
   --radius-2xl: 22px;
@@ -117,6 +117,7 @@ h1, h2, h3, h4, h5, h6 {
 
   .btn {
     @apply inline-flex items-center justify-center gap-2 px-6 py-3 font-medium rounded-full transition-all duration-200 cursor-pointer text-[15px] tracking-[-0.01em];
+    min-height: 44px;
   }
 
   .btn-primary {
@@ -137,6 +138,8 @@ h1, h2, h3, h4, h5, h6 {
 
   .btn-icon {
     @apply inline-flex items-center justify-center p-2.5 rounded-full hover:bg-surface-secondary transition-all duration-150 text-text-muted hover:text-text cursor-pointer active:scale-95;
+    min-height: 44px;
+    min-width: 44px;
   }
 
   .card {
@@ -205,6 +208,27 @@ h1 { @apply text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tighter; }
 h2 { @apply text-2xl sm:text-3xl font-semibold tracking-tight; }
 h3 { @apply text-xl font-semibold tracking-tight; }
 .text-small { @apply text-sm; }
+
+/* Mobile touch targets — WCAG 2.5.5 recommends ≥44×44px on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  button:not([aria-hidden="true"]),
+  a[role="button"],
+  [role="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  input[type="checkbox"],
+  input[type="radio"],
+  select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* WCAG contrast — Tailwind's gray-300/400 fail AA on white backgrounds.
+   Bump them in LIGHT mode only (dark mode keeps the light Tailwind values). */
+html:not(.dark) .text-gray-300 { color: #6b7280 !important; }  /* was #d1d5db (1.6:1, fail) */
+html:not(.dark) .text-gray-400 { color: #6b7280 !important; }  /* was #9ca3af (2.8:1, fail) */
 
 /* Grid utilities — edge-to-edge on large screens */
 .grid-products {

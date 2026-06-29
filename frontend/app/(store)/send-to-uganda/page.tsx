@@ -10,7 +10,7 @@ import {
 } from "@stripe/react-stripe-js";
 import { Globe, MapPin, Gift, CheckCircle, Loader2, ChevronDown } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
 
 const stripePromise = STRIPE_PK ? loadStripe(STRIPE_PK) : null;

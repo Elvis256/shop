@@ -67,16 +67,24 @@ router.post("/unsubscribe", asyncHandler(async (req: Request, res: Response) => 
   }
 }));
 
-// POST /api/push/admin/send — Send push to all subscribers (admin)
+// POST /api/push/admin/send — Send push to targeted subscribers (admin)
 router.post("/admin/send", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
-    const { title, body, url } = req.body;
+    const { title, body, url, registeredOnly, subscriberIds } = req.body;
 
     if (!title || !body) {
       return res.status(400).json({ error: "title and body are required" });
     }
 
+    const where: any = {};
+    if (subscriberIds && Array.isArray(subscriberIds) && subscriberIds.length > 0) {
+      where.id = { in: subscriberIds };
+    } else if (registeredOnly) {
+      where.userId = { not: null };
+    }
+
     const subscriptions = await prisma.pushSubscription.findMany({
+      where,
       take: 1000,
       orderBy: { createdAt: "desc" },
     });
@@ -126,14 +134,14 @@ router.get("/admin/stats", authenticate, requireAdmin, asyncHandler(async (_req:
   try {
     const total = await prisma.pushSubscription.count();
     const withUser = await prisma.pushSubscription.count({ where: { userId: { not: null } } });
-    res.json({ total, registered: withUser, anonymous: total - withUser });
+    res.json({ totalSubscribers: total, registeredSubscribers: withUser, anonymousSubscribers: total - withUser });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
 }));
 
-// DELETE /api/push/admin/:id — Delete a subscriber (admin)
-router.delete("/admin/:id", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
+// DELETE /api/push/admin/subscribers/:id — Delete a subscriber (admin)
+router.delete("/admin/subscribers/:id", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     await prisma.pushSubscription.delete({ where: { id: req.params.id } });
     res.json({ success: true });

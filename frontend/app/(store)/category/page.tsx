@@ -6,7 +6,7 @@ import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
 import { Grid3X3, LayoutGrid, ChevronLeft, ChevronRight, X, Filter, Star, SlidersHorizontal } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 interface Product {
   id: string;
@@ -208,7 +208,7 @@ function CategoryContent() {
           {categories.map((cat) => (
             <Link
               key={cat.id}
-              href={`/category?cat=${cat.slug}`}
+              href={`/category/${cat.slug}`}
               onClick={onClose}
               className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
                 categorySlug === cat.slug 
@@ -381,7 +381,7 @@ function CategoryContent() {
 
           {/* Mobile Filters Drawer */}
           {mobileFiltersOpen && (
-            <div className="fixed inset-0 z-50 lg:hidden">
+            <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Product filters">
               <div className="absolute inset-0 bg-black/40" onClick={() => setMobileFiltersOpen(false)} />
               <div className="absolute right-0 top-0 bottom-0 w-80 max-w-full bg-white p-5 overflow-y-auto shadow-xl">
                 <FilterPanel onClose={() => setMobileFiltersOpen(false)} />
@@ -402,27 +402,31 @@ function CategoryContent() {
                   <Filter className="w-4 h-4" />
                   Filters
                   {activeFilterCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 bg-gray-900 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                    <span className="absolute -top-1.5 -right-1.5 bg-gray-900 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center" aria-label={`${activeFilterCount} active filters`}>
                       {activeFilterCount}
                     </span>
                   )}
                 </button>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500" aria-live="polite">
                   {loading ? "Loading..." : `${totalProducts} products`}
                 </p>
               </div>
               <div className="flex items-center gap-3">
                 {/* Grid Size Toggle */}
-                <div className="hidden sm:flex items-center border rounded-lg">
+                <div className="hidden sm:flex items-center border rounded-lg" role="group" aria-label="Grid size">
                   <button
                     onClick={() => setGridSize("large")}
                     className={`p-2 ${gridSize === "large" ? "bg-gray-100" : ""}`}
+                    aria-label="Large grid"
+                    aria-pressed={gridSize === "large"}
                   >
                     <LayoutGrid className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => setGridSize("small")}
                     className={`p-2 ${gridSize === "small" ? "bg-gray-100" : ""}`}
+                    aria-label="Small grid"
+                    aria-pressed={gridSize === "small"}
                   >
                     <Grid3X3 className="w-4 h-4" />
                   </button>
@@ -536,11 +540,12 @@ function CategoryContent() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 mt-10">
+              <nav aria-label="Pagination" className="flex items-center justify-center gap-2 mt-10">
                 <button
                   className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-40"
                   disabled={page === 1}
                   onClick={() => setPage((p) => p - 1)}
+                  aria-label="Previous page"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -551,10 +556,11 @@ function CategoryContent() {
                   className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-40"
                   disabled={page === totalPages}
                   onClick={() => setPage((p) => p + 1)}
+                  aria-label="Next page"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
-              </div>
+              </nav>
             )}
           </div>
         </div>

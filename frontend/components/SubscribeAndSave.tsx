@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import Link from "next/link";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 const INTERVALS = [
   { label: "Every 2 weeks", value: "2_weeks" },

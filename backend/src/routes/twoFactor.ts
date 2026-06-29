@@ -188,11 +188,23 @@ router.post("/enable", authenticate, asyncHandler(async (req: AuthRequest, res: 
 // Verify 2FA token (during login) — issues JWT tokens on success
 router.post("/verify", asyncHandler(async (req, res) => {
   try {
-    const { userId, token } = req.body;
+    const { twoFaToken, token } = req.body;
 
-    if (!userId || !token) {
-      return res.status(400).json({ error: "User ID and token required" });
+    if (!twoFaToken || !token) {
+      return res.status(400).json({ error: "Verification token and code required" });
     }
+
+    // Resolve userId from opaque 2FA token (stored in Redis during login)
+    let userId: string | null = null;
+    try {
+      userId = await redis.get(`2fa:pending:${twoFaToken}`);
+    } catch {}
+    if (!userId) {
+      return res.status(400).json({ error: "2FA session expired. Please login again." });
+    }
+
+    // Delete the pending token so it can't be reused
+    try { await redis.del(`2fa:pending:${twoFaToken}`); } catch {}
 
     // Rate limit 2FA verification attempts (10 attempts per 15 minutes per userId)
     const rateLimitKey = `2fa_attempts:${userId}`;

@@ -126,16 +126,31 @@ router.get(
 export async function notifyBackInStock(productId: string): Promise<number> {
   const subscribers = await prisma.backInStockSub.findMany({
     where: { productId, notified: false },
-    include: { product: { select: { name: true } } },
+    include: { product: { select: { name: true, slug: true } } },
   });
 
   if (subscribers.length === 0) return 0;
 
+  const { sendEmail } = await import("../lib/email");
+
   for (const sub of subscribers) {
-    // Log instead of sending email since SMTP may not work
-    logger.info(
-      `[BackInStock] Would email ${sub.email}: "${sub.product.name}" is back in stock`
-    );
+    try {
+      const productUrl = `${process.env.FRONTEND_URL || "https://ugsex.com"}/product/${sub.product.slug}`;
+      await sendEmail({
+        to: sub.email,
+        template: "back-in-stock",
+        data: {
+          productName: sub.product.name,
+          productUrl,
+        },
+      });
+      logger.info(`Sent back-in-stock email to ${sub.email} for product "${sub.product.name}"`);
+    } catch (err: any) {
+      logger.warn(`Failed to send back-in-stock email to ${sub.email}, falling back to log: ${err.message}`);
+      logger.info(
+        `[BackInStock] Fallback: Would email ${sub.email}: "${sub.product.name}" is back in stock`
+      );
+    }
   }
 
   await prisma.backInStockSub.updateMany({

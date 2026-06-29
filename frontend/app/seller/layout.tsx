@@ -25,6 +25,7 @@ import {
   Bell,
   Zap,
   Tag,
+  AlertTriangle,
 } from "lucide-react";
 
 interface NavItem {
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
   { href: "/seller/orders", icon: ShoppingCart, label: "Orders" },
   { href: "/seller/reviews", icon: Star, label: "Reviews" },
   { href: "/seller/returns", icon: RotateCcw, label: "Returns" },
+  { href: "/seller/disputes", icon: AlertTriangle, label: "Disputes" },
   { href: "/seller/analytics", icon: BarChart2, label: "Analytics" },
   { href: "/seller/ads", icon: Zap, label: "Promote & Ads" },
   { href: "/seller/promotions", icon: Tag, label: "Coupons" },
@@ -57,7 +59,7 @@ export default function SellerLayout({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Array<{ type: string; message: string; detail?: string; time: string; link?: string }>>([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  const isPublicPage = pathname === "/seller/register" || pathname === "/seller/login";
+  const isPublicPage = pathname === "/seller/register" || pathname === "/seller/login" || pathname === "/seller/onboarding";
   const isSeller = !!(user?.seller && user.seller.status === "APPROVED");
 
   useEffect(() => {

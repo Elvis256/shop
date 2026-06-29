@@ -68,7 +68,7 @@ export default function LoyaltyPage() {
 
   const fetchLoyalty = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/loyalty`, {
+      const res = await fetch(`/api/loyalty`, {
         credentials: "include",
       });
       if (res.ok) {
@@ -87,7 +87,7 @@ export default function LoyaltyPage() {
     
     setRedeeming(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/loyalty/redeem`, {
+      const res = await fetch(`/api/loyalty/redeem`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

@@ -6,14 +6,16 @@ import Section from "@/components/Section";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useCart } from "@/lib/hooks/useCart";
+import { useAuth } from "@/lib/hooks/useAuth";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 function ConfirmContent() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
   const [status, setStatus] = useState<"loading" | "success" | "failed" | "pending">("loading");
   const { clearCart } = useCart();
+  const { user } = useAuth();
   const clearCartRef = useRef(clearCart);
   clearCartRef.current = clearCart;
 
@@ -30,17 +32,28 @@ function ConfirmContent() {
 
     const checkStatus = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status`, { credentials: "include" });
+        // For guest checkouts, pass stored checkout email/phone for verification
+        // (payment-status endpoint requires these to prevent IDOR)
+        let verifyParams = "";
+        if (!user) {
+          try {
+            const savedEmail = sessionStorage.getItem("checkout_email");
+            const savedPhone = sessionStorage.getItem("checkout_phone");
+            if (savedEmail) verifyParams += `?email=${encodeURIComponent(savedEmail)}`;
+            else if (savedPhone) verifyParams += `?phone=${encodeURIComponent(savedPhone)}`;
+          } catch {}
+        }
+        const res = await fetch(`${API_URL}/api/orders/${orderId}/payment-status${verifyParams}`, { credentials: "include" });
         const data = await res.json();
 
         if (cancelled) return;
 
-        if (data.paymentStatus === "SUCCESSFUL") {
+        if (data.paymentStatus === "SUCCESSFUL" || data.status === "CONFIRMED") {
           setStatus("success");
           clearCartRef.current();
           return;
         }
-        if (data.paymentStatus === "FAILED") {
+        if (data.paymentStatus === "FAILED" || data.status === "CANCELLED") {
           setStatus("failed");
           return;
         }

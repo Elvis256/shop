@@ -75,14 +75,14 @@ const settingDefinitions: Record<string, SettingDef> = {
   store_name: { label: "Store Name", type: "text", description: "Your store's display name", section: "General", placeholder: "My Store" },
   store_description: { label: "Store Description", type: "textarea", description: "Brief description shown in search engines & social shares", section: "General", placeholder: "Premium products for discerning customers" },
   store_email: { label: "Contact Email", type: "email", section: "General", placeholder: "hello@mystore.com" },
-  store_phone: { label: "Contact Phone", type: "tel", section: "General", placeholder: "+256 700 000 000" },
+  store_phone: { label: "Contact Phone", type: "tel", section: "General", placeholder: "Enter phone number" },
   store_address: { label: "Store Address", type: "textarea", section: "General", placeholder: "123 Main St, Kampala, Uganda" },
   store_currency: { label: "Default Currency", type: "select", options: ["UGX", "USD", "EUR", "GBP", "KES", "TZS", "RWF"], section: "General" },
   store_timezone: { label: "Timezone", type: "select", options: ["Africa/Kampala", "Africa/Nairobi", "Africa/Dar_es_Salaam", "Africa/Kigali", "UTC", "America/New_York", "Europe/London"], section: "General" },
 
   // ── Store: Support ──
   contact_email: { label: "Support Email", type: "email", description: "Shown on the contact page", section: "Support & Hours", placeholder: "support@mystore.com" },
-  contact_phone: { label: "Support Phone", type: "tel", description: "Customers will call this number", section: "Support & Hours", placeholder: "+256 700 000 000" },
+  contact_phone: { label: "Support Phone", type: "tel", description: "Customers will call this number", section: "Support & Hours", placeholder: "Enter phone number" },
   contact_whatsapp: { label: "WhatsApp Number", type: "text", description: "Digits only, no spaces (e.g. 256700000000)", section: "Support & Hours", placeholder: "256700000000" },
   contact_hours: { label: "Business Hours", type: "text", description: "Displayed on the contact page", section: "Support & Hours", placeholder: "Mon-Sat, 9am-6pm EAT" },
 
@@ -155,6 +155,9 @@ const settingDefinitions: Record<string, SettingDef> = {
   email_smtp_secure: { label: "Use TLS/SSL", type: "toggle", description: "Encrypt email connections (recommended)", section: "SMTP Configuration" },
 
   // ── Notifications ──
+  push_order_confirmation: { label: "Order Confirmation Push", type: "toggle", description: "Send push notification when order is placed", section: "Push Notifications" },
+  push_shipping_update: { label: "Shipping Update Push", type: "toggle", description: "Send push notification when order ships", section: "Push Notifications" },
+  push_delivery_update: { label: "Delivery Update Push", type: "toggle", description: "Send push notification when order is delivered", section: "Push Notifications" },
   notifications_low_stock: { label: "Low Stock Alerts", type: "toggle", description: "Get notified when products run low", section: "Admin Alerts" },
   notifications_new_order: { label: "New Order Alerts", type: "toggle", description: "Instant notification on new orders", section: "Admin Alerts" },
   notifications_new_review: { label: "New Review Alerts", type: "toggle", description: "Get notified of customer reviews", section: "Admin Alerts" },
@@ -234,7 +237,7 @@ function keyToCategory(key: string): string {
   if (key.startsWith("payment_")) return "payment";
   if (key.startsWith("shipping_")) return "shipping";
   if (key.startsWith("email_")) return "email";
-  if (key.startsWith("notifications_") || key.startsWith("low_stock_")) return "notifications";
+  if (key.startsWith("notifications_") || key.startsWith("low_stock_") || key.startsWith("push_")) return "notifications";
   if (key.startsWith("security_")) return "security";
   if (key.startsWith("tracking_") || key.startsWith("whatsapp_") || key.startsWith("sms_") || key.startsWith("courier_")) return "integrations";
   return "store";
@@ -266,6 +269,13 @@ export default function SettingsPage() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [applyingFee, setApplyingFee] = useState(false);
+  const [testingSmtp, setTestingSmtp] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testEmailAddress, setTestEmailAddress] = useState("");
+  const [testingSms, setTestingSms] = useState(false);
+  const [testSmsPhone, setTestSmsPhone] = useState("");
+  const [testingWhatsapp, setTestingWhatsapp] = useState(false);
+  const [testWhatsappPhone, setTestWhatsappPhone] = useState("");
 
   // ── Toast helpers ──
   let toastIdRef = 0;
@@ -395,6 +405,67 @@ export default function SettingsPage() {
       }
     };
     input.click();
+  };
+
+  // ── Test handlers ──
+  const handleTestSmtp = async () => {
+    setTestingSmtp(true);
+    try {
+      const res = await apiFetch("/api/admin/settings/test-smtp", { method: "POST" });
+      addToast("success", res.message || "SMTP connection verified");
+    } catch (e: any) {
+      addToast("error", e.message || "SMTP connection failed");
+    } finally {
+      setTestingSmtp(false);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    if (!testEmailAddress) { addToast("error", "Enter an email address"); return; }
+    setTestingEmail(true);
+    try {
+      const res = await apiFetch("/api/admin/settings/test-email", {
+        method: "POST",
+        body: JSON.stringify({ email: testEmailAddress }),
+      });
+      addToast("success", res.message || "Test email sent");
+    } catch (e: any) {
+      addToast("error", e.message || "Failed to send test email");
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
+  const handleTestSms = async () => {
+    if (!testSmsPhone) { addToast("error", "Enter a phone number"); return; }
+    setTestingSms(true);
+    try {
+      const res = await apiFetch("/api/admin/settings/test-sms", {
+        method: "POST",
+        body: JSON.stringify({ phone: testSmsPhone }),
+      });
+      addToast("success", res.message || "Test SMS sent");
+    } catch (e: any) {
+      addToast("error", e.message || "Failed to send test SMS");
+    } finally {
+      setTestingSms(false);
+    }
+  };
+
+  const handleTestWhatsapp = async () => {
+    if (!testWhatsappPhone) { addToast("error", "Enter a phone number"); return; }
+    setTestingWhatsapp(true);
+    try {
+      const res = await apiFetch("/api/admin/settings/test-whatsapp", {
+        method: "POST",
+        body: JSON.stringify({ phone: testWhatsappPhone }),
+      });
+      addToast("success", res.message || "Test WhatsApp message sent");
+    } catch (e: any) {
+      addToast("error", e.message || "Failed to send test WhatsApp message");
+    } finally {
+      setTestingWhatsapp(false);
+    }
   };
 
   // ── Search & filtering ──
@@ -608,6 +679,75 @@ export default function SettingsPage() {
           >
             {applyingFee ? "Recalculating…" : "Recalculate All Prices"}
           </button>
+        </div>
+      )}
+      {sectionName === "SMTP Configuration" && (
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleTestSmtp}
+              disabled={testingSmtp}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {testingSmtp ? "Testing…" : "Test Connection"}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="email"
+              value={testEmailAddress}
+              onChange={(e) => setTestEmailAddress(e.target.value)}
+              placeholder="test@example.com"
+              className="flex-1 px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            <button
+              onClick={handleTestEmail}
+              disabled={testingEmail}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {testingEmail ? "Sending…" : "Send Test Email"}
+            </button>
+          </div>
+        </div>
+      )}
+      {sectionName === "SMS (Africa's Talking)" && (
+        <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-center gap-2">
+            <input
+              type="tel"
+              value={testSmsPhone}
+              onChange={(e) => setTestSmsPhone(e.target.value)}
+              placeholder="+256700000000"
+              className="flex-1 px-3 py-2 border border-green-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
+            />
+            <button
+              onClick={handleTestSms}
+              disabled={testingSms}
+              className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {testingSms ? "Sending…" : "Send Test SMS"}
+            </button>
+          </div>
+        </div>
+      )}
+      {sectionName === "WhatsApp Business" && (
+        <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+          <div className="flex items-center gap-2">
+            <input
+              type="tel"
+              value={testWhatsappPhone}
+              onChange={(e) => setTestWhatsappPhone(e.target.value)}
+              placeholder="256700000000"
+              className="flex-1 px-3 py-2 border border-emerald-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
+            />
+            <button
+              onClick={handleTestWhatsapp}
+              disabled={testingWhatsapp}
+              className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {testingWhatsapp ? "Sending…" : "Send Test WhatsApp"}
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -18,6 +18,46 @@ export default function SecurityPage() {
   const [error, setError] = useState("");
   const [showBackupCodes, setShowBackupCodes] = useState(false);
 
+  const [stealthPin, setStealthPin] = useState("");
+  const [hasStealthPin, setHasStealthPin] = useState(false);
+  const [stealthTimeout, setStealthTimeout] = useState(300000);
+  const [stealthAutoWipe, setStealthAutoWipe] = useState(false);
+  const [pinChangeSuccess, setPinChangeSuccess] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const pin = localStorage.getItem("discreet_pin");
+      setHasStealthPin(!!pin);
+      const timeout = localStorage.getItem("discreet_timeout");
+      setStealthTimeout(timeout ? parseInt(timeout) : 300000);
+      setStealthAutoWipe(localStorage.getItem("discreet_self_destruct") === "1");
+    }
+  }, []);
+
+  const handleSaveStealthPinSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (stealthPin) {
+      if (!/^\d{4}$/.test(stealthPin)) {
+        alert("PIN must be exactly 4 digits");
+        return;
+      }
+      localStorage.setItem("discreet_pin", stealthPin);
+      setHasStealthPin(true);
+      setStealthPin("");
+    }
+    localStorage.setItem("discreet_timeout", String(stealthTimeout));
+    localStorage.setItem("discreet_self_destruct", stealthAutoWipe ? "1" : "0");
+    setPinChangeSuccess(true);
+    setTimeout(() => setPinChangeSuccess(false), 3000);
+  };
+
+  const handleRemoveStealthPin = () => {
+    localStorage.removeItem("discreet_pin");
+    setHasStealthPin(false);
+    setStealthPin("");
+    alert("Stealth screen lock PIN removed");
+  };
+
   useEffect(() => {
     if (!isLoading && !user) {
       router.push("/auth/login");
@@ -32,7 +72,7 @@ export default function SecurityPage() {
 
   const fetch2FAStatus = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/2fa/status`, {
+      const res = await fetch(`/api/2fa/status`, {
         credentials: "include",
       });
       if (res.ok) {
@@ -49,7 +89,7 @@ export default function SecurityPage() {
   const startSetup = async () => {
     setError("");
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/2fa/setup`, {
+      const res = await fetch(`/api/2fa/setup`, {
         method: "POST",
         credentials: "include",
       });
@@ -74,7 +114,7 @@ export default function SecurityPage() {
     
     setError("");
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/2fa/enable`, {
+      const res = await fetch(`/api/2fa/enable`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -99,7 +139,7 @@ export default function SecurityPage() {
     if (!code) return;
     
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/2fa/disable`, {
+      const res = await fetch(`/api/2fa/disable`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -306,6 +346,99 @@ export default function SecurityPage() {
                   <Link href="/auth/forgot-password" className="text-sm text-accent hover:underline mt-2 inline-block">
                     Change password
                   </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Stealth Lock Screen Section */}
+            <div className="card mb-6">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-purple-50 dark:bg-purple-950/40 rounded-full flex items-center justify-center shrink-0">
+                  <Shield className="w-6 h-6 text-accent" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-base mb-1">Stealth Lock Screen</h3>
+                  <p className="text-sm text-text-muted mb-4">
+                    Protect your session with a 4-digit PIN overlay when idle.
+                  </p>
+
+                  <form onSubmit={handleSaveStealthPinSettings} className="space-y-4">
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="stealthPin" className="block text-xs font-semibold mb-1">
+                          {hasStealthPin ? "Change 4-Digit Security PIN" : "Set 4-Digit Security PIN"}
+                        </label>
+                        <input
+                          id="stealthPin"
+                          type="password"
+                          pattern="[0-9]*"
+                          inputMode="numeric"
+                          maxLength={4}
+                          placeholder={hasStealthPin ? "•••• (Enter new 4 digits)" : "Enter 4 digits"}
+                          className="input font-mono text-center tracking-widest text-lg"
+                          value={stealthPin}
+                          onChange={(e) => setStealthPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="stealthTimeout" className="block text-xs font-semibold mb-1">
+                          Idle Lock Duration
+                        </label>
+                        <select
+                          id="stealthTimeout"
+                          className="input text-sm"
+                          value={stealthTimeout}
+                          onChange={(e) => setStealthTimeout(parseInt(e.target.value))}
+                        >
+                          <option value={60000}>1 minute</option>
+                          <option value={300000}>5 minutes</option>
+                          <option value={600000}>10 minutes</option>
+                          <option value={36000000}>Disable Lock</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="bg-surface-secondary dark:bg-gray-900/40 p-3 rounded-lg border border-border">
+                      <label className="flex items-start gap-3 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={stealthAutoWipe}
+                          onChange={(e) => setStealthAutoWipe(e.target.checked)}
+                          className="rounded border-gray-300 text-accent focus:ring-accent accent-accent w-4 h-4 cursor-pointer mt-0.5"
+                        />
+                        <div>
+                          <span className="block text-xs font-semibold text-text">
+                            Auto-Wipe Session on Timeout
+                          </span>
+                          <span className="block text-[10px] text-text-muted leading-tight mt-0.5">
+                            Destroys cart, session tokens, and local cache if idle threshold is met to prevent domestic exposure.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+
+                    {pinChangeSuccess && (
+                      <div className="p-2 bg-green-50 border border-green-200 rounded text-xs text-green-700 font-medium">
+                        ✓ Stealth security settings updated successfully
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button type="submit" className="btn-primary py-2 text-xs">
+                        Save Security settings
+                      </button>
+                      {hasStealthPin && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveStealthPin}
+                          className="btn-secondary py-2 text-xs text-red-600 hover:text-red-700"
+                        >
+                          Remove PIN
+                        </button>
+                      )}
+                    </div>
+                  </form>
                 </div>
               </div>
             </div>

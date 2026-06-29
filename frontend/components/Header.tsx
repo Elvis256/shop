@@ -88,6 +88,7 @@ export default function Header() {
   // Toys/Lingerie/Wellness are inside the mega-menu, not duplicated in top nav
   const desktopNavLinks = [
     { href: "/sales", label: "Sales" },
+    { href: "/store", label: "Stores" },
     { href: "/blog", label: "Learn" },
     { href: "/beginners", label: "New? Start Here" },
   ];
@@ -96,11 +97,12 @@ export default function Header() {
   const mobileNavLinks = [
     { href: "/category", label: "Shop All" },
     { href: "/sales", label: "Sales & Deals" },
+    { href: "/store", label: "Stores" },
     { href: "/beginners", label: "New? Start Here" },
     { href: "/couples", label: "Couples" },
-    { href: "/category?cat=toys", label: "Toys" },
-    { href: "/category?cat=lingerie", label: "Lingerie" },
-    { href: "/category?cat=wellness", label: "Wellness" },
+    { href: "/category/toys", label: "Toys" },
+    { href: "/category/lingerie", label: "Lingerie" },
+    { href: "/category/wellness", label: "Wellness" },
     { href: "/blog", label: "Learn" },
     { href: "/subscription-boxes", label: "Subscriptions" },
   ];
@@ -154,11 +156,11 @@ export default function Header() {
                         <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Categories</p>
                         <div className="space-y-1">
                           {[
-                            { href: "/category?cat=toys", label: "Toys & Vibrators" },
-                            { href: "/category?cat=lingerie", label: "Lingerie" },
-                            { href: "/category?cat=wellness", label: "Wellness" },
-                            { href: "/category?cat=lubricants", label: "Lubricants" },
-                            { href: "/category?cat=couples", label: "Couples" },
+                            { href: "/category/toys", label: "Toys & Vibrators" },
+                            { href: "/category/lingerie", label: "Lingerie" },
+                            { href: "/category/wellness", label: "Wellness" },
+                            { href: "/category/lubricants", label: "Lubricants" },
+                            { href: "/category/couples", label: "Couples" },
                           ].map((item) => (
                             <Link
                               key={item.href}
@@ -303,6 +305,8 @@ export default function Header() {
                 className="btn-icon lg:hidden"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+                aria-expanded={mobileMenuOpen}
+                aria-controls="mobile-menu"
               >
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
@@ -311,7 +315,7 @@ export default function Header() {
 
           {/* Mobile Menu */}
           {mobileMenuOpen && (
-            <nav className="lg:hidden py-4 border-t border-border animate-fade-in">
+            <nav id="mobile-menu" className="lg:hidden py-4 border-t border-border animate-fade-in" aria-label="Mobile navigation">
               <div className="space-y-0.5">
                 {mobileNavLinks.map((link) => (
                   <Link
@@ -368,7 +372,7 @@ export default function Header() {
 
       {/* Search Overlay — uses full SearchBar with suggestions */}
       {mobileSearchOpen && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 animate-fade-in" onClick={() => setMobileSearchOpen(false)}>
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 animate-fade-in" role="dialog" aria-modal="true" aria-label="Search products" onClick={() => setMobileSearchOpen(false)}>
           <div
             className="bg-surface p-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}

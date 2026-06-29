@@ -13,12 +13,14 @@ interface AddToCartButtonProps {
     imageUrl?: string | null;
     stock?: number;
   };
+  variantId?: string | null;
+  variantName?: string | null;
   showQuantity?: boolean;
   className?: string;
   label?: string;
 }
 
-export default function AddToCartButton({ product, showQuantity = false, className = "", label }: AddToCartButtonProps) {
+export default function AddToCartButton({ product, variantId, variantName, showQuantity = false, className = "", label }: AddToCartButtonProps) {
   const [quantity, setQuantity] = useState(1);
   const [isAdding, setIsAdding] = useState(false);
   const { addItem } = useCart();
@@ -28,9 +30,11 @@ export default function AddToCartButton({ product, showQuantity = false, classNa
     if (product.stock !== undefined && product.stock <= 0) return;
     setIsAdding(true);
     addItem({
-      id: product.id,
+      id: variantId || product.id,
       productId: product.id,
-      name: product.name,
+      variantId: variantId || null,
+      variantName: variantName || null,
+      name: variantName ? `${product.name} — ${variantName}` : product.name,
       slug: product.slug,
       price: product.price,
       imageUrl: product.imageUrl || null,

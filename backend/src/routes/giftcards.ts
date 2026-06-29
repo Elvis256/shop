@@ -21,9 +21,21 @@ function generateGiftCardCode(): string {
   return code;
 }
 
-// GET /api/gift-cards — List available denominations
-router.get("/", asyncHandler(async (_req: Request, res: Response) => {
+// GET /api/gift-cards — List all gift cards (admin) or denominations (public)
+router.get("/", asyncHandler(async (req: Request, res: Response) => {
   try {
+    // Admin requests include auth cookie — return full card list
+    const hasCookie = (req as any).cookies?.auth_token;
+    const hasBearer = req.headers.authorization?.startsWith("Bearer ");
+    if (hasCookie || hasBearer) {
+      const cards = await prisma.giftCard.findMany({
+        orderBy: { createdAt: "desc" },
+        include: { redemptions: { orderBy: { createdAt: "desc" } } },
+      });
+      return res.json(cards);
+    }
+
+    // Public: return denominations
     const denominations = [
       { value: 50000, label: "UGX 50,000", currency: "UGX" },
       { value: 100000, label: "UGX 100,000", currency: "UGX" },
@@ -34,6 +46,68 @@ router.get("/", asyncHandler(async (_req: Request, res: Response) => {
     return res.json({ denominations });
   } catch (error) {
     return res.status(500).json({ error: "Failed to fetch gift cards" });
+  }
+}));
+
+// POST /api/gift-cards — Admin: create a gift card with any value
+router.post("/", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { initialValue, recipientEmail, recipientName, message, expiresAt } = req.body;
+
+    if (!initialValue || Number(initialValue) <= 0) {
+      return res.status(400).json({ error: "initialValue must be positive" });
+    }
+
+    const code = generateGiftCardCode();
+    const expiry = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
+    const giftCard = await prisma.giftCard.create({
+      data: {
+        code,
+        initialValue: Number(initialValue),
+        currentValue: Number(initialValue),
+        currency: "UGX",
+        purchaserEmail: (req.user as any)?.email || null,
+        purchaserName: (req.user as any)?.name || "Admin",
+        recipientEmail: recipientEmail || null,
+        recipientName: recipientName || null,
+        message: message || null,
+        expiresAt: expiry,
+      },
+    });
+
+    // Send email if recipient specified
+    if (recipientEmail) {
+      sendGiftCardEmail(giftCard).catch(() => {});
+    }
+
+    return res.status(201).json({ giftCard });
+  } catch (error) {
+    logger.error("Admin create gift card error", { error });
+    return res.status(500).json({ error: "Failed to create gift card" });
+  }
+}));
+
+// PUT /api/gift-cards/:code — Admin: update a gift card (toggle active, etc.)
+router.put("/:code", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { code } = req.params;
+    const { isActive } = req.body;
+
+    const card = await prisma.giftCard.findUnique({ where: { code: code.toUpperCase() } });
+    if (!card) {
+      return res.status(404).json({ error: "Gift card not found" });
+    }
+
+    const updated = await prisma.giftCard.update({
+      where: { code: code.toUpperCase() },
+      data: { isActive: typeof isActive === "boolean" ? isActive : card.isActive },
+    });
+
+    return res.json({ giftCard: updated });
+  } catch (error) {
+    logger.error("Admin update gift card error", { error });
+    return res.status(500).json({ error: "Failed to update gift card" });
   }
 }));
 
@@ -292,5 +366,19 @@ async function sendGiftCardEmail(giftCard: any): Promise<void> {
     html,
   });
 }
+
+// GET /api/gift-cards/:code — Get gift card detail by code (must be after /check, /purchase, /redeem)
+router.get("/:code", asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const card = await prisma.giftCard.findUnique({
+      where: { code: req.params.code.toUpperCase() },
+      include: { redemptions: { orderBy: { createdAt: "desc" } } },
+    });
+    if (!card) return res.status(404).json({ error: "Gift card not found" });
+    return res.json({ giftCard: card });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to fetch gift card" });
+  }
+}));
 
 export default router;

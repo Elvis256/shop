@@ -49,7 +49,7 @@ const CITY_SUGGESTIONS = [
   "Mbale", "Fort Portal", "Masaka", "Soroti", "Arua", "Kabale", "Moroto",
 ];
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
 
 const inputClass =
   "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400";

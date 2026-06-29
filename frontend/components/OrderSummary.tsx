@@ -4,10 +4,26 @@ import { useState } from "react";
 import { useCart } from "@/lib/hooks/useCart";
 import { useShippingConfig } from "@/lib/hooks/useShippingConfig";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import { apiFetch } from "@/lib/api";
 import ProductImage from "@/components/ProductImage";
 import { Plane, Zap, Truck, Tag, Minus, Plus, Trash2 } from "lucide-react";
 
-export default function OrderSummary({ city, onCouponChange }: { city?: string; onCouponChange?: (code: string, discount: number) => void }) {
+// FIX H5: Accept all discount values so the total always matches checkout's finalTotal
+export default function OrderSummary({
+  city,
+  onCouponChange,
+  taxInfo,
+  storeCreditDiscount = 0,
+  giftCardDiscount = 0,
+  loyaltyDiscount = 0,
+}: {
+  city?: string;
+  onCouponChange?: (code: string, discount: number) => void;
+  taxInfo?: { taxName: string | null; taxRate: number; taxAmount: number } | null;
+  storeCreditDiscount?: number;
+  giftCardDiscount?: number;
+  loyaltyDiscount?: number;
+}) {
   const { items, total, updateQuantity, removeItem } = useCart();
   const { config, calculateShipping } = useShippingConfig();
   const { formatPrice } = useCurrency();
@@ -21,7 +37,8 @@ export default function OrderSummary({ city, onCouponChange }: { city?: string; 
 
   const shippingCalc = calculateShipping(items, city);
   const shipping = shippingCalc.total;
-  const finalTotal = total - discount + shipping;
+  // FIX H5: Include all discount types so the displayed total always matches checkout
+  const finalTotal = Math.max(0, total - discount - storeCreditDiscount - giftCardDiscount - loyaltyDiscount + shipping);
 
   const applyPromo = async () => {
     setPromoError("");
@@ -31,19 +48,12 @@ export default function OrderSummary({ city, onCouponChange }: { city?: string; 
     }
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}/api/coupons/validate?code=${encodeURIComponent(promoCode)}&amount=${total}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        setPromoError(data.error || "Invalid code");
-        return;
-      }
-
+      const data = await apiFetch(`/api/coupons/validate?code=${encodeURIComponent(promoCode)}&amount=${total}`);
       setDiscount(data.discount);
       setPromoApplied(promoCode.toUpperCase());
       onCouponChange?.(promoCode.toUpperCase(), data.discount);
-    } catch (e) {
-      setPromoError("Failed to validate code");
+    } catch (e: any) {
+      setPromoError(e?.message || "Invalid promo code");
     }
   };
 
@@ -87,7 +97,7 @@ export default function OrderSummary({ city, onCouponChange }: { city?: string; 
               </div>
               <div className="flex items-center gap-1.5 mt-1.5">
                 <button
-                  onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                  onClick={() => updateQuantity(item.productId, item.quantity - 1, item.variantId)}
                   className="w-6 h-6 flex items-center justify-center rounded border border-border hover:bg-gray-100 transition-colors"
                   aria-label="Decrease quantity"
                 >
@@ -95,14 +105,14 @@ export default function OrderSummary({ city, onCouponChange }: { city?: string; 
                 </button>
                 <span className="text-small font-medium w-6 text-center">{item.quantity}</span>
                 <button
-                  onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                  onClick={() => updateQuantity(item.productId, item.quantity + 1, item.variantId)}
                   className="w-6 h-6 flex items-center justify-center rounded border border-border hover:bg-gray-100 transition-colors"
                   aria-label="Increase quantity"
                 >
                   <Plus className="w-3 h-3" />
                 </button>
                 <button
-                  onClick={() => removeItem(item.productId)}
+                  onClick={() => removeItem(item.productId, item.variantId)}
                   className="w-6 h-6 flex items-center justify-center rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors ml-1"
                   aria-label="Remove item"
                 >
@@ -145,6 +155,24 @@ export default function OrderSummary({ city, onCouponChange }: { city?: string; 
             <span>-{formatPrice(discount)}</span>
           </div>
         )}
+        {storeCreditDiscount > 0 && (
+          <div className="flex justify-between text-green-600">
+            <span>Store Credit</span>
+            <span>-{formatPrice(storeCreditDiscount)}</span>
+          </div>
+        )}
+        {giftCardDiscount > 0 && (
+          <div className="flex justify-between text-green-600">
+            <span>Gift Card</span>
+            <span>-{formatPrice(giftCardDiscount)}</span>
+          </div>
+        )}
+        {loyaltyDiscount > 0 && (
+          <div className="flex justify-between text-green-600">
+            <span>Loyalty Points</span>
+            <span>-{formatPrice(loyaltyDiscount)}</span>
+          </div>
+        )}
         <div className="flex justify-between">
           <span className="text-text-muted flex items-center gap-1">
             <Truck className="w-3.5 h-3.5" />Shipping
@@ -164,6 +192,12 @@ export default function OrderSummary({ city, onCouponChange }: { city?: string; 
           <p className="text-xs text-indigo-600">
             ✓ International shipping included in price
           </p>
+        )}
+        {taxInfo && taxInfo.taxName && taxInfo.taxAmount > 0 && (
+          <div className="flex justify-between text-text-muted">
+            <span>Incl. {taxInfo.taxName} ({Math.round(taxInfo.taxRate * 100)}%)</span>
+            <span>{formatPrice(taxInfo.taxAmount)}</span>
+          </div>
         )}
         <div className="flex justify-between pt-3 border-t border-border font-semibold text-base">
           <span>Total</span>

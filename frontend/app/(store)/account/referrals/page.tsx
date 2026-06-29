@@ -44,7 +44,7 @@ export default function ReferralsPage() {
 
   const fetchReferrals = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/referrals/code`, {
+      const res = await fetch(`/api/referrals/code`, {
         credentials: "include",
       });
       if (res.ok) {
@@ -52,9 +52,9 @@ export default function ReferralsPage() {
         setData({
           code: codeData.code,
           referrals: codeData.referrals || [],
-          totalReferrals: codeData.usageCount || 0,
-          successfulReferrals: codeData.successfulReferrals || 0,
-          totalEarned: codeData.totalEarned || 0,
+          totalReferrals: codeData.stats?.totalReferrals ?? codeData.usageCount ?? 0,
+          successfulReferrals: codeData.stats?.qualifiedReferrals ?? codeData.successfulReferrals ?? 0,
+          totalEarned: codeData.stats?.totalEarnings ?? codeData.totalEarned ?? 0,
         });
       }
     } catch (error) {

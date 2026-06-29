@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "PleasureZone Uganda",
+  "name_for_model": "pleasurezone_uganda",
+  "description_for_human": "Shop intimate wellness products with discreet delivery in Uganda.",
+  "description_for_model": "PleasureZone Uganda is an e-commerce store selling intimate wellness products including vibrators, lingerie, lubricants, couples toys, and wellness accessories. Based in Kampala, Uganda with same-day delivery in Kampala and nationwide shipping. All orders ship in plain, discreet packaging. Accepts Mobile Money (MTN, Airtel), cards, PayPal, and cash on delivery. Currency is UGX (Ugandan Shilling).",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://ugsex.com/api/openapi.json"
+  },
+  "logo_url": "https://ugsex.com/logo.png",
+  "contact_email": "support@ugsex.com",
+  "legal_info_url": "https://ugsex.com/policies/terms"
+}

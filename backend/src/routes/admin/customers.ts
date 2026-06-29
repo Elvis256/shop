@@ -36,9 +36,10 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
     const sortCol = sortMap[sort as string] || "last_order_date";
     const sortDir = order === "asc" ? "ASC" : "DESC";
     const showAllRoles = includeAllRoles === "true";
-    const roleFilter = showAllRoles ? "" : `WHERE u."id" IS NULL OR u."role" = 'CUSTOMER'`;
+    const userRoleFilter = showAllRoles ? "" : `WHERE u."role" = 'CUSTOMER'`;
 
-    // CTE: aggregate orders at DB level, then FULL OUTER JOIN with users
+    // CTE: aggregate orders at DB level, then combine registered users + guest customers
+    // Uses UNION ALL instead of FULL OUTER JOIN (PG doesn't support FULL JOIN with OR conditions)
     const cte = `
       WITH order_stats AS (
         SELECT
@@ -55,24 +56,48 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
         GROUP BY LOWER("customerEmail")
       ),
       combined AS (
+        -- Registered users with their order stats (if any)
         SELECT
-          COALESCE(u."id", os.user_id)::text as id,
-          COALESCE(os.email, LOWER(u."email")) as email,
+          u."id"::text as id,
+          LOWER(u."email") as email,
           COALESCE(NULLIF(os.cust_name,''), u."name", '') as name,
           COALESCE(os.phone, u."phone") as phone,
-          (u."id" IS NOT NULL) as is_registered,
+          true as is_registered,
           COALESCE(u."isBlocked", false) as is_blocked,
-          COALESCE(u."role"::text, 'CUSTOMER') as role,
+          u."role"::text as role,
           COALESCE(os.order_count, 0)::int as order_count,
           COALESCE(os.total_spent, 0)::float8 as total_spent,
           COALESCE(os.active_orders, 0)::int as active_orders,
           os.last_order_date,
           COALESCE(os.first_order_date, u."createdAt") as first_order_date
+        FROM "User" u
+        LEFT JOIN order_stats os
+          ON os.user_id = u."id"
+          OR (os.user_id IS NULL AND os.email = LOWER(u."email"))
+        ${userRoleFilter}
+
+        UNION ALL
+
+        -- Guest-only customers (no matching User record)
+        SELECT
+          os.user_id::text as id,
+          os.email,
+          COALESCE(os.cust_name, '') as name,
+          os.phone,
+          false as is_registered,
+          false as is_blocked,
+          'CUSTOMER' as role,
+          os.order_count,
+          os.total_spent,
+          os.active_orders,
+          os.last_order_date,
+          os.first_order_date
         FROM order_stats os
-        FULL OUTER JOIN "User" u ON
-          (os.user_id IS NOT NULL AND os.user_id = u."id")
-          OR (os.user_id IS NULL AND LOWER(u."email") = os.email)
-        ${roleFilter}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM "User" u2
+          WHERE u2."id" = os.user_id
+             OR (os.user_id IS NULL AND LOWER(u2."email") = os.email)
+        )
       )`;
 
     // Build WHERE conditions and params
@@ -201,6 +226,22 @@ router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
           include: { product: { select: { name: true } } },
         },
         _count: { select: { orders: true, wishlist: true, reviews: true } },
+        storeCredit: {
+          select: {
+            balance: true,
+            transactions: {
+              orderBy: { createdAt: "desc" },
+              select: {
+                id: true,
+                amount: true,
+                type: true,
+                description: true,
+                orderId: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -220,6 +261,13 @@ router.get("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
     return res.json({
       ...customer,
       totalSpent: Number(totalSpent._sum?.totalAmount) || 0,
+      storeCredit: customer.storeCredit ? {
+        balance: Number(customer.storeCredit.balance),
+        transactions: customer.storeCredit.transactions.map(t => ({
+          ...t,
+          amount: Number(t.amount)
+        }))
+      } : { balance: 0, transactions: [] }
     });
   } catch (error) {
     logger.error("Admin get customer error", { error });

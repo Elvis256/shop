@@ -3,10 +3,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
 import { api } from "../api";
 import { useAuth } from "./useAuth";
+import { trackAddToCart } from "@/components/GoogleAnalytics";
 
 export interface CartItem {
   id: string;
   productId: string;
+  variantId?: string | null;
+  variantName?: string | null;
   name: string;
   slug: string;
   price: number;
@@ -25,9 +28,9 @@ interface CartContextType {
   syncError: string | null;
   dismissSyncError: () => void;
   addItem: (product: Omit<CartItem, "quantity"> & { quantity?: number }) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
+  updateQuantity: (productId: string, quantity: number, variantId?: string | null | undefined) => void;
   updateItemBadge: (productId: string, badge: "From Abroad" | "Express") => void;
-  removeItem: (productId: string) => void;
+  removeItem: (productId: string, variantId?: string | null) => void;
   clearCart: () => void;
   openCart: () => void;
   closeCart: () => void;
@@ -79,6 +82,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     try {
       const syncItems = items.map(item => ({
         productId: item.productId,
+        variantId: item.variantId,
         quantity: item.quantity,
       }));
       
@@ -91,6 +95,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
         const newItems: CartItem[] = (result.items as any[]).map((item) => ({
           id: item.id,
           productId: item.productId,
+          variantId: item.variantId,
+          variantName: item.variant?.name || null,
           name: item.product.name,
           slug: item.product.slug,
           price: Number(item.product.price),
@@ -119,31 +125,44 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const addItem = (product: Omit<CartItem, "quantity"> & { quantity?: number }) => {
     const quantity = product.quantity || 1;
     const stock = product.stock;
+    const variantId = product.variantId || null;
+    const itemId = variantId || product.productId;
+
+    // Trigger GA4 AddToCart event
+    trackAddToCart({
+      id: product.productId,
+      name: product.name,
+      price: product.price,
+      quantity,
+      category: undefined, // category can be expanded if passed in the hook
+    });
+
     setItems((prev) => {
-      const existing = prev.find((item) => item.productId === product.productId);
+      const existing = prev.find((item) => item.id === itemId);
       if (existing) {
         const newQty = existing.quantity + quantity;
         const cappedQty = stock !== undefined ? Math.min(newQty, stock) : newQty;
         return prev.map((item) =>
-          item.productId === product.productId
+          item.id === itemId
             ? { ...item, quantity: cappedQty, stock }
             : item
         );
       }
       const cappedQty = stock !== undefined ? Math.min(quantity, stock) : quantity;
-      return [...prev, { ...product, quantity: cappedQty, stock, id: product.productId }];
+      return [...prev, { ...product, quantity: cappedQty, stock, id: itemId, variantId }];
     });
     setIsOpen(true);
   };
 
-  const updateQuantity = (productId: string, quantity: number) => {
+  const updateQuantity = (productId: string, quantity: number, variantId?: string | null | undefined) => {
+    const itemId = variantId || productId;
     if (quantity <= 0) {
-      removeItem(productId);
+      removeItem(productId, variantId);
       return;
     }
     setItems((prev) =>
       prev.map((item) => {
-        if (item.productId !== productId) return item;
+        if (item.id !== itemId) return item;
         const cappedQty = item.stock !== undefined ? Math.min(quantity, item.stock) : quantity;
         return { ...item, quantity: cappedQty };
       })
@@ -158,8 +177,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const removeItem = (productId: string) => {
-    setItems((prev) => prev.filter((item) => item.productId !== productId));
+  const removeItem = (productId: string, variantId?: string | null) => {
+    const itemId = variantId || productId;
+    setItems((prev) => prev.filter((item) => item.id !== itemId));
   };
 
   const clearCart = () => {
