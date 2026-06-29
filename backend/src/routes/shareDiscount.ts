@@ -94,8 +94,12 @@ router.get("/share/:code/click", asyncHandler(async (req, res) => {
 // GET /api/social/share/my - Get user's share discounts
 router.get("/share/my", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
+    const where: any = { userId: req.user!.id };
+    const productId = req.query.productId as string;
+    if (productId) where.productId = productId;
+
     const shares = await prisma.shareDiscount.findMany({
-      where: { userId: req.user!.id },
+      where,
       include: { product: { select: { name: true, slug: true, images: { select: { url: true }, take: 1 } } } },
       orderBy: { createdAt: "desc" },
       take: 20,

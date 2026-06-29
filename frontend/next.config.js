@@ -65,7 +65,7 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://www.paypal.com https://www.google-analytics.com https://www.googletagmanager.com https://connect.facebook.net https://static.cloudflareinsights.com https://js.stripe.com https://accounts.google.com https://apis.google.com https://pagead2.googlesyndication.com https://www.googleadservices.com https://adservice.google.com https://tpc.googlesyndication.com",
+              "script-src 'self' 'unsafe-inline' https://www.paypal.com https://www.google-analytics.com https://www.googletagmanager.com https://connect.facebook.net https://static.cloudflareinsights.com https://js.stripe.com https://accounts.google.com https://apis.google.com https://pagead2.googlesyndication.com https://www.googleadservices.com https://adservice.google.com https://tpc.googlesyndication.com https://ep1.adtrafficquality.google https://ep2.adtrafficquality.google",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: blob: https: http:",
               "font-src 'self' https://fonts.gstatic.com data:",

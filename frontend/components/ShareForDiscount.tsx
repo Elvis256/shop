@@ -45,7 +45,7 @@ export default function ShareForDiscount({
 
   // Check if user already has a share for this product
   useEffect(() => {
-    fetch(`${API_URL}/api/social/share/my-shares?productId=${productId}`, {
+    fetch(`${API_URL}/api/social/share/my?productId=${productId}`, {
       credentials: "include",
     })
       .then((r) => (r.ok ? r.json() : null))
