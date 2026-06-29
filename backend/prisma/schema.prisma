@@ -32,6 +32,8 @@ model User {
   passwordReset      PasswordReset?
   emailVerification  EmailVerification?
   refreshTokens      RefreshToken[]
+  loginHistory       LoginHistory[]
+  savedPaymentMethods SavedPaymentMethod[]
   activityLogs       ActivityLog[]
   returnRequests     ReturnRequest[]
   supportTickets     SupportTicket[]
@@ -79,10 +81,44 @@ model RefreshToken {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   token     String   @unique
   expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  device    String?
   createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model LoginHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress String
+  userAgent String?
+  device    String?
+  success   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model SavedPaymentMethod {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // MOBILE_MONEY or CARD
+  label     String?
+  network   String?  // MTN, AIRTEL, etc.
+  phone     String?
+  phoneMask String?  // e.g. 0771***456
+  last4     String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, phone])
+  @@index([userId])
 }
 
 model PasswordReset {
@@ -440,7 +476,8 @@ model Order {
   splitPartnerPhone  String?
   splitPartnerPaid   Boolean  @default(false)
   dispatchScheduledAt DateTime?
-  receiptMasked      Boolean  @default(false)
+  receiptMasked          Boolean   @default(false)
+  estimatedDeliveryDate  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

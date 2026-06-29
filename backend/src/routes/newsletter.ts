@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
-import { sendNewsletterWelcome } from "../services/email";
+import { sendNewsletterWelcome } from "../lib/email";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";

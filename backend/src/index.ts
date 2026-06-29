@@ -22,6 +22,8 @@ process.on("uncaughtException", (err) => {
 
 // Routes
 import authRoutes from "./routes/auth";
+import loginHistoryRoutes from "./routes/loginHistory";
+import savedPaymentsRoutes from "./routes/savedPayments";
 import socialAuthRoutes from "./routes/socialAuth";
 import checkoutRoutes from "./routes/checkout";
 import webhookRoutes from "./routes/webhooks";
@@ -207,6 +209,8 @@ app.use("/uploads", (req, res, next) => {
 
 // API Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/auth", loginHistoryRoutes);
+app.use("/api/saved-payments", savedPaymentsRoutes);
 app.use("/api/auth", socialAuthRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/webhooks", webhookRoutes);

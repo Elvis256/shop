@@ -370,6 +370,77 @@ async function startWorker() {
     }
   }, 12 * 60 * 60 * 1000));
 
+  // Loyalty point expiry — daily
+  intervalHandles.push(setInterval(async () => {
+    try {
+      const now = new Date();
+
+      // Find expired PURCHASE_EARN transactions with remaining points
+      const expired = await prisma.loyaltyTransaction.findMany({
+        where: {
+          expiresAt: { lt: now },
+          type: "PURCHASE_EARN",
+          points: { gt: 0 },
+        },
+        select: { id: true, accountId: true, points: true },
+      });
+
+      if (expired.length === 0) return;
+
+      // Group by accountId
+      const byAccount = new Map<string, { ids: string[]; total: number }>();
+      for (const tx of expired) {
+        const entry = byAccount.get(tx.accountId) || { ids: [], total: 0 };
+        entry.ids.push(tx.id);
+        entry.total += tx.points;
+        byAccount.set(tx.accountId, entry);
+      }
+
+      for (const [accountId, { ids, total }] of byAccount) {
+        await prisma.$transaction([
+          // Deduct expired points from balance (not lifetimePoints)
+          prisma.loyaltyAccount.update({
+            where: { id: accountId },
+            data: { points: { decrement: total } },
+          }),
+          // Create EXPIRY audit transaction
+          prisma.loyaltyTransaction.create({
+            data: {
+              accountId,
+              type: "EXPIRY",
+              points: -total,
+              description: `${total} points expired (${ids.length} transaction${ids.length > 1 ? "s" : ""})`,
+            },
+          }),
+          // Zero out original transactions to prevent re-expiry
+          ...ids.map(id =>
+            prisma.loyaltyTransaction.update({
+              where: { id },
+              data: { points: 0 },
+            })
+          ),
+        ]);
+      }
+
+      logger.info("loyalty_points_expired", { accounts: byAccount.size, totalPoints: [...byAccount.values()].reduce((s, v) => s + v.total, 0) });
+    } catch (err: any) {
+      logger.error("loyalty_expiry_job_failed", { error: err.message });
+    }
+  }, 24 * 60 * 60 * 1000));
+
+  // Login history pruning — daily (keep 90 days)
+  intervalHandles.push(setInterval(async () => {
+    try {
+      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      const result = await prisma.loginHistory.deleteMany({ where: { createdAt: { lt: cutoff } } });
+      if (result.count > 0) {
+        logger.info("login_history_pruned", { deleted: result.count });
+      }
+    } catch (err: any) {
+      logger.error("login_history_prune_failed", { error: err.message });
+    }
+  }, 24 * 60 * 60 * 1000));
+
   // Run token cleanup once on startup after 10s
   setTimeout(async () => {
     try {

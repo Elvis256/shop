@@ -247,7 +247,7 @@ export async function dispatch(opts: DispatchOptions): Promise<void> {
 export async function enqueueNotification(opts: DispatchOptions): Promise<void> {
   try {
     await notificationQueue.add(opts.event, opts, {
-      jobId: opts.orderId ? `${opts.event}:${opts.orderId}` : undefined,
+      jobId: opts.orderId ? `${opts.event}_${opts.orderId}` : undefined,
     });
   } catch (error: any) {
     logger.error("Failed to enqueue notification", { error: error.message, event: opts.event, orderId: opts.orderId });

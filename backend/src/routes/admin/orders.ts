@@ -10,7 +10,6 @@ import { enqueueNotification } from "../../services/notificationDispatcher";
 import { logger } from "../../lib/logger";
 import { asyncHandler } from "../../middleware/errorHandler";
 import crypto from "crypto";
-import { awardPurchasePoints } from "../loyalty";
 import { approveAffiliateConversions } from "../../utils/affiliateHelper";
 import { parseShippingAddress } from "../../utils/shippingAddress";
 
@@ -554,11 +553,7 @@ router.post("/:id/mark-paid", asyncHandler(async (req: AuthRequest, res: Respons
     });
 
 
-    // Award loyalty points to the customer
-    if (order.userId) {
-      awardPurchasePoints(order.userId, Number(order.totalAmount), order.id)
-        .catch(err => logger.error("Failed to award purchase points on mark-paid", { error: err }));
-    }
+    // Loyalty points are now awarded at delivery, not payment.
 
     return res.json({ message: "Payment marked as successful" });
   } catch (error) {

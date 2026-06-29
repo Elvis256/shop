@@ -6,6 +6,7 @@ import { Decimal } from "@prisma/client/runtime/library";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
 import { approveAffiliateConversions } from "../utils/affiliateHelper";
+import { awardPurchasePoints } from "./loyalty";
 import { reserveStock } from "../utils/stockReservation";
 import { parseShippingAddress } from "../utils/shippingAddress";
 import { releaseOrderStock } from "../services/orderConfirmation";
@@ -383,6 +384,7 @@ router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respons
         paymentStatus: order.payments[0]?.status || "PENDING",
         itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
         createdAt: order.createdAt,
+        estimatedDeliveryDate: order.estimatedDeliveryDate || null,
       }))
     );
   } catch (error) {
@@ -980,6 +982,12 @@ router.post("/:id/confirm-delivery", authenticate, asyncHandler(async (req: Auth
         },
       });
     });
+
+    // Award loyalty points on buyer-confirmed delivery
+    if (order.userId) {
+      awardPurchasePoints(order.userId, Number(order.totalAmount), id)
+        .catch(err => logger.error("Failed to award purchase points on confirm-delivery", { error: err }));
+    }
 
     enqueueNotification({
       event: "ORDER_DELIVERED",

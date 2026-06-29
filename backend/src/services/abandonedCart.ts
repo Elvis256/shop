@@ -1,20 +1,8 @@
 import prisma from "../lib/prisma";
-import nodemailer from "nodemailer";
 import { logger } from "../lib/logger";
+import { sendRawEmail } from "../lib/email";
 import { sendWhatsApp } from "./whatsapp";
 import crypto from "crypto";
-
-
-// Email transporter (configure with your SMTP settings)
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.mailtrap.io",
-  port: parseInt(process.env.SMTP_PORT || "587"),
-  secure: parseInt(process.env.SMTP_PORT || "587") === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
 
 const formatCurrency = (amount: number, currency: string): string => {
   return `${currency} ${Number(amount).toLocaleString()}`;
@@ -195,10 +183,9 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
           currency: cart.currency,
         }, "reminder1", recoveryUrl);
         
-        await transporter.sendMail({
-          from: `"PleasureZone" <${process.env.SMTP_FROM || "noreply@pleasurezone.ug"}>`,
+        await sendRawEmail({
           to: cart.email,
-          subject: "You left something behind! 🛒",
+          subject: "You left something behind!",
           html,
         });
 
@@ -266,10 +253,9 @@ export const processAbandonedCartEmails = async (): Promise<void> => {
           currency: cart.currency,
         }, "reminder2", recoveryWithCoupon);
 
-        await transporter.sendMail({
-          from: `"PleasureZone" <${process.env.SMTP_FROM || "noreply@pleasurezone.ug"}>`,
+        await sendRawEmail({
           to: cart.email,
-          subject: `Last chance! Use code ${couponCode} for 5% off ⏰`,
+          subject: `Last chance! Use code ${couponCode} for 5% off`,
           html,
         });
 

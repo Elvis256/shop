@@ -6,6 +6,7 @@
 
 import prisma from "../lib/prisma";
 import { getOrderTracking, getProductDetail, calculateSellingPrice } from "./aliexpress";
+import { awardPurchasePoints } from "../routes/loyalty";
 import { logger } from "../lib/logger";
 
 // ── Tracking Sync ──
@@ -19,7 +20,7 @@ async function syncTracking(): Promise<void> {
       aliexpressOrderId: { not: null },
     },
     include: {
-      order: { select: { id: true, orderNumber: true } },
+      order: { select: { id: true, orderNumber: true, userId: true, totalAmount: true } },
       product: { select: { name: true } },
     },
     take: 50,
@@ -100,6 +101,12 @@ async function syncTracking(): Promise<void> {
               note: "Package delivered to customer",
             },
           });
+
+          // Award loyalty points on AliExpress delivery
+          if (aeOrder.order.userId) {
+            awardPurchasePoints(aeOrder.order.userId, Number(aeOrder.order.totalAmount), aeOrder.order.id)
+              .catch(err => logger.error("Failed to award points on AE delivery", { error: err }));
+          }
         }
 
         updated++;

@@ -30,6 +30,8 @@ import {
   Check,
   Headphones,
   RefreshCw,
+  Bell,
+  AlertCircle,
 } from "lucide-react";
 
 const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
@@ -50,6 +52,22 @@ interface DashboardOrder {
   }>;
 }
 
+interface ProfileCompletionItem {
+  key: string;
+  label: string;
+  done: boolean;
+  href: string;
+}
+
+interface NotificationEntry {
+  id: string;
+  channel: string;
+  event: string;
+  status: string;
+  createdAt: string;
+  metadata?: any;
+}
+
 interface DashboardData {
   recentOrders: DashboardOrder[];
   stats: {
@@ -62,6 +80,8 @@ interface DashboardData {
   loyalty: { points: number; tier: string; lifetimePoints: number };
   referralCode: string | null;
   storeCredit: number;
+  profileCompletion?: { items: ProfileCompletionItem[]; completionPercent: number };
+  notifications?: NotificationEntry[];
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
@@ -260,6 +280,56 @@ export default function AccountPage() {
             </div>
           </div>
         </div>
+
+        {/* Store Credit Banner */}
+        {dashboard && dashboard.storeCredit > 0 && (
+          <Link href="/account/wallet" className="block mb-6">
+            <div className="p-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-200 dark:border-green-800 rounded-xl flex items-center gap-4 hover:shadow-md transition-shadow">
+              <div className="w-12 h-12 bg-green-100 dark:bg-green-900/40 rounded-full flex items-center justify-center shrink-0">
+                <Wallet className="w-6 h-6 text-green-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-text">You have store credit!</p>
+                <p className="text-xs text-text-muted">Use it on your next purchase</p>
+              </div>
+              <p className="text-lg font-bold text-green-600">{fmt(dashboard.storeCredit)}</p>
+              <ChevronRight className="w-5 h-5 text-green-400 shrink-0" />
+            </div>
+          </Link>
+        )}
+
+        {/* Profile Completion */}
+        {dashboard?.profileCompletion && dashboard.profileCompletion.completionPercent < 100 && (
+          <div className="card mb-6 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm">Complete Your Profile</h3>
+              <span className="text-xs font-bold text-accent">{dashboard.profileCompletion.completionPercent}%</span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-3">
+              <div
+                className="bg-gradient-to-r from-accent to-purple-500 h-2 rounded-full transition-all duration-500"
+                style={{ width: `${dashboard.profileCompletion.completionPercent}%` }}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {dashboard.profileCompletion.items
+                .filter((i) => !i.done)
+                .map((item) => (
+                  <Link
+                    key={item.key}
+                    href={item.href}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface-secondary rounded-full text-xs font-medium text-text-muted hover:text-accent hover:bg-accent/5 transition-colors"
+                  >
+                    <AlertCircle className="w-3 h-3" />
+                    {item.label}
+                  </Link>
+                ))}
+            </div>
+            {dashboard.profileCompletion.completionPercent >= 80 && (
+              <p className="text-[10px] text-text-muted mt-2">Complete all items to earn 50 loyalty points!</p>
+            )}
+          </div>
+        )}
 
         {/* 2-Column Restructured Layout */}
         <div className="grid md:grid-cols-3 gap-6 items-start">
@@ -470,6 +540,41 @@ export default function AccountPage() {
               {renderGroup("Loyalty & Social", loyaltyGroup)}
               {renderGroup("Discretion Center", discretionGroup)}
             </div>
+
+            {/* Recent Activity / Notifications */}
+            {dashboard?.notifications && dashboard.notifications.length > 0 && (
+              <div className="card">
+                <div className="flex items-center gap-2 mb-4">
+                  <Bell className="w-4 h-4 text-accent" />
+                  <h3 className="font-semibold text-sm">Recent Activity</h3>
+                </div>
+                <div className="space-y-2">
+                  {dashboard.notifications.slice(0, 8).map((n) => {
+                    const meta = n.metadata as any;
+                    const orderId = meta?.orderId;
+                    const label = n.event?.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c: string) => c.toUpperCase()) || "Notification";
+                    return (
+                      <div key={n.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-surface-secondary transition-colors">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${n.status === "sent" ? "bg-green-400" : n.status === "failed" ? "bg-red-400" : "bg-yellow-400"}`} />
+                          <span className="text-xs font-medium truncate">{label}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-text-muted">
+                            {new Date(n.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                          {orderId && (
+                            <Link href={`/orders/${orderId}`} className="text-[10px] text-accent hover:underline">
+                              View
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Sign Out Action Card */}
             <button

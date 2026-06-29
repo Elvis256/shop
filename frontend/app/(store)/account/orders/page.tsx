@@ -7,7 +7,7 @@ import Section from "@/components/Section";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { api, apiFetch } from "@/lib/api";
-import { Package, Eye, ChevronLeft, RefreshCw, Loader2, AlertCircle, X, Search, MapPin } from "lucide-react";
+import { Package, Eye, ChevronLeft, RefreshCw, Loader2, AlertCircle, X, Search, MapPin, Calendar, XCircle } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 
 interface Order {
@@ -17,7 +17,9 @@ interface Order {
   status: string;
   paymentStatus: string;
   createdAt: string;
+  estimatedDeliveryDate?: string | null;
   items?: { id: string; quantity: number; product?: { name: string; images?: { url: string }[] } }[];
+  itemCount?: number;
 }
 
 const STATUS_TABS = [
@@ -44,6 +46,7 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState("");
@@ -60,6 +63,19 @@ export default function OrdersPage() {
       setReorderError(err.message || "Failed to reorder. Please try again.");
     } finally {
       setReorderingId(null);
+    }
+  };
+
+  const handleCancel = async (orderId: string) => {
+    if (!confirm("Are you sure you want to cancel this order?")) return;
+    setCancellingId(orderId);
+    try {
+      await apiFetch(`/api/orders/${orderId}/cancel`, { method: "POST" });
+      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: "CANCELLED" } : o));
+    } catch (err: any) {
+      setReorderError(err.message || "Failed to cancel order");
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -255,7 +271,29 @@ export default function OrdersPage() {
                       </span>
                     </div>
                   </div>
+                  {/* Estimated delivery date */}
+                  {order.estimatedDeliveryDate && !["DELIVERED", "CANCELLED", "REFUNDED"].includes(order.status) && (
+                    <div className="mt-3 flex items-center gap-2 text-xs text-text-muted">
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>
+                        Estimated delivery: {new Date(order.estimatedDeliveryDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                    </div>
+                  )}
                   <div className="mt-4 pt-4 border-t border-border flex justify-end gap-2">
+                    {(order.status === "PENDING" || order.status === "CONFIRMED") && (
+                      <button
+                        onClick={() => handleCancel(order.id)}
+                        disabled={cancellingId === order.id}
+                        className="btn-secondary text-small gap-2 text-red-600 hover:bg-red-50"
+                      >
+                        {cancellingId === order.id ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" />Cancelling...</>
+                        ) : (
+                          <><XCircle className="w-4 h-4" />Cancel</>
+                        )}
+                      </button>
+                    )}
                     {(order.status === "SHIPPED" || order.status === "PROCESSING") && (
                       <Link
                         href={`/orders/${order.id}`}

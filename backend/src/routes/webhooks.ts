@@ -5,7 +5,6 @@ import prisma from "../lib/prisma";
 import { placeAliExpressOrdersForOrder } from "../services/aliexpressOrder";
 import { placeCJOrdersForOrder } from "../services/cjOrder";
 import { handleLayawayPayment } from "./layaway";
-import { awardPurchasePoints } from "./loyalty";
 import { confirmPaidOrder, releaseOrderStock } from "../services/orderConfirmation";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -226,14 +225,10 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
         }
       });
 
-      // After successful payment: place dropshipping orders & award loyalty points
+      // After successful payment: place dropshipping orders
       // Note: Cart is cleared on the frontend upon redirect to success page
+      // Loyalty points are now awarded at delivery, not payment.
       if (status === "successful") {
-        if (order.userId) {
-          awardPurchasePoints(order.userId, Number(order.totalAmount), order.id)
-            .catch(err => logger.error("Failed to award purchase points", { error: err }));
-        }
-
         // Notify recipient if it's a gift order
         if (order.isGift && order.giftToken && order.giftRecipientPhone) {
           const { sendWhatsApp } = await import("../services/whatsapp");

@@ -8,7 +8,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 const router = Router();
 
 // Referral reward amounts
-const REFERRER_REWARD = 15000; // UGX discount for referrer (approx ~500 KES / $4 USD)
+const REFERRER_REWARD = 500; // Loyalty points for referrer
 const REFEREE_DISCOUNT = 10; // 10% off first order
 
 // Generate unique referral code
@@ -194,7 +194,8 @@ router.get("/check/:code", asyncHandler(async (req, res) => {
   }
 }));
 
-// Process referral reward when referee makes first order
+// Process referral reward when referee makes first delivered order
+// Awards loyalty points to the referrer instead of a coupon
 export const processReferralReward = async (userId: string, orderId: string) => {
   try {
     const referral = await prisma.referral.findUnique({
@@ -208,7 +209,16 @@ export const processReferralReward = async (userId: string, orderId: string) => 
       return null;
     }
 
-    // Update referral to qualified
+    const referrerId = referral.referralCode.userId;
+
+    // Get or create referrer's loyalty account
+    let referrerAccount = await prisma.loyaltyAccount.findUnique({ where: { userId: referrerId } });
+    if (!referrerAccount) {
+      referrerAccount = await prisma.loyaltyAccount.create({
+        data: { userId: referrerId, points: 0, tier: "BRONZE" },
+      });
+    }
+
     await prisma.$transaction([
       prisma.referral.update({
         where: { id: referral.id },
@@ -218,17 +228,20 @@ export const processReferralReward = async (userId: string, orderId: string) => 
           firstOrderAt: new Date(),
         },
       }),
-      // Create reward coupon for referrer
-      prisma.coupon.create({
+      // Award loyalty points to referrer
+      prisma.loyaltyAccount.update({
+        where: { userId: referrerId },
         data: {
-          code: `THANKS-${referral.referralCode.code}-${Date.now().toString(36).toUpperCase()}`,
-          description: `Referral reward - Thank you for referring a friend!`,
-          type: "FIXED",
-          value: REFERRER_REWARD,
-          usageLimit: 1,
-          validFrom: new Date(),
-          validUntil: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
-          active: true,
+          points: { increment: REFERRER_REWARD },
+          lifetimePoints: { increment: REFERRER_REWARD },
+        },
+      }),
+      prisma.loyaltyTransaction.create({
+        data: {
+          accountId: referrerAccount.id,
+          type: "REFERRAL_BONUS",
+          points: REFERRER_REWARD,
+          description: `Referral reward — thank you for referring a friend!`,
         },
       }),
       prisma.referralCode.update({

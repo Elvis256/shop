@@ -8,6 +8,7 @@ import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
 import crypto from "crypto";
 import { approveAffiliateConversions } from "../utils/affiliateHelper";
+import { awardPurchasePoints } from "./loyalty";
 
 const router = Router();
 
@@ -180,6 +181,12 @@ router.post("/verify-otp", authenticate, asyncHandler(async (req: AuthRequest, r
 
     await approveAffiliateConversions(orderId, tx);
   });
+
+  // Award loyalty points on delivery
+  if (order.userId) {
+    awardPurchasePoints(order.userId, Number(order.totalAmount), orderId)
+      .catch(err => logger.error("Failed to award purchase points on delivery", { error: err }));
+  }
 
   // Notify customer
   enqueueNotification({

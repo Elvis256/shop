@@ -25,7 +25,7 @@ const CheckoutSchema = z.object({
   cartId: z.string().optional(),
   items: z.array(z.object({
     productId: z.string(),
-    variantId: z.string().optional(),
+    variantId: z.string().nullable().optional(),
     quantity: z.number().int().positive().max(100),
     price: z.number().positive(),
   })).max(50).optional(),
@@ -776,6 +776,29 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
             }),
           },
         },
+      });
+
+      // Calculate and set estimated delivery date
+      const addBusinessDays = (date: Date, days: number): Date => {
+        const result = new Date(date);
+        let added = 0;
+        while (added < days) {
+          result.setDate(result.getDate() + 1);
+          const dow = result.getDay();
+          if (dow !== 0 && dow !== 6) added++;
+        }
+        return result;
+      };
+      const dm = (order.deliveryMethod || "HOME_DELIVERY").toUpperCase();
+      let estDays = 5; // default standard
+      if (dm === "EXPRESS" || dm === "SAME_DAY") estDays = 2;
+      else if (dm === "UPCOUNTRY") estDays = 7;
+      else if (dm === "PICKUP" || dm === "SELLER_PICKUP") estDays = 1;
+      else estDays = 5; // HOME_DELIVERY standard
+      const estimatedDeliveryDate = addBusinessDays(new Date(), estDays);
+      await tx.order.update({
+        where: { id: order.id },
+        data: { estimatedDeliveryDate },
       });
 
       // Reserve stock

@@ -32,14 +32,14 @@ router.post("/check-in", authenticate, asyncHandler(async (req: AuthRequest, res
 
     const streak = yesterdayCheckIn ? yesterdayCheckIn.streak + 1 : 1;
     
-    // Bonus points for streaks: 7-day = 50pts, 14-day = 100pts, 30-day = 200pts
+    // Bonus points for streaks: 7-day = 25pts, 14-day = 50pts, 30-day = 100pts
     let bonus = 0;
-    if (streak === 7) bonus = 50;
-    else if (streak === 14) bonus = 100;
-    else if (streak === 30) bonus = 200;
-    else if (streak % 30 === 0) bonus = 200;
+    if (streak === 7) bonus = 25;
+    else if (streak === 14) bonus = 50;
+    else if (streak === 30) bonus = 100;
+    else if (streak % 30 === 0) bonus = 100;
 
-    const basePoints = 10;
+    const basePoints = 5;
     const totalPoints = basePoints + bonus;
 
     const checkIn = await prisma.dailyCheckIn.create({
@@ -52,12 +52,22 @@ router.post("/check-in", authenticate, asyncHandler(async (req: AuthRequest, res
       },
     });
 
-    // Add points to loyalty account if it exists
+    // Add points to loyalty account (not lifetimePoints — check-ins don't inflate tier progress)
     try {
-      await prisma.loyaltyAccount.upsert({
+      const loyaltyAccount = await prisma.loyaltyAccount.upsert({
         where: { userId },
         update: { points: { increment: totalPoints } },
         create: { userId, points: totalPoints, tier: "BRONZE" },
+      });
+
+      // Create a LoyaltyTransaction record for audit
+      await prisma.loyaltyTransaction.create({
+        data: {
+          accountId: loyaltyAccount.id,
+          type: "ADJUSTMENT",
+          points: totalPoints,
+          description: `Daily check-in${bonus > 0 ? ` (${streak}-day streak bonus +${bonus})` : ""}`,
+        },
       });
     } catch { /* loyalty may not exist */ }
 

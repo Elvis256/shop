@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { ArrowLeft, Shield, Smartphone, Key, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Shield, Smartphone, Key, CheckCircle, XCircle, AlertTriangle, Monitor, Trash2, Loader2, Clock } from "lucide-react";
 
 export default function SecurityPage() {
   const router = useRouter();
@@ -18,6 +18,9 @@ export default function SecurityPage() {
   const [error, setError] = useState("");
   const [showBackupCodes, setShowBackupCodes] = useState(false);
 
+  const [loginHistory, setLoginHistory] = useState<Array<{ id: string; ipAddress: string; device: string; success: boolean; createdAt: string }>>([]);
+  const [sessions, setSessions] = useState<Array<{ id: string; ipAddress: string; device: string; createdAt: string; isCurrent: boolean }>>([]);
+  const [terminatingId, setTerminatingId] = useState<string | null>(null);
   const [stealthPin, setStealthPin] = useState("");
   const [hasStealthPin, setHasStealthPin] = useState(false);
   const [stealthTimeout, setStealthTimeout] = useState(300000);
@@ -67,8 +70,41 @@ export default function SecurityPage() {
   useEffect(() => {
     if (user) {
       fetch2FAStatus();
+      fetchLoginHistory();
+      fetchSessions();
     }
   }, [user]);
+
+  const fetchLoginHistory = async () => {
+    try {
+      const res = await fetch("/api/auth/login-history?limit=10", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setLoginHistory(data.records || []);
+      }
+    } catch {}
+  };
+
+  const fetchSessions = async () => {
+    try {
+      const res = await fetch("/api/auth/sessions", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data || []);
+      }
+    } catch {}
+  };
+
+  const terminateSession = async (id: string) => {
+    setTerminatingId(id);
+    try {
+      const res = await fetch(`/api/auth/sessions/${id}`, { method: "DELETE", credentials: "include" });
+      if (res.ok) {
+        setSessions((prev) => prev.filter((s) => s.id !== id));
+      }
+    } catch {}
+    setTerminatingId(null);
+  };
 
   const fetch2FAStatus = async () => {
     try {
@@ -442,6 +478,82 @@ export default function SecurityPage() {
                 </div>
               </div>
             </div>
+
+            {/* Active Sessions */}
+            {sessions.length > 0 && (
+              <div className="card mb-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Monitor className="w-5 h-5 text-accent" />
+                  <h3 className="font-medium">Active Sessions</h3>
+                </div>
+                <div className="space-y-3">
+                  {sessions.map((session) => (
+                    <div key={session.id} className="flex items-center justify-between p-3 bg-surface-secondary rounded-lg">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Monitor className="w-4 h-4 text-text-muted shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {session.device}
+                            {session.isCurrent && (
+                              <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Current</span>
+                            )}
+                          </p>
+                          <p className="text-xs text-text-muted">{session.ipAddress} &middot; {new Date(session.createdAt).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      {!session.isCurrent && (
+                        <button
+                          onClick={() => terminateSession(session.id)}
+                          disabled={terminatingId === session.id}
+                          className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0"
+                          title="Terminate session"
+                        >
+                          {terminatingId === session.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recent Login Activity */}
+            {loginHistory.length > 0 && (
+              <div className="card mb-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Clock className="w-5 h-5 text-accent" />
+                  <h3 className="font-medium">Recent Login Activity</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-2 text-xs font-medium text-text-muted">Date</th>
+                        <th className="text-left py-2 text-xs font-medium text-text-muted">Device</th>
+                        <th className="text-left py-2 text-xs font-medium text-text-muted">IP</th>
+                        <th className="text-left py-2 text-xs font-medium text-text-muted">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {loginHistory.map((entry) => (
+                        <tr key={entry.id}>
+                          <td className="py-2 text-xs">{new Date(entry.createdAt).toLocaleString()}</td>
+                          <td className="py-2 text-xs">{entry.device || "Unknown"}</td>
+                          <td className="py-2 text-xs font-mono">{entry.ipAddress}</td>
+                          <td className="py-2">
+                            {entry.success ? (
+                              <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Success</span>
+                            ) : (
+                              <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">Failed</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Security Tips */}
             <div className="p-6 bg-surface-secondary rounded-18">

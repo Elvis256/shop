@@ -66,7 +66,9 @@ export default function AccountSettingsPage() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [stats, setStats] = useState({ orders: 0, points: 0, tier: "BRONZE", memberSince: "" });
-  const [activeSection, setActiveSection] = useState<"profile" | "password" | "notifications" | "sms" | "privacy">("profile");
+  const [activeSection, setActiveSection] = useState<"profile" | "password" | "notifications" | "sms" | "privacy" | "payments">("profile");
+  const [savedPayments, setSavedPayments] = useState<Array<{ id: string; type: string; network?: string; phoneMask?: string; label?: string; isDefault: boolean }>>([]);
+  const [deletingPayment, setDeletingPayment] = useState<string | null>(null);
   const [notifications, setNotifications] = useState({
     orderUpdates: true,
     promotions: false,
@@ -124,6 +126,11 @@ export default function AccountSettingsPage() {
         setOrderHistoryDays(data.orderHistoryDays ?? null);
         setReceiptMasked(data.receiptMasked || false);
       })
+      .catch(() => {});
+
+    fetch(`${API_URL}/api/saved-payments`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setSavedPayments(d); })
       .catch(() => {});
 
     fetch(`${API_URL}/api/orders`, { credentials: "include" })
@@ -294,11 +301,41 @@ export default function AccountSettingsPage() {
     );
   }
 
+  const deletePaymentMethod = async (id: string) => {
+    setDeletingPayment(id);
+    try {
+      const csrf = getCsrfToken();
+      const res = await fetch(`${API_URL}/api/saved-payments/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: csrf ? { "x-csrf-token": csrf } : {},
+      });
+      if (res.ok) {
+        setSavedPayments((prev) => prev.filter((p) => p.id !== id));
+      }
+    } catch {}
+    setDeletingPayment(null);
+  };
+
+  const setDefaultPayment = async (id: string) => {
+    try {
+      const csrf = getCsrfToken();
+      await fetch(`${API_URL}/api/saved-payments/${id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
+        body: JSON.stringify({ isDefault: true }),
+      });
+      setSavedPayments((prev) => prev.map((p) => ({ ...p, isDefault: p.id === id })));
+    } catch {}
+  };
+
   const navItems = [
     { id: "profile", label: "Profile", icon: User },
     { id: "password", label: "Security", icon: Shield },
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "sms", label: "SMS", icon: MessageSquare },
+    { id: "payments", label: "Payments", icon: Phone },
     { id: "privacy", label: "Privacy", icon: Lock },
   ] as const;
 
@@ -654,6 +691,56 @@ export default function AccountSettingsPage() {
                     <MessageSquare className="w-3 h-3 inline mr-1" />
                     Standard SMS rates may apply. You can opt out at any time. We will never share your phone number with third parties.
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* Payment Methods Section */}
+            {activeSection === "payments" && (
+              <div className="space-y-6">
+                <div className="card">
+                  <h2 className="text-lg font-semibold mb-4">Saved Payment Methods</h2>
+                  {savedPayments.length === 0 ? (
+                    <p className="text-sm text-text-muted">No saved payment methods. Save a number during checkout to see it here.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {savedPayments.map((m) => (
+                        <div key={m.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <Phone className="w-5 h-5 text-text-muted" />
+                            <div>
+                              <p className="text-sm font-medium">
+                                {m.phoneMask || "Card"}
+                                {m.network && <span className="text-text-muted ml-2">{m.network}</span>}
+                              </p>
+                              {m.label && <p className="text-xs text-text-muted">{m.label}</p>}
+                              <p className="text-xs text-text-muted capitalize">{m.type.replace("_", " ").toLowerCase()}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {m.isDefault ? (
+                              <span className="text-[10px] bg-accent/10 text-accent px-2 py-0.5 rounded-full font-medium">Default</span>
+                            ) : (
+                              <button
+                                onClick={() => setDefaultPayment(m.id)}
+                                className="text-xs text-accent hover:underline"
+                              >
+                                Set default
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deletePaymentMethod(m.id)}
+                              disabled={deletingPayment === m.id}
+                              className="text-xs text-red-500 hover:text-red-700"
+                            >
+                              {deletingPayment === m.id ? "..." : "Remove"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-text-muted mt-4">You can save up to 5 payment methods. New methods can be saved during checkout.</p>
                 </div>
               </div>
             )}

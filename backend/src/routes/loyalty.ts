@@ -7,10 +7,16 @@ import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
-// Points earning rates
-const POINTS_PER_CURRENCY = 0.01; // 1 point per 100 KES spent
-const SIGNUP_BONUS = 100;
+// Points earning rates — tier-based multipliers
+const TIER_EARN_RATES: Record<string, number> = {
+  BRONZE: 0.01,    // 1 pt per 100 UGX
+  SILVER: 0.015,   // 1.5 pt per 100 UGX
+  GOLD: 0.02,      // 2 pt per 100 UGX
+  PLATINUM: 0.03,  // 3 pt per 100 UGX
+};
+const SIGNUP_BONUS = 500;
 const REFERRAL_BONUS = 200;
+const POINTS_EXPIRY_MONTHS = 6;
 
 // Tier thresholds (lifetime points)
 const TIER_THRESHOLDS = {
@@ -165,12 +171,17 @@ router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: 
 
     const { points } = req.body;
 
-    if (!points || points < 100) {
-      return res.status(400).json({ error: "Minimum 100 points required for redemption" });
+    if (!points || points < 500) {
+      return res.status(400).json({ error: "Minimum 500 points required for redemption" });
     }
 
-    // Calculate discount value
+    // Calculate discount value (100 points = 1 UGX)
     const discountValue = Math.floor(points / 100);
+
+    // Safety cap: max 50,000 UGX per coupon (= 5,000,000 points)
+    if (discountValue > 50000) {
+      return res.status(400).json({ error: "Maximum redemption value is 50,000 UGX per coupon" });
+    }
     const couponCode = `LOYALTY-${userId.slice(-6).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
 
     // Atomic: read + check + update in a single transaction to prevent race conditions
@@ -230,15 +241,48 @@ router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: 
   }
 }));
 
-// Award points for purchase (called internally)
+// Award points for purchase (called internally — on delivery, not payment)
 export const awardPurchasePoints = async (userId: string, orderTotal: number, orderId: string) => {
   try {
+    // Duplicate guard: skip if PURCHASE_EARN already exists for this orderId
+    const existing = await prisma.loyaltyTransaction.findFirst({
+      where: { orderId, type: "PURCHASE_EARN" },
+    });
+    if (existing) {
+      logger.info("loyalty_points_already_awarded", { userId, orderId });
+      return 0;
+    }
+
     const account = await getOrCreateAccount(userId);
-    const pointsEarned = Math.floor(orderTotal * POINTS_PER_CURRENCY);
+
+    // Tier-based earn rate
+    const tierRate = TIER_EARN_RATES[account.tier] || TIER_EARN_RATES.BRONZE;
+
+    // Check for active admin multiplier
+    let adminMultiplier = 1;
+    try {
+      const setting = await prisma.setting.findUnique({ where: { key: "loyalty_multiplier" } });
+      if (setting) {
+        const data = JSON.parse(setting.value);
+        if (new Date(data.endsAt) > new Date()) {
+          adminMultiplier = data.multiplier;
+        }
+      }
+    } catch {}
+
+    const pointsEarned = Math.floor(orderTotal * tierRate * adminMultiplier);
 
     if (pointsEarned > 0) {
       const newLifetimePoints = account.lifetimePoints + pointsEarned;
       const newTier = calculateTier(newLifetimePoints);
+
+      const expiresAt = new Date();
+      expiresAt.setMonth(expiresAt.getMonth() + POINTS_EXPIRY_MONTHS);
+
+      const multiplierLabel = adminMultiplier > 1
+        ? ` + ${adminMultiplier}x event`
+        : "";
+      const description = `Earned ${pointsEarned} pts from order (${account.tier} ${tierRate * 100}x${multiplierLabel})`;
 
       await prisma.loyaltyAccount.update({
         where: { userId },
@@ -250,8 +294,9 @@ export const awardPurchasePoints = async (userId: string, orderTotal: number, or
             create: {
               type: "PURCHASE_EARN",
               points: pointsEarned,
-              description: `Earned from order`,
+              description,
               orderId,
+              expiresAt,
             },
           },
         },

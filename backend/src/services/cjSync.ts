@@ -6,6 +6,7 @@
 
 import prisma from "../lib/prisma";
 import { getOrderTracking, getProductDetail, calculateSellingPrice } from "./cjdropshipping";
+import { awardPurchasePoints } from "../routes/loyalty";
 import { logger } from "../lib/logger";
 
 // ── Tracking Sync ──
@@ -19,7 +20,7 @@ async function syncCJTracking(): Promise<void> {
       cjOrderId: { not: null },
     },
     include: {
-      order: { select: { id: true, orderNumber: true } },
+      order: { select: { id: true, orderNumber: true, userId: true, totalAmount: true } },
       product: { select: { name: true } },
     },
     take: 50,
@@ -79,6 +80,11 @@ async function syncCJTracking(): Promise<void> {
           await prisma.orderEvent.create({
             data: { orderId: cjOrder.order.id, status: "DELIVERED", note: "CJ package delivered" },
           });
+          // Award loyalty points on CJ delivery
+          if (cjOrder.order.userId) {
+            awardPurchasePoints(cjOrder.order.userId, Number(cjOrder.order.totalAmount), cjOrder.order.id)
+              .catch(err => logger.error("Failed to award points on CJ delivery", { error: err }));
+          }
         }
 
         updated++;

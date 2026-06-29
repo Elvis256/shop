@@ -16,12 +16,26 @@ import {
   rotateRefreshToken,
   invalidateAllRefreshTokens
 } from "../middleware/auth";
-import { sendWelcomeEmail, sendPasswordResetEmail } from "../lib/email";
-import { sendVerificationEmail, sendWelcomeEmail as sendVerifiedWelcome } from "../services/email";
+import { sendWelcomeEmail, sendPasswordResetEmail, sendVerificationEmail } from "../lib/email";
 import { logSecurityEvent } from "../middleware/securityEvents";
 import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
+
+// Helper: Parse user agent into a human-readable device string
+function parseUserAgent(ua?: string): string {
+  if (!ua) return "Unknown";
+  if (/iPhone/i.test(ua)) return "iPhone";
+  if (/iPad/i.test(ua)) return "iPad";
+  if (/Android/i.test(ua)) {
+    const match = ua.match(/Android\s[\d.]+;\s*([^)]+)/);
+    return match ? match[1].split("Build")[0].trim() : "Android Device";
+  }
+  if (/Windows/i.test(ua)) return "Windows PC";
+  if (/Macintosh/i.test(ua)) return "Mac";
+  if (/Linux/i.test(ua)) return "Linux PC";
+  return "Unknown";
+}
 
 // Helper: Verify Telegram WebApp initData
 export function verifyTelegramInitData(initData: string, botToken: string): boolean {
@@ -413,7 +427,20 @@ router.post("/login", asyncHandler(async (req, res: Response) => {
     // (seller access is determined by Seller record, not role)
     const portal = (user.role === "ADMIN" || user.role === "MANAGER") ? "admin" : "customer";
     const accessToken = generateToken({ id: user.id, email: user.email, role: user.role, portal });
+    const ua = req.headers["user-agent"] || "";
+    const device = parseUserAgent(ua);
     const refreshToken = await createRefreshToken(user.id);
+
+    // Store IP/UA/device on the refresh token for session display
+    prisma.refreshToken.updateMany({
+      where: { token: refreshToken, userId: user.id },
+      data: { ipAddress: clientIp, userAgent: ua.slice(0, 500), device },
+    }).catch(() => {});
+
+    // Log login history
+    prisma.loginHistory.create({
+      data: { userId: user.id, ipAddress: clientIp, userAgent: ua.slice(0, 500), device, success: true },
+    }).catch(() => {});
 
     // Set httpOnly cookies
     res.cookie("auth_token", accessToken, COOKIE_OPTIONS);
@@ -580,6 +607,10 @@ router.get("/dashboard", authenticate, asyncHandler(async (req: AuthRequest, res
       unreadMessages,
       referralCode,
       storeCredit,
+      profileUser,
+      addressCount,
+      twoFactorEnabled,
+      notificationLogs,
     ] = await Promise.all([
       // Last 5 orders
       prisma.order.findMany({
@@ -628,6 +659,22 @@ router.get("/dashboard", authenticate, asyncHandler(async (req: AuthRequest, res
         where: { userId },
         select: { balance: true },
       }),
+      // Profile data for completion
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, phone: true, emailVerified: true, avatarUrl: true },
+      }),
+      // Address count
+      prisma.address.count({ where: { userId } }),
+      // 2FA status
+      prisma.twoFactorAuth.findUnique({ where: { userId }, select: { isEnabled: true } }).catch(() => null),
+      // Recent notification logs
+      prisma.notificationLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, channel: true, event: true, status: true, createdAt: true, metadata: true },
+      }).catch(() => []),
     ]);
 
     // Count orders by status
@@ -656,6 +703,41 @@ router.get("/dashboard", authenticate, asyncHandler(async (req: AuthRequest, res
       };
     });
 
+    // Profile completion calculation
+    const completionItems: { key: string; label: string; done: boolean; href: string }[] = [
+      { key: "name", label: "Add your name", done: !!profileUser?.name, href: "/account/settings" },
+      { key: "phone", label: "Add phone number", done: !!profileUser?.phone, href: "/account/settings" },
+      { key: "emailVerified", label: "Verify your email", done: !!profileUser?.emailVerified, href: "/account/settings" },
+      { key: "avatar", label: "Upload a profile photo", done: !!profileUser?.avatarUrl, href: "/account/settings" },
+      { key: "address", label: "Add a delivery address", done: addressCount > 0, href: "/account/addresses" },
+      { key: "twoFactor", label: "Enable 2FA", done: !!twoFactorEnabled?.isEnabled, href: "/account/security" },
+    ];
+    const completedCount = completionItems.filter((i) => i.done).length;
+    const completionPercent = Math.round((completedCount / completionItems.length) * 100);
+
+    // Award 50 loyalty points on first 100% completion
+    if (completionPercent === 100) {
+      try {
+        const loyalty = await prisma.loyaltyAccount.findUnique({ where: { userId } });
+        if (loyalty) {
+          const alreadyAwarded = await prisma.loyaltyTransaction.findFirst({
+            where: { accountId: loyalty.id, description: "Profile completion bonus" },
+          });
+          if (!alreadyAwarded) {
+            await prisma.$transaction([
+              prisma.loyaltyAccount.update({
+                where: { userId },
+                data: { points: { increment: 50 }, lifetimePoints: { increment: 50 } },
+              }),
+              prisma.loyaltyTransaction.create({
+                data: { accountId: loyalty.id, points: 50, type: "SIGNUP_BONUS", description: "Profile completion bonus" },
+              }),
+            ]);
+          }
+        }
+      } catch {}
+    }
+
     return res.json({
       recentOrders: maskedRecentOrders,
       stats: {
@@ -668,6 +750,8 @@ router.get("/dashboard", authenticate, asyncHandler(async (req: AuthRequest, res
       loyalty: loyaltyAccount || { points: 0, tier: "BRONZE", lifetimePoints: 0 },
       referralCode: referralCode?.code || null,
       storeCredit: Number(storeCredit?.balance || 0),
+      profileCompletion: { items: completionItems, completionPercent },
+      notifications: notificationLogs,
     });
   } catch (error) {
     logger.error("Dashboard error", { error });
@@ -768,7 +852,7 @@ router.post("/verify-email", asyncHandler(async (req, res: Response) => {
     ]);
 
     // Send welcome email
-    sendVerifiedWelcome(verification.user.email, verification.user.name || undefined).catch(err => logger.error('send_verified_welcome_failed', { error: err }));
+    sendWelcomeEmail({ email: verification.user.email, name: verification.user.name || undefined }).catch(err => logger.error('send_verified_welcome_failed', { error: err }));
 
     return res.json({ message: "Email verified successfully! Welcome to Pleasure Zone Uganda." });
   } catch (error) {

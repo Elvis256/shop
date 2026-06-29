@@ -23,25 +23,29 @@ interface LoyaltyAccount {
   }>;
 }
 
-const tierConfig: Record<string, { color: string; minPoints: number; perks: string[] }> = {
-  BRONZE: { 
-    color: "from-amber-600 to-amber-800", 
+const tierConfig: Record<string, { color: string; minPoints: number; earnRate: string; perks: string[] }> = {
+  BRONZE: {
+    color: "from-amber-600 to-amber-800",
     minPoints: 0,
-    perks: ["Earn 1 point per USh 100 spent", "Birthday bonus points"]
+    earnRate: "Earn 1 pt per USh 100 spent",
+    perks: ["Earn 1 pt per USh 100 spent", "Birthday bonus points"]
   },
-  SILVER: { 
-    color: "from-gray-400 to-gray-600", 
+  SILVER: {
+    color: "from-gray-400 to-gray-600",
     minPoints: 1000,
+    earnRate: "Earn 1.5 pts per USh 100 spent",
     perks: ["1.5x points earning", "Early access to sales", "Free shipping over USh 100,000"]
   },
-  GOLD: { 
-    color: "from-yellow-400 to-yellow-600", 
+  GOLD: {
+    color: "from-yellow-400 to-yellow-600",
     minPoints: 5000,
+    earnRate: "Earn 2 pts per USh 100 spent",
     perks: ["2x points earning", "Exclusive offers", "Free shipping on all orders", "Priority support"]
   },
-  PLATINUM: { 
-    color: "from-purple-400 to-purple-600", 
+  PLATINUM: {
+    color: "from-purple-400 to-purple-600",
     minPoints: 15000,
+    earnRate: "Earn 3 pts per USh 100 spent",
     perks: ["3x points earning", "VIP events access", "Free express shipping", "Personal shopper"]
   },
 };
@@ -172,11 +176,13 @@ export default function LoyaltyPage() {
               )}
               
               <p className="text-sm opacity-80">
-                {nextTier 
+                {nextTier
                   ? `${pointsToNextTier.toLocaleString()} points to ${nextTier}`
-                  : "You've reached the highest tier! 🎉"
+                  : "You've reached the highest tier!"
                 }
               </p>
+              <p className="text-sm opacity-80 mt-1">{tier.earnRate}</p>
+              <p className="text-xs opacity-60 mt-1">Points expire 6 months after earning</p>
             </div>
 
             {/* Quick Stats */}
@@ -201,7 +207,7 @@ export default function LoyaltyPage() {
             {/* Redeem Options */}
             <div className="card mb-8">
               <h3 className="font-medium mb-4">Redeem Points</h3>
-              <p className="text-sm text-text-muted mb-4">100 points = USh 100 discount</p>
+              <p className="text-sm text-text-muted mb-4">100 points = USh 100 discount (min. 500 points)</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[500, 1000, 2500, 5000].map((points) => (
                   <button
@@ -232,6 +238,19 @@ export default function LoyaltyPage() {
                   </li>
                 ))}
               </ul>
+            </div>
+
+            {/* Tier Earn Rates */}
+            <div className="card mb-8">
+              <h3 className="font-medium mb-4">Tier Earn Rates</h3>
+              <div className="space-y-2">
+                {Object.entries(tierConfig).map(([name, config]) => (
+                  <div key={name} className={`flex items-center justify-between text-sm py-1 ${name === account.tier ? "font-semibold" : "text-text-muted"}`}>
+                    <span>{name}{name === account.tier ? " (You)" : ""}</span>
+                    <span>{config.earnRate}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Transaction History */}

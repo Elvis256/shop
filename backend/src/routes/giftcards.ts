@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
-import { sendEmail } from "../services/email";
+import { sendRawEmail as sendEmail } from "../lib/email";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
 

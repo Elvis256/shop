@@ -58,6 +58,9 @@ export default function CheckoutPage() {
   const [paymentPending, setPaymentPending] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [paymentSettings, setPaymentSettings] = useState<Record<string, string>>({});
+  const [savedPayments, setSavedPayments] = useState<Array<{ id: string; type: string; network?: string; phone?: string; phoneMask?: string; label?: string; isDefault: boolean }>>([]);
+  const [selectedSavedPayment, setSelectedSavedPayment] = useState<string | null>(null);
+  const [savePaymentMethod, setSavePaymentMethod] = useState(false);
 
   // Installments state
   const [installmentsEnabled, setInstallmentsEnabled] = useState(false);
@@ -244,6 +247,20 @@ export default function CheckoutPage() {
           // Auto-select default address
           const defaultAddr = addrs.find((a: any) => a.isDefault) || addrs[0];
           if (defaultAddr) selectSavedAddress(defaultAddr);
+        })
+        .catch(() => {});
+      // Fetch saved payment methods
+      apiFetch("/api/saved-payments")
+        .then((d) => {
+          if (Array.isArray(d)) {
+            setSavedPayments(d);
+            const defaultMethod = d.find((m: any) => m.isDefault);
+            if (defaultMethod && defaultMethod.phone) {
+              setSelectedSavedPayment(defaultMethod.id);
+              setMobilePhone(defaultMethod.phone);
+              if (defaultMethod.network) setMobileNetwork(defaultMethod.network as any);
+            }
+          }
         })
         .catch(() => {});
     }
@@ -562,6 +579,14 @@ export default function CheckoutPage() {
 
       setOrderId(data.orderId);
 
+      // Save payment method if user opted in
+      if (savePaymentMethod && user && mobilePhone && !selectedSavedPayment) {
+        apiFetch("/api/saved-payments", {
+          method: "POST",
+          body: JSON.stringify({ type: "MOBILE_MONEY", network: mobileNetwork, phone: mobilePhone }),
+        }).catch(() => {});
+      }
+
       if (data.paymentLink) {
         // Redirect to PayPal or Flutterwave
         window.location.href = data.paymentLink;
@@ -711,6 +736,16 @@ export default function CheckoutPage() {
         <div role="alert" className="max-w-2xl mx-auto mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
           <p className="text-red-700">{error}</p>
+        </div>
+      )}
+
+      {/* Store Credit Banner */}
+      {user && storeCreditBalance > 0 && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
+          <Wallet className="w-5 h-5 text-green-600 shrink-0" />
+          <p className="text-sm text-green-800">
+            You have <strong>{formatPrice(storeCreditBalance)}</strong> in store credit! It will be available to apply at checkout.
+          </p>
         </div>
       )}
 
@@ -1493,6 +1528,59 @@ export default function CheckoutPage() {
               {/* Mobile Money Form */}
               {(paymentMethod === "mobile_money" || (paymentMethod === "cod" && codDepositMethod === "mobile_money")) && (
                 <div className="space-y-4 pt-4 border-t border-border">
+                  {/* Saved payment methods */}
+                  {savedPayments.length > 0 && (
+                    <div>
+                      <label className="block text-small font-medium mb-2">Saved Numbers</label>
+                      <div className="space-y-2">
+                        {savedPayments.filter((m) => m.type === "MOBILE_MONEY").map((m) => (
+                          <label
+                            key={m.id}
+                            className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                              selectedSavedPayment === m.id ? "border-accent bg-accent/5" : "border-border"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="savedPayment"
+                              checked={selectedSavedPayment === m.id}
+                              onChange={() => {
+                                setSelectedSavedPayment(m.id);
+                                if (m.phone) setMobilePhone(m.phone);
+                                if (m.network) setMobileNetwork(m.network as any);
+                              }}
+                              className="accent-accent"
+                            />
+                            <Smartphone className="w-4 h-4 text-text-muted" />
+                            <div>
+                              <span className="text-sm font-medium">{m.phoneMask || m.phone}</span>
+                              {m.network && <span className="text-xs text-text-muted ml-2">{m.network}</span>}
+                              {m.label && <span className="text-xs text-text-muted ml-2">({m.label})</span>}
+                            </div>
+                            {m.isDefault && <span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded-full ml-auto">Default</span>}
+                          </label>
+                        ))}
+                        <label
+                          className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                            selectedSavedPayment === null ? "border-accent bg-accent/5" : "border-border"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="savedPayment"
+                            checked={selectedSavedPayment === null}
+                            onChange={() => {
+                              setSelectedSavedPayment(null);
+                              setMobilePhone("");
+                            }}
+                            className="accent-accent"
+                          />
+                          <span className="text-sm">Use a different number</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label htmlFor="mobileNetwork" className="block text-small font-medium mb-2">Select Network</label>
                     <select
@@ -1516,12 +1604,28 @@ export default function CheckoutPage() {
                       className="input"
                       placeholder={`${country.dialCode} ${country.phonePlaceholder || "700 000 000"}`}
                       value={mobilePhone}
-                      onChange={(e) => setMobilePhone(e.target.value)}
+                      onChange={(e) => {
+                        setMobilePhone(e.target.value);
+                        setSelectedSavedPayment(null);
+                      }}
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Enter the phone number registered with {mobileNetwork} {paymentMethod === "cod" ? "to pay the 20% deposit" : ""}
                     </p>
                   </div>
+
+                  {/* Save this number checkbox */}
+                  {user && !selectedSavedPayment && mobilePhone && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={savePaymentMethod}
+                        onChange={(e) => setSavePaymentMethod(e.target.checked)}
+                        className="accent-accent w-4 h-4"
+                      />
+                      <span className="text-xs text-text-muted">Save this number for future checkouts</span>
+                    </label>
+                  )}
                 </div>
               )}
 

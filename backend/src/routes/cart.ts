@@ -127,7 +127,7 @@ router.get("/:id", optionalAuth, asyncHandler(async (req: AuthRequest, res: Resp
 const AddItemSchema = z.object({
   productId: z.string(),
   quantity: z.number().int().positive().max(100).default(1),
-  variantId: z.string().optional(),
+  variantId: z.string().nullable().optional(),
 });
 
 // POST /api/cart/:id/items
@@ -311,7 +311,7 @@ const SyncCartSchema = z.object({
   items: z.array(
     z.object({
       productId: z.string(),
-      variantId: z.string().optional(),
+      variantId: z.string().nullable().optional(),
       quantity: z.number().int().positive(),
     })
   ),

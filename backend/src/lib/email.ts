@@ -556,3 +556,147 @@ export async function sendCancelledNotification(order: any, reason?: string) {
     },
   });
 }
+
+// ── Raw email sender (replaces services/email.ts sendEmail) ───────────
+// Uses the dynamic DB-aware getTransporter() so admin UI SMTP config is always used.
+export async function sendRawEmail(opts: { to: string; subject: string; html: string; text?: string }): Promise<boolean> {
+  try {
+    const transporter = await getTransporter();
+    if (!transporter) {
+      logger.info(`Email sending skipped (raw to ${opts.to}): SMTP not configured`);
+      return false;
+    }
+
+    let fromAddress = process.env.EMAIL_FROM;
+    try {
+      const fromSetting = await prisma.setting.findUnique({ where: { key: "email_from_address" } });
+      const fromName = await prisma.setting.findUnique({ where: { key: "email_from_name" } });
+      if (fromSetting?.value) {
+        fromAddress = fromName?.value ? `"${fromName.value}" <${fromSetting.value}>` : fromSetting.value;
+      }
+    } catch {}
+
+    await transporter.sendMail({
+      from: fromAddress,
+      to: opts.to,
+      subject: opts.subject,
+      html: opts.html,
+      ...(opts.text ? { text: opts.text } : {}),
+    });
+
+    logger.info(`Raw email sent to ${opts.to}: ${opts.subject}`);
+    return true;
+  } catch (error) {
+    logger.error("Raw email send error", { error });
+    return false;
+  }
+}
+
+// ── Verification email (ported from services/email.ts) ────────────────
+export async function sendVerificationEmail(email: string, token: string, name?: string): Promise<boolean> {
+  const BASE_URL = process.env.FRONTEND_URL || "http://localhost:3001";
+  const verifyUrl = `${BASE_URL}/verify-email?token=${token}`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #ec4899; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+        .button { display: inline-block; background: #ec4899; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Verify Your Email</h1>
+        </div>
+        <div class="content">
+          <p>Hi${name ? ` ${name}` : ""},</p>
+          <p>Thank you for creating an account with Pleasure Zone Uganda. Please verify your email address to access all features.</p>
+          <p style="text-align: center;">
+            <a href="${verifyUrl}" class="button">Verify Email Address</a>
+          </p>
+          <p>Or copy and paste this link in your browser:</p>
+          <p style="word-break: break-all; color: #666;">${verifyUrl}</p>
+          <p>This link will expire in 24 hours.</p>
+          <p>If you didn't create an account, please ignore this email.</p>
+        </div>
+        <div class="footer">
+          <p>&copy; ${new Date().getFullYear()} Pleasure Zone Uganda. All rights reserved.</p>
+          <p>This email was sent to ${email}</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return sendRawEmail({
+    to: email,
+    subject: "Verify Your Email - Pleasure Zone Uganda",
+    html,
+    text: `Verify your email by visiting: ${verifyUrl}`,
+  });
+}
+
+// ── Newsletter welcome (ported from services/email.ts) ────────────────
+export async function sendNewsletterWelcome(email: string): Promise<boolean> {
+  const BASE_URL = process.env.FRONTEND_URL || "http://localhost:3001";
+  const unsubscribeUrl = `${BASE_URL}/newsletter/unsubscribe?email=${encodeURIComponent(email)}`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #ec4899; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+        .discount { background: #fce7f3; border: 2px dashed #ec4899; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; }
+        .code { font-size: 24px; font-weight: bold; color: #ec4899; }
+        .button { display: inline-block; background: #ec4899; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>You're In!</h1>
+        </div>
+        <div class="content">
+          <p>Thanks for subscribing to our newsletter!</p>
+          <p>Here's a special welcome gift:</p>
+          <div class="discount">
+            <p>Use code</p>
+            <p class="code">WELCOME10</p>
+            <p>for 10% off your first order</p>
+          </div>
+          <p>You'll receive:</p>
+          <p>Exclusive deals & flash sales</p>
+          <p>New product announcements</p>
+          <p>Tips & guides</p>
+          <p style="text-align: center;">
+            <a href="${BASE_URL}/products" class="button">Shop Now</a>
+          </p>
+        </div>
+        <div class="footer">
+          <p>&copy; ${new Date().getFullYear()} Pleasure Zone Uganda. All rights reserved.</p>
+          <p><a href="${unsubscribeUrl}" style="color: #666;">Unsubscribe</a></p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return sendRawEmail({
+    to: email,
+    subject: "Welcome! Here's 10% Off Your First Order",
+    html,
+    text: `Thanks for subscribing! Use code WELCOME10 for 10% off your first order. Shop at ${BASE_URL}/products`,
+  });
+}
