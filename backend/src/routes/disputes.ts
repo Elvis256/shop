@@ -78,8 +78,8 @@ router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
         },
       });
 
-      // If escrow exists, freeze it
-      if (order.escrow) {
+      // If escrow exists and is still held, freeze it
+      if (order.escrow && order.escrow.status === "HELD") {
         await tx.escrowTransaction.update({
           where: { id: order.escrow.id },
           data: { status: "DISPUTED", disputeId: d.id },
@@ -114,26 +114,38 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
     const where: any = { buyerId: userId };
     if (status) where.status = status;
 
-    const disputes = await prisma.dispute.findMany({
-      where,
-      include: {
-        order: {
-          select: {
-            orderNumber: true,
-            totalAmount: true,
-            currency: true,
-            status: true,
-          },
-        },
-        seller: {
-          select: { storeName: true, logo: true },
-        },
-        _count: { select: { evidence: true, messages: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const skip = (page - 1) * limit;
 
-    return res.json(disputes);
+    const [disputes, total] = await Promise.all([
+      prisma.dispute.findMany({
+        where,
+        include: {
+          order: {
+            select: {
+              orderNumber: true,
+              totalAmount: true,
+              currency: true,
+              status: true,
+            },
+          },
+          seller: {
+            select: { storeName: true, logo: true },
+          },
+          _count: { select: { evidence: true, messages: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.dispute.count({ where }),
+    ]);
+
+    return res.json({
+      disputes,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    });
   } catch (error) {
     logger.error("List disputes error", { error });
     return res.status(500).json({ error: "Failed to fetch disputes" });
@@ -201,6 +213,10 @@ router.post("/:id/evidence", uploadDocuments, validateUploadedDocuments, asyncHa
       return res.status(404).json({ error: "Dispute not found" });
     }
 
+    if (["CLOSED", "RESOLVED"].includes(dispute.status)) {
+      return res.status(400).json({ error: "Cannot add evidence to a closed or resolved dispute" });
+    }
+
     const userSeller = await prisma.seller.findUnique({ where: { userId } });
     const isDisputeSeller = !!(userSeller && dispute.sellerId === userSeller.id);
     if (dispute.buyerId !== userId && !isDisputeSeller) {
@@ -247,6 +263,10 @@ router.post("/:id/messages", asyncHandler(async (req: AuthRequest, res: Response
     const dispute = await prisma.dispute.findUnique({ where: { id: req.params.id } });
     if (!dispute) {
       return res.status(404).json({ error: "Dispute not found" });
+    }
+
+    if (["CLOSED", "RESOLVED"].includes(dispute.status)) {
+      return res.status(400).json({ error: "Cannot add messages to a closed or resolved dispute" });
     }
 
     const userSeller = await prisma.seller.findUnique({ where: { userId } });

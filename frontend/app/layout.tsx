@@ -90,9 +90,6 @@ export const metadata: Metadata = {
   verification: {
     google: process.env.GOOGLE_SITE_VERIFICATION,
   },
-  other: {
-    "google-adsense-account": "ca-pub-2159433666559208",
-  },
 };
 
 export default function RootLayout({
@@ -103,13 +100,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${outfit.variable} ${playfair.variable}`} suppressHydrationWarning>
       <head>
-        {/* Google tag (gtag.js) — placed first in <head> for detection */}
-        <script async src="https://www.googletagmanager.com/gtag/js?id=G-9533LL81DP" />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-9533LL81DP');`,
-          }}
-        />
+        {/* Google AdSense Script (Injected manually to avoid next.js data-nscript warnings) */}
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2159433666559208" crossOrigin="anonymous" />
         {/* Bing Webmaster Tools Verification */}
         {process.env.NEXT_PUBLIC_BING_VERIFICATION && (
           <meta name="msvalidate.01" content={process.env.NEXT_PUBLIC_BING_VERIFICATION} />
@@ -129,6 +121,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen flex flex-col bg-bg text-text transition-colors" suppressHydrationWarning>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:bg-pink-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm">Skip to content</a>
+        <GoogleAnalytics />
         <ServiceWorkerRegistration />
         <CsrfFetchInterceptor />
         <OrganizationSchema />

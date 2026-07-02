@@ -144,6 +144,8 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [
       "https://ugsex.com",
       "https://www.ugsex.com",
+      "https://pleaures.com",
+      "https://www.pleaures.com",
       process.env.FRONTEND_URL,
     ].filter(Boolean) as string[]
   : [
@@ -155,28 +157,38 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
       "http://192.168.1.250:5000",
       "https://ugsex.com",
       "https://www.ugsex.com",
+      "https://pleaures.com",
+      "https://www.pleaures.com",
       process.env.FRONTEND_URL,
     ].filter(Boolean) as string[];
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin ONLY in development (blocks CSRF in production)
-    if (!origin) {
-      if (process.env.NODE_ENV === "production") {
-        return callback(null, false);
+app.use((req, res, next) => {
+  if (req.path.startsWith("/uploads")) {
+    return next();
+  }
+  return cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin ONLY in development (blocks CSRF in production)
+      if (!origin) {
+        if (process.env.NODE_ENV === "production") {
+          return callback(null, false);
+        }
+        return callback(null, true);
       }
-      return callback(null, true);
-    }
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(null, false);
-  },
-  credentials: true,
-}));
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
+    credentials: true,
+  })(req, res, next);
+});
 
 // Response compression
 app.use(compression());
+
+// Diaspora webhook needs raw body for Stripe signature verification — must be BEFORE express.json()
+app.use("/api/diaspora/webhook", express.raw({ type: "application/json", limit: "256kb" }));
 
 // Body parsing
 app.use(express.json({ limit: "1mb" }));
@@ -262,8 +274,6 @@ app.use("/api/smart-bundles", smartBundlesRoutes);
 app.use("/api/audio-guides", audioGuidesRoutes);
 app.use("/api/whatsapp-bot", whatsappBotRoutes);
 app.use("/api/ussd", ussdRoutes);
-// Diaspora webhook needs raw body for Stripe signature verification
-app.use("/api/diaspora/webhook", express.raw({ type: "application/json" }));
 app.use("/api/diaspora", diasporaRoutes);
 app.use("/api/country-config", countryConfigRoutes);
 app.use("/api/courier", localCourierRoutes);
@@ -311,13 +321,13 @@ app.use("/api/settings", settingsRoutes);
 // Health check endpoints — comprehensive monitoring
 setupHealthChecks(app);
 
-// Error handling middleware (must be last)
-app.use(errorHandler);
-
-// 404 handler
-app.use((_req, res) => {
+// 404 handler (before error handler so unmatched routes get a proper 404)
+app.use((_req, res, next) => {
   res.status(404).json({ error: "Not found" });
 });
+
+// Error handling middleware (must be last)
+app.use(errorHandler);
 
 const server = app.listen(Number(PORT), "0.0.0.0", () => {
   logger.info("server_started", { port: PORT });

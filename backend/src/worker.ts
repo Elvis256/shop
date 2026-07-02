@@ -141,11 +141,23 @@ async function startWorker() {
           // Re-process the webhook payload
           const payload = retry.payload as any;
           if (retry.provider === "flutterwave" && payload?.data?.tx_ref) {
-            // Verify with provider and process
             const { verifyFlutterwaveTransaction } = await import("./services/flutterwave");
+            const { confirmPaidOrder } = await import("./services/orderConfirmation");
             const verification = await verifyFlutterwaveTransaction(payload.data.id || payload.data.tx_ref);
-            if (verification?.status === "successful") {
-              // Mark as resolved — the webhook handler in the main app processes this
+            if (verification?.data?.status === "successful") {
+              const txRef = payload.data.tx_ref;
+              const orderId = txRef.startsWith("split-init-") || txRef.startsWith("split-part-")
+                ? txRef.split("-").slice(2).join("-")
+                : txRef;
+
+              const order = await prisma.order.findUnique({ where: { id: orderId } });
+              if (order && order.paymentStatus !== "SUCCESSFUL") {
+                await prisma.$transaction(async (tx) => {
+                  await confirmPaidOrder(tx, orderId, { order });
+                });
+                logger.info("webhook_retry_confirmed_order", { orderId, retryId: retry.id });
+              }
+
               await prisma.webhookRetry.update({
                 where: { id: retry.id },
                 data: { resolved: true, resolvedAt: new Date() },

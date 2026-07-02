@@ -154,24 +154,35 @@ router.get("/", asyncHandler(async (req: Request, res: Response) => {
 
     // Fetch active promotions for returned product IDs
     const productIds = products.map((p) => p.id);
-    const activePromotions = productIds.length > 0 ? await prisma.productPromotion.findMany({
-      where: { productId: { in: productIds }, status: "ACTIVE" },
-      select: { productId: true, tier: true },
-    }) : [];
-    const promoMap = new Map(activePromotions.map((p) => [p.productId, p.tier]));
+    let allActivePromos = await cacheGet<any[]>("active-promotions:all");
+    if (!allActivePromos) {
+      allActivePromos = await prisma.productPromotion.findMany({
+        where: { status: "ACTIVE" },
+        select: { productId: true, tier: true },
+      });
+      await cacheSet("active-promotions:all", allActivePromos, 300); // 5 min cache
+    }
+    const filteredPromotions = allActivePromos.filter((ap) => productIds.includes(ap.productId));
+    const promoMap = new Map(filteredPromotions.map((p) => [p.productId, p.tier]));
 
     // On page 1: fetch up to 3 VIP-promoted products not already in results
     let vipInserts: typeof products = [];
     if (pageNum === 1 && !flashSale) {
       const existingIds = new Set(productIds);
-      const vipPromos = await prisma.productPromotion.findMany({
-        where: { status: "ACTIVE", tier: "VIP", productId: { notIn: Array.from(existingIds) } },
-        take: 3,
-        include: { product: { include: { category: { select: { name: true, slug: true } }, images: { take: 1, orderBy: { position: "asc" } } } } },
-      });
+      let vipPromos = await cacheGet<any[]>("active-promotions:vip");
+      if (!vipPromos) {
+        vipPromos = await prisma.productPromotion.findMany({
+          where: { status: "ACTIVE", tier: "VIP" },
+          include: { product: { include: { category: { select: { name: true, slug: true } }, images: { take: 1, orderBy: { position: "asc" } } } } },
+        });
+        await cacheSet("active-promotions:vip", vipPromos, 300); // 5 min cache
+      }
+
       vipInserts = vipPromos
-        .filter((vp) => vp.product.status === "ACTIVE")
+        .filter((vp) => !existingIds.has(vp.productId) && vp.product && vp.product.status === "ACTIVE")
+        .slice(0, 3)
         .map((vp) => vp.product);
+
       for (const vp of vipInserts) {
         promoMap.set(vp.id, "VIP");
       }
@@ -237,12 +248,18 @@ router.get("/", asyncHandler(async (req: Request, res: Response) => {
 // GET /api/products/feed/google-merchant — Google Merchant Center product feed
 router.get("/feed/google-merchant", asyncHandler(async (req: Request, res: Response) => {
   try {
+    // Paginate feed to avoid loading entire catalog into memory
+    const pageSize = 500;
+    const cursor = req.query.cursor as string | undefined;
     const products = await prisma.product.findMany({
       where: { status: "ACTIVE" },
       include: {
         category: true,
-        images: { take: 5, orderBy: { position: "asc" } }
-      }
+        images: { take: 5, orderBy: { position: "asc" } },
+      },
+      take: pageSize,
+      orderBy: { id: "asc" },
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     });
 
     const siteUrl = process.env.BASE_URL || "https://ugsex.com";

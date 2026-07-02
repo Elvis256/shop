@@ -77,8 +77,8 @@ router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respons
       take: 10,
     });
 
-    // Calculate points value (100 points = 1 KES discount)
-    const pointsValue = Math.floor(account.points / 100);
+    // Calculate points value (100 points = 30 UGX discount)
+    const pointsValue = Math.floor((account.points / 100) * 30);
 
     res.json({
       account: {
@@ -104,7 +104,7 @@ router.get("/balance", authenticate, asyncHandler(async (req: AuthRequest, res: 
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Not authenticated" });
     const account = await getOrCreateAccount(userId);
-    const pointsValue = Math.floor(account.points / 100);
+    const pointsValue = Math.floor((account.points / 100) * 30);
     res.json({
       account: { ...account, pointsValue },
     });
@@ -175,8 +175,8 @@ router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: 
       return res.status(400).json({ error: "Minimum 500 points required for redemption" });
     }
 
-    // Calculate discount value (100 points = 1 UGX)
-    const discountValue = Math.floor(points / 100);
+    // Calculate discount value (100 points = 30 UGX)
+    const discountValue = Math.floor((points / 100) * 30);
 
     // Safety cap: max 50,000 UGX per coupon (= 5,000,000 points)
     if (discountValue > 50000) {
@@ -199,7 +199,7 @@ router.post("/redeem", authenticate, asyncHandler(async (req: AuthRequest, res: 
             create: {
               type: "REDEMPTION",
               points: -points,
-              description: `Redeemed ${points} points for KES ${discountValue} discount`,
+              description: `Redeemed ${points} points for UGX ${discountValue} discount`,
             },
           },
         },
@@ -339,18 +339,27 @@ router.post("/admin/multiplier", authenticate, requireAdmin, asyncHandler(async 
 }));
 
 // GET /api/loyalty/admin/accounts — List all loyalty accounts (admin)
-router.get("/admin/accounts", authenticate, requireAdmin, asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get("/admin/accounts", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
-    const accounts = await prisma.loyaltyAccount.findMany({
-      include: {
-        user: { select: { name: true, email: true } },
-        transactions: { orderBy: { createdAt: "desc" }, take: 5 },
-      },
-      orderBy: { lifetimePoints: "desc" },
-    });
-    res.json(accounts);
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 25));
+    const skip = (page - 1) * limit;
+
+    const [accounts, total] = await Promise.all([
+      prisma.loyaltyAccount.findMany({
+        include: {
+          user: { select: { name: true, email: true } },
+          transactions: { orderBy: { createdAt: "desc" }, take: 5 },
+        },
+        orderBy: { lifetimePoints: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.loyaltyAccount.count(),
+    ]);
+    res.json({ accounts, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: "Failed to fetch loyalty accounts" });
   }
 }));
 

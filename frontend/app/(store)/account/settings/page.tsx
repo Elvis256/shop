@@ -10,14 +10,8 @@ import {
   Shield, Bell, MapPin, Star, Package, Calendar, AlertTriangle, MessageSquare
 } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
-
-const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
-
-function getCsrfToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/csrf_token=([^;]+)/);
-  return match ? match[1] : null;
-}
+import { apiFetch } from "@/lib/api";
+import { useToast } from "@/lib/hooks/useToast";
 
 function PasswordStrength({ password }: { password: string }) {
   const checks = [
@@ -50,6 +44,7 @@ export default function AccountSettingsPage() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
   const { formatPrice } = useCurrency();
+  const { showToast } = useToast();
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -116,31 +111,33 @@ export default function AccountSettingsPage() {
 
   useEffect(() => {
     if (!user) return;
-    fetch(`${API_URL}/api/auth/me`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
+    apiFetch("/api/auth/me")
+      .then((data: any) => {
         setName(data.name || "");
         setPhone(data.phone || "");
         setSmsOptIn(data.smsOptIn || false);
         setSmsPhone(data.phone || "");
         setOrderHistoryDays(data.orderHistoryDays ?? null);
         setReceiptMasked(data.receiptMasked || false);
+        if (data.notificationPrefs) {
+          setNotifications((prev) => ({ ...prev, ...data.notificationPrefs }));
+        }
       })
       .catch(() => {});
 
-    fetch(`${API_URL}/api/saved-payments`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d)) setSavedPayments(d); })
+    apiFetch("/api/saved-payments")
+      .then((d: any) => { if (Array.isArray(d)) setSavedPayments(d); })
       .catch(() => {});
 
-    fetch(`${API_URL}/api/orders`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => setStats((s) => ({ ...s, orders: Array.isArray(d) ? d.length : 0 })))
+    apiFetch("/api/orders")
+      .then((d: any) => {
+        const orders = d.orders || d;
+        setStats((s) => ({ ...s, orders: Array.isArray(orders) ? orders.length : (d.pagination?.total || 0) }));
+      })
       .catch(() => {});
 
-    fetch(`${API_URL}/api/loyalty`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => {
+    apiFetch("/api/loyalty")
+      .then((d: any) => {
         if (d.account) {
           setStats((s) => ({ ...s, points: d.account.points || 0, tier: d.account.tier || "BRONZE" }));
         }
@@ -158,16 +155,12 @@ export default function AccountSettingsPage() {
     setProfileError("");
     setProfileSuccess(false);
     try {
-      const csrf = getCsrfToken();
-      const res = await fetch(`${API_URL}/api/auth/me`, {
+      await apiFetch("/api/auth/me", {
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
         body: JSON.stringify({ name, phone }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to update profile");
       setProfileSuccess(true);
+      showToast("Profile updated successfully", "success");
       setTimeout(() => setProfileSuccess(false), 4000);
     } catch (err: unknown) {
       setProfileError(err instanceof Error ? err.message : "Failed to update profile");
@@ -184,16 +177,12 @@ export default function AccountSettingsPage() {
     if (newPassword.length < 8) { setPasswordError("Password must be at least 8 characters"); return; }
     setChangingPassword(true);
     try {
-      const csrf = getCsrfToken();
-      const res = await fetch(`${API_URL}/api/auth/change-password`, {
+      await apiFetch("/api/auth/change-password", {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to change password");
       setPasswordSuccess(true);
+      showToast("Password updated successfully", "success");
       setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
       setTimeout(() => setPasswordSuccess(false), 4000);
     } catch (err: unknown) {
@@ -203,9 +192,22 @@ export default function AccountSettingsPage() {
     }
   };
 
-  const handleSaveNotifications = () => {
-    setNotifSaved(true);
-    setTimeout(() => setNotifSaved(false), 3000);
+  const [notifSaving, setNotifSaving] = useState(false);
+  const handleSaveNotifications = async () => {
+    setNotifSaving(true);
+    try {
+      await apiFetch("/api/auth/me", {
+        method: "PUT",
+        body: JSON.stringify({ notificationPrefs: notifications }),
+      });
+      setNotifSaved(true);
+      showToast("Notification preferences saved", "success");
+      setTimeout(() => setNotifSaved(false), 3000);
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Failed to save preferences", "error");
+    } finally {
+      setNotifSaving(false);
+    }
   };
 
   const handleSaveSms = async (e: React.FormEvent) => {
@@ -218,16 +220,12 @@ export default function AccountSettingsPage() {
     }
     setSmsSaving(true);
     try {
-      const csrf = getCsrfToken();
-      const res = await fetch(`${API_URL}/api/auth/me`, {
+      await apiFetch("/api/auth/me", {
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
         body: JSON.stringify({ smsOptIn, phone: smsPhone }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to update SMS preferences");
       setSmsSuccess(true);
+      showToast("SMS preferences saved", "success");
       setTimeout(() => setSmsSuccess(false), 4000);
     } catch (err: unknown) {
       setSmsError(err instanceof Error ? err.message : "Failed to save SMS preferences");
@@ -241,16 +239,12 @@ export default function AccountSettingsPage() {
     setHistoryError("");
     setHistorySuccess(false);
     try {
-      const csrf = getCsrfToken();
-      const res = await fetch(`${API_URL}/api/auth/me`, {
+      await apiFetch("/api/auth/me", {
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
         body: JSON.stringify({ orderHistoryDays }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to save");
       setHistorySuccess(true);
+      showToast("Privacy setting saved", "success");
       setTimeout(() => setHistorySuccess(false), 4000);
     } catch (err: unknown) {
       setHistoryError(err instanceof Error ? err.message : "Failed to save");
@@ -265,16 +259,12 @@ export default function AccountSettingsPage() {
     setReceiptError("");
     setReceiptSuccess(false);
     try {
-      const csrf = getCsrfToken();
-      const res = await fetch(`${API_URL}/api/auth/me`, {
+      await apiFetch("/api/auth/me", {
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
         body: JSON.stringify({ receiptMasked }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to update preference");
       setReceiptSuccess(true);
+      showToast("Receipt masking preference updated", "success");
       setTimeout(() => setReceiptSuccess(false), 4000);
     } catch (err: unknown) {
       setReceiptError(err instanceof Error ? err.message : "Failed to update preference");
@@ -304,30 +294,26 @@ export default function AccountSettingsPage() {
   const deletePaymentMethod = async (id: string) => {
     setDeletingPayment(id);
     try {
-      const csrf = getCsrfToken();
-      const res = await fetch(`${API_URL}/api/saved-payments/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-        headers: csrf ? { "x-csrf-token": csrf } : {},
-      });
-      if (res.ok) {
-        setSavedPayments((prev) => prev.filter((p) => p.id !== id));
-      }
-    } catch {}
+      await apiFetch(`/api/saved-payments/${id}`, { method: "DELETE" });
+      setSavedPayments((prev) => prev.filter((p) => p.id !== id));
+      showToast("Payment method removed", "success");
+    } catch {
+      showToast("Failed to remove payment method", "error");
+    }
     setDeletingPayment(null);
   };
 
   const setDefaultPayment = async (id: string) => {
     try {
-      const csrf = getCsrfToken();
-      await fetch(`${API_URL}/api/saved-payments/${id}`, {
+      await apiFetch(`/api/saved-payments/${id}`, {
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
         body: JSON.stringify({ isDefault: true }),
       });
       setSavedPayments((prev) => prev.map((p) => ({ ...p, isDefault: p.id === id })));
-    } catch {}
+      showToast("Default payment updated", "success");
+    } catch {
+      showToast("Failed to update default payment", "error");
+    }
   };
 
   const navItems = [
@@ -610,8 +596,8 @@ export default function AccountSettingsPage() {
                     <CheckCircle className="w-4 h-4" /> Preferences saved!
                   </div>
                 )}
-                <button onClick={handleSaveNotifications} className="btn-primary mt-6 flex items-center gap-2">
-                  <Bell className="w-4 h-4" />Save Preferences
+                <button onClick={handleSaveNotifications} disabled={notifSaving} className="btn-primary mt-6 flex items-center gap-2">
+                  {notifSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><Bell className="w-4 h-4" />Save Preferences</>}
                 </button>
               </div>
             )}

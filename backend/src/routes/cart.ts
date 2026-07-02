@@ -158,23 +158,24 @@ router.post("/:id/items", optionalAuth, asyncHandler(async (req: AuthRequest, re
       return res.status(404).json({ error: "Product not found" });
     }
 
-    // Validate stock at the variant or product level
+    // Check if item already in cart (same product + variant) — needed for stock validation
+    const existingItem = await prisma.cartItem.findFirst({
+      where: { cartId: id, productId, variantId: variantId || null },
+    });
+    const totalQuantity = (existingItem?.quantity || 0) + quantity;
+
+    // Validate stock at the variant or product level (including existing cart quantity)
     if (variantId) {
       const variant = await prisma.productVariant.findUnique({ where: { id: variantId } });
       if (!variant || variant.productId !== productId) {
         return res.status(404).json({ error: "Variant not found for this product" });
       }
-      if (variant.stock - (variant.reservedStock || 0) < quantity) {
+      if (variant.stock - (variant.reservedStock || 0) < totalQuantity) {
         return res.status(400).json({ error: "Insufficient stock for selected variant" });
       }
-    } else if (product.stock - (product.reservedStock || 0) < quantity) {
+    } else if (product.stock - (product.reservedStock || 0) < totalQuantity) {
       return res.status(400).json({ error: "Insufficient stock" });
     }
-
-    // Check if item already in cart (same product + variant)
-    const existingItem = await prisma.cartItem.findFirst({
-      where: { cartId: id, productId, variantId: variantId || null },
-    });
 
     if (existingItem) {
       // Update quantity
@@ -368,22 +369,19 @@ router.post("/sync", optionalAuth, asyncHandler(async (req: AuthRequest, res: Re
         return { productId: item.productId, variantId: item.variantId || null, quantity };
       });
 
-    // Create cart with items in a transaction
-    const cart = await prisma.$transaction(async (tx) => {
-      const newCart = await tx.cart.create({ data: {} });
-
-      if (validItems.length > 0) {
-        await tx.cartItem.createMany({
-          data: validItems.map((item) => ({
-            cartId: newCart.id,
-            productId: item.productId,
-            variantId: item.variantId,
-            quantity: item.quantity,
-          })),
-        });
-      }
-
-      return newCart;
+    // Create cart with items in a single nested write query
+    const cart = await prisma.cart.create({
+      data: {
+        items: {
+          createMany: {
+            data: validItems.map((item) => ({
+              productId: item.productId,
+              variantId: item.variantId,
+              quantity: item.quantity,
+            })),
+          },
+        },
+      },
     });
 
     const fullCart = await getFullCart(cart.id, req.user?.id);

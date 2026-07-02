@@ -16,18 +16,28 @@ function getTimeLeft(endTime: Date) {
 }
 
 export default function FlashSaleCountdown({ endTime }: Props) {
-  const [timeLeft, setTimeLeft] = useState(() => getTimeLeft(endTime));
+  const [timeLeft, setTimeLeft] = useState<{ h: number; m: number; s: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const endMs = endTime.getTime();
   useEffect(() => {
+    setMounted(true);
+    setTimeLeft(getTimeLeft(new Date(endMs)));
+
     const timer = setInterval(() => {
-      setTimeLeft(getTimeLeft(new Date(endMs)));
+      const tl = getTimeLeft(new Date(endMs));
+      setTimeLeft(tl);
+      if (!tl) clearInterval(timer);
     }, 1000);
     return () => clearInterval(timer);
   }, [endMs]);
 
+  if (!mounted) {
+    return <span className="text-sm font-medium text-red-500 animate-pulse">Loading timer...</span>;
+  }
+
   if (!timeLeft) {
-    return <span className="text-sm font-medium text-red-500">Ended</span>;
+    return <span className="text-sm font-medium text-gray-500">Sale ended</span>;
   }
 
   const pad = (n: number) => String(n).padStart(2, "0");

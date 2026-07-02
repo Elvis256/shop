@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useCart } from "@/lib/hooks/useCart";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import FreeShippingBar from "@/components/FreeShippingBar";
@@ -11,6 +11,7 @@ import { X, ShoppingBag, Minus, Plus, Trash2 } from "lucide-react";
 export default function CartDrawer() {
   const { items, isOpen, closeCart, total, updateQuantity, removeItem, syncError, dismissSyncError } = useCart();
   const { formatPrice } = useCurrency();
+  const drawerRef = useRef<HTMLDivElement>(null);
 
   // Lock body scroll when cart is open
   useEffect(() => {
@@ -22,6 +23,41 @@ export default function CartDrawer() {
     return () => { document.body.style.overflow = ""; };
   }, [isOpen]);
 
+  // Escape key to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeCart();
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [isOpen, closeCart]);
+
+  // Focus trap
+  useEffect(() => {
+    if (!isOpen || !drawerRef.current) return;
+    const drawer = drawerRef.current;
+    const focusable = drawer.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length > 0) focusable[0].focus();
+
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleTab);
+    return () => document.removeEventListener("keydown", handleTab);
+  }, [isOpen, items.length]);
+
   if (!isOpen) return null;
 
   return (
@@ -30,10 +66,17 @@ export default function CartDrawer() {
       <div
         className="fixed inset-0 bg-black/50 z-40 transition-opacity"
         onClick={closeCart}
+        aria-hidden="true"
       />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-surface z-50 shadow-xl flex flex-col">
+      <div
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Shopping cart"
+        className="fixed right-0 top-0 h-full w-full max-w-md bg-surface z-50 shadow-xl flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="text-lg font-semibold text-text">Your Cart ({items.reduce((sum, i) => sum + i.quantity, 0)})</h2>

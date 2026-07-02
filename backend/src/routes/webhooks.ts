@@ -80,7 +80,11 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
         }
         if (verifiedAmount !== undefined && verifiedAmount !== amount) {
           logger.warn(`Flutterwave verified amount mismatch for ${tx_ref}: webhook ${amount}, API ${verifiedAmount}`);
-          return res.status(200).json({ error: "Amount verification mismatch", received: true });
+          await prisma.order.update({
+            where: { id: orderId },
+            data: { notes: `FLAGGED: Amount mismatch. Webhook: ${amount}, Verified: ${verifiedAmount}. Manual review required.` },
+          }).catch(() => {});
+          return res.status(422).json({ error: "Amount verification mismatch", received: false });
         }
       } catch (verifyErr) {
         logger.error(`Flutterwave server-side verification failed for ${tx_ref}, flagging for manual review`, { error: verifyErr });
@@ -97,7 +101,11 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
       // Verify amount AND currency match
       if (currency !== order.currency) {
         logger.warn(`Currency mismatch for order ${tx_ref}: expected ${order.currency}, got ${currency}`);
-        return res.status(200).json({ error: "Currency mismatch", received: true });
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { notes: `FLAGGED: Currency mismatch. Expected: ${order.currency}, Got: ${currency}. Manual review required.` },
+        }).catch(() => {});
+        return res.status(422).json({ error: "Currency mismatch", received: false });
       }
       // Compare against the payment record amount (handles installments correctly)
       const matchingPayment = order.payments.find(p => p.flwRef === flw_ref || p.flwRef === tx_ref);
@@ -107,7 +115,11 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
       }
       if (expectedAmount !== amount) {
         logger.warn(`Amount mismatch for order ${tx_ref}: expected ${expectedAmount}, got ${amount}`);
-        return res.status(200).json({ error: "Amount mismatch", received: true });
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { notes: `FLAGGED: Amount mismatch. Expected: ${expectedAmount}, Got: ${amount}. Manual review required.` },
+        }).catch(() => {});
+        return res.status(422).json({ error: "Amount mismatch", received: false });
       }
 
       // Process webhook in a transaction
@@ -292,6 +304,18 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
           throw err;
         }
 
+        // Server-side verification for installment payments
+        try {
+          const verification = await verifyFlutterwaveTransaction(data.id?.toString() || data.flw_ref);
+          if (verification?.data?.status !== "successful" && data.status === "successful") {
+            logger.warn(`Installment verification mismatch for ${data.tx_ref}: webhook says successful, API says ${verification?.data?.status}`);
+            return res.status(422).json({ error: "Installment verification mismatch", received: false });
+          }
+        } catch (verifyErr) {
+          logger.error(`Installment verification failed for ${data.tx_ref}`, { error: verifyErr });
+          return res.status(503).json({ received: false, error: "Verification service unavailable" });
+        }
+
         try {
           if (data.status === "successful") {
             const plan = await prisma.installmentPlan.findUnique({
@@ -334,6 +358,32 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
       if (parts.length >= 3) {
         const planId = parts[1];
         const paymentId = parts.slice(2).join("-");
+
+        // Idempotency guard for layaway webhooks
+        try {
+          await prisma.processedWebhook.create({
+            data: { webhookId: `layaway-${data.flw_ref || data.id}`, provider: "flutterwave", eventType: "layaway" },
+          });
+        } catch (err: any) {
+          if (err.code === "P2002") {
+            logger.info(`Layaway webhook ${data.flw_ref || data.id} already processed, skipping`);
+            return res.status(200).json({ received: true, duplicate: true });
+          }
+          throw err;
+        }
+
+        // Server-side verification for layaway payments
+        try {
+          const verification = await verifyFlutterwaveTransaction(data.id?.toString() || data.flw_ref);
+          if (verification?.data?.status !== "successful" && data.status === "successful") {
+            logger.warn(`Layaway verification mismatch for ${data.tx_ref}: webhook says successful, API says ${verification?.data?.status}`);
+            return res.status(422).json({ error: "Layaway verification mismatch", received: false });
+          }
+        } catch (verifyErr) {
+          logger.error(`Layaway verification failed for ${data.tx_ref}`, { error: verifyErr });
+          return res.status(503).json({ received: false, error: "Verification service unavailable" });
+        }
+
         handleLayawayPayment(planId, paymentId, data.status).catch(err => {
           logger.error("Layaway webhook handler error", { error: err });
         });
@@ -348,6 +398,19 @@ router.post("/flutterwave", asyncHandler(async (req: Request, res: Response) => 
       // Extract payout ID from reference "payout-{id}"
       if (reference.startsWith("payout-")) {
         const payoutId = reference.replace("payout-", "");
+
+        // Idempotency guard for transfer webhooks
+        try {
+          await prisma.processedWebhook.create({
+            data: { webhookId: `transfer-${transferData.id || reference}`, provider: "flutterwave", eventType: event },
+          });
+        } catch (err: any) {
+          if (err.code === "P2002") {
+            logger.info(`Transfer webhook ${transferData.id || reference} already processed, skipping`);
+            return res.status(200).json({ received: true, duplicate: true });
+          }
+          throw err;
+        }
 
         try {
           const payout = await prisma.sellerPayout.findUnique({

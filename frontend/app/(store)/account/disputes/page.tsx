@@ -6,6 +6,7 @@ import Section from "@/components/Section";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import { apiFetch } from "@/lib/api";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import { useToast } from "@/lib/hooks/useToast";
 import {
   Shield, AlertTriangle, Clock, CheckCircle, MessageSquare,
   ChevronRight, FileText, Loader2, XCircle, Eye,
@@ -59,6 +60,7 @@ export default function DisputesPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("all");
   const { formatPrice } = useCurrency();
+  const { showToast } = useToast();
 
   useEffect(() => {
     loadDisputes();
@@ -68,9 +70,10 @@ export default function DisputesPage() {
     try {
       const params = filter !== "all" ? `?status=${filter}` : "";
       const data = await apiFetch(`/api/disputes${params}`);
-      setDisputes(data);
+      setDisputes(data.disputes || data);
     } catch {
       setDisputes([]);
+      showToast("Failed to load disputes", "error");
     } finally {
       setLoading(false);
     }

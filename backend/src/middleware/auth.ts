@@ -193,7 +193,7 @@ export async function optionalAuth(req: AuthRequest, res: Response, next: NextFu
       if (decoded) {
         const user = await getCachedUser(decoded.id);
         if (user && !user.isBlocked) {
-          req.user = decoded;
+          req.user = { ...user, portal: decoded.portal };
         }
       }
     }

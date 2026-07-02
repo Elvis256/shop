@@ -60,8 +60,12 @@ export const SafeQuantity = z
  */
 export function sanitizeString(input: string): string {
   return input
-    .replace(/[<>]/g, "") // Remove angle brackets
-    .replace(/["']/g, "") // Remove quotes
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;")
+    .replace(/\//g, "&#x2F;")
     .trim();
 }
 
@@ -172,12 +176,12 @@ export function validate(schema: z.ZodSchema) {
           message: e.message,
           code: e.code,
         }));
-        throw Errors.UnprocessableEntity(
+        return next(Errors.UnprocessableEntity(
           "Input validation failed",
           { fields: fieldErrors }
-        );
+        ));
       }
-      throw error;
+      next(error);
     }
   };
 }

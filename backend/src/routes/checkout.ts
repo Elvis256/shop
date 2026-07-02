@@ -520,7 +520,9 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
         }
       }
 
-      effectivePrices.set(item.productId, unitPrice);
+      // Use composite key to handle same product with different variants
+      const priceKey = item.variantId ? `${item.productId}:${item.variantId}` : item.productId;
+      effectivePrices.set(priceKey, unitPrice);
       return sum + unitPrice * item.quantity;
     }, 0);
 
@@ -529,10 +531,70 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
       return failAttempt(400, { error: "Minimum order amount is UGX 5,000" }, "MIN_ORDER");
     }
 
-    // Validate shipping fee to prevent payload tampering
+    // Validate shipping fee to prevent payload tampering (matching settings.ts shipping zones formulas)
     let expectedShippingUgx = 0;
     if (body.deliveryMethod === "home") {
-      expectedShippingUgx = cartItems.reduce((sum, item) => sum + (item.product.shippingFee ? Number(item.product.shippingFee) : 0), 0);
+      const city = body.shippingAddress?.city || "Kampala";
+      const shippingKeys = [
+        "shipping_free_threshold",
+        "shipping_default_rate",
+        "shipping_express_rate",
+        "shipping_upcountry_rate",
+        "shipping_intl_included",
+        "shipping_intl_rate"
+      ];
+      const [settings, zones] = await Promise.all([
+        prisma.setting.findMany({ where: { key: { in: shippingKeys } } }),
+        prisma.shippingZone.findMany({ where: { isActive: true } }),
+      ]);
+      const cfg = settings.reduce((acc, s) => {
+        acc[s.key] = s.value;
+        return acc;
+      }, {} as Record<string, string>);
+
+      const freeThreshold = parseInt(cfg.shipping_free_threshold || "100000", 10);
+      const standardRate = parseInt(cfg.shipping_default_rate || "5000", 10);
+      const upcountryRate = parseInt(cfg.shipping_upcountry_rate || "10000", 10);
+      const intlIncluded = cfg.shipping_intl_included !== "false";
+      const intlRate = parseInt(cfg.shipping_intl_rate || "0", 10);
+
+      const enrichedItems = cartItems.map((item) => {
+        const badge = (item.product.cjProductId || item.product.aliexpressProductId) ? "From Abroad" : "Express";
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          shippingBadge: badge,
+          price: Number(item.product.price),
+        };
+      });
+
+      const localItems = enrichedItems.filter((i) => i.shippingBadge !== "From Abroad");
+      const intlItems = enrichedItems.filter((i) => i.shippingBadge === "From Abroad");
+      const localTotal = localItems.reduce((s, i) => s + i.price * i.quantity, 0);
+
+      let localShipping = standardRate;
+      const cityLower = city.toLowerCase().trim();
+      const matchedZone = zones.find((z) =>
+        z.cities.some((c) => c.toLowerCase().trim() === cityLower)
+      );
+
+      if (matchedZone) {
+        localShipping = Number(matchedZone.rate);
+        if (matchedZone.freeAbove && localTotal >= Number(matchedZone.freeAbove)) {
+          localShipping = 0;
+        }
+      } else if (cityLower === "kampala" || !city) {
+        localShipping = standardRate;
+        if (localTotal >= freeThreshold) localShipping = 0;
+      } else {
+        localShipping = upcountryRate;
+        if (localTotal >= freeThreshold) localShipping = 0;
+      }
+
+      const intlShipping = intlItems.length > 0 && !intlIncluded ? intlRate * intlItems.length : 0;
+      if (localItems.length === 0) localShipping = 0;
+
+      expectedShippingUgx = localShipping + intlShipping;
     }
     
     let shippingAmountInUgx = body.shipping || 0;
@@ -718,6 +780,25 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
         resolvedDeliveryMethod = "SELLER_PICKUP";
       }
 
+      // Calculate estimated delivery date before order creation
+      const addBusinessDays = (date: Date, days: number): Date => {
+        const result = new Date(date);
+        let added = 0;
+        while (added < days) {
+          result.setDate(result.getDate() + 1);
+          const dow = result.getDay();
+          if (dow !== 0 && dow !== 6) added++;
+        }
+        return result;
+      };
+      const dm = (body.isGift ? "HOME_DELIVERY" : resolvedDeliveryMethod).toUpperCase();
+      let estDays = 5; // default standard
+      if (dm === "EXPRESS" || dm === "SAME_DAY") estDays = 2;
+      else if (dm === "UPCOUNTRY") estDays = 7;
+      else if (dm === "PICKUP" || dm === "SELLER_PICKUP") estDays = 1;
+      else estDays = 5; // HOME_DELIVERY standard
+      const estimatedDeliveryDate = addBusinessDays(new Date(), estDays);
+
       // Create order
       const orderNumber = `ORD-${nanoid(12).toUpperCase()}`;
       const subtotal = calculatedTotal;
@@ -759,11 +840,13 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
           splitPartnerPaid: false,
           dispatchScheduledAt: body.dispatchScheduledAt ? new Date(body.dispatchScheduledAt) : null,
           receiptMasked: body.receiptMasked || false,
+          estimatedDeliveryDate,
           items: {
             create: cartItems.map((item) => {
-              const unitPrice = item.variant?.price
-                ? Number(item.variant.price)
-                : (effectivePrices.get(item.productId) ?? item.product.price);
+              const priceKey = item.variantId ? `${item.productId}:${item.variantId}` : item.productId;
+              // Prefer effective price (includes flash sales, daily deals, price slashes) over raw variant price
+              const unitPrice = effectivePrices.get(priceKey)
+                ?? (item.variant?.price ? Number(item.variant.price) : Number(item.product.price));
               return {
                 productId: item.productId,
                 variantId: item.variantId || null,
@@ -778,28 +861,37 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
         },
       });
 
-      // Calculate and set estimated delivery date
-      const addBusinessDays = (date: Date, days: number): Date => {
-        const result = new Date(date);
-        let added = 0;
-        while (added < days) {
-          result.setDate(result.getDate() + 1);
-          const dow = result.getDay();
-          if (dow !== 0 && dow !== 6) added++;
+      // Track affiliate conversion if affiliateCode is provided
+      if (body.affiliateCode) {
+        let affiliate = await tx.affiliate.findUnique({
+          where: { code: body.affiliateCode }
+        });
+        if (!affiliate && body.affiliateCode.toUpperCase() !== body.affiliateCode) {
+          affiliate = await tx.affiliate.findUnique({
+            where: { code: body.affiliateCode.toUpperCase() }
+          });
         }
-        return result;
-      };
-      const dm = (order.deliveryMethod || "HOME_DELIVERY").toUpperCase();
-      let estDays = 5; // default standard
-      if (dm === "EXPRESS" || dm === "SAME_DAY") estDays = 2;
-      else if (dm === "UPCOUNTRY") estDays = 7;
-      else if (dm === "PICKUP" || dm === "SELLER_PICKUP") estDays = 1;
-      else estDays = 5; // HOME_DELIVERY standard
-      const estimatedDeliveryDate = addBusinessDays(new Date(), estDays);
-      await tx.order.update({
-        where: { id: order.id },
-        data: { estimatedDeliveryDate },
-      });
+        if (affiliate && affiliate.status === "APPROVED") {
+          const orderAmount = Number(order.totalAmount);
+          const commission = orderAmount * (Number(affiliate.commissionRate) / 100);
+          await tx.affiliateConversion.create({
+            data: {
+              affiliateId: affiliate.id,
+              orderId: order.id,
+              orderAmount,
+              commission,
+              status: "PENDING",
+            },
+          });
+          await tx.affiliate.update({
+            where: { id: affiliate.id },
+            data: {
+              totalOrders: { increment: 1 },
+            },
+          });
+          logger.info(`Tracked affiliate conversion for order ${order.id} using code ${affiliate.code}`);
+        }
+      }
 
       // Reserve stock
       const stockResult = await reserveStock(tx, cartItems, order.id);
@@ -923,7 +1015,7 @@ router.post("/create", optionalAuth, asyncHandler(async (req: AuthRequest, res: 
       if (body.splitPartnerPhone) {
         const { sendWhatsApp } = await import("../services/whatsapp");
         const { sendSMS } = await import("../services/sms");
-        const paymentUrl = `${process.env.FRONTEND_URL || process.env.BASE_URL || "http://localhost:3000"}/checkout/split/${result.id}`;
+        const paymentUrl = `${process.env.FRONTEND_URL || process.env.BASE_URL || "http://localhost:3000"}/checkout/split/${result.id}?phone=${encodeURIComponent(body.splitPartnerPhone)}`;
         const initiatorLabel = body.customer.name || "A friend";
         const formattedAmount = `USh ${paymentAmount.toLocaleString()}`;
         

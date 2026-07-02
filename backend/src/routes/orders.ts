@@ -266,6 +266,17 @@ router.post("/:id/verify-payment", optionalAuth, asyncHandler(async (req: AuthRe
       return res.status(404).json({ error: "Order not found" });
     }
 
+    // Ownership check: verify the caller owns this order
+    const userEmail = req.user?.email;
+    const userId = req.user?.id;
+    if (order.userId) {
+      // Registered user order — must match
+      if (userId && order.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+    }
+    // For guest orders, we allow verification since they have the order ID from the checkout redirect
+
     // Already confirmed — return success immediately
     if (order.paymentStatus === "SUCCESSFUL") {
       return res.json({
@@ -508,26 +519,37 @@ router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respons
     const userEmail = req.user!.email;
     const userId = req.user!.id;
 
-    const orders = await prisma.order.findMany({
-      where: {
-        OR: [
-          { customerEmail: userEmail },
-          { userId },
-        ],
-      },
-      include: {
-        payments: {
-          select: { status: true },
-        },
-        items: {
-          select: { quantity: true },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const skip = (page - 1) * limit;
 
-    return res.json(
-      orders.map((order) => ({
+    const where = {
+      OR: [
+        { customerEmail: userEmail },
+        { userId },
+      ],
+    };
+
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where,
+        include: {
+          payments: {
+            select: { status: true },
+          },
+          items: {
+            select: { quantity: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.order.count({ where }),
+    ]);
+
+    return res.json({
+      orders: orders.map((order) => ({
         id: order.id,
         orderNumber: order.orderNumber,
         status: order.status,
@@ -537,8 +559,9 @@ router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respons
         itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
         createdAt: order.createdAt,
         estimatedDeliveryDate: order.estimatedDeliveryDate || null,
-      }))
-    );
+      })),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    });
   } catch (error) {
     logger.error("List orders error", { error });
     return res.status(500).json({ error: "Failed to fetch orders" });
