@@ -214,17 +214,17 @@ router.post("/webhook", asyncHandler(async (req: Request, res: Response) => {
 
     if (orderNumber) {
       try {
-        await prisma.order.update({
-          where: { orderNumber },
-          data: { paymentStatus: "SUCCESSFUL", status: "CONFIRMED" },
-        });
-
         const order = await prisma.order.findUnique({
           where: { orderNumber },
           include: { items: true },
         });
 
         if (order) {
+          const { confirmPaidOrder } = await import("../services/orderConfirmation");
+          await prisma.$transaction(async (tx) => {
+            await confirmPaidOrder(tx, order.id, { order });
+          });
+
           // Notify recipient
           if (recipientPhone) {
             const itemNames = order.items.map((i: any) => i.name).join(", ");

@@ -207,13 +207,20 @@ router.post("/upload-image", authenticate, uploadMultiple, validateUploadedFiles
     for (const file of files) {
       if (blur) {
         // Apply privacy blur and re-save
-        const blurred = await sharp(path.join(REVIEW_UPLOAD_DIR, file.filename))
+        const originalPath = path.join(REVIEW_UPLOAD_DIR, file.filename);
+        const blurred = await sharp(originalPath)
           .blur(10)
           .jpeg({ quality: 80 })
           .toBuffer();
 
         const blurredFilename = `blur-${uuidv4()}.jpg`;
         await fs.promises.writeFile(path.join(REVIEW_UPLOAD_DIR, blurredFilename), blurred);
+        
+        // Clean up/delete the unblurred original file from server disk
+        await fs.promises.unlink(originalPath).catch((err) => {
+          logger.error("Failed to delete unblurred review image", { error: String(err), filename: file.filename });
+        });
+        
         urls.push(`/uploads/${blurredFilename}`);
       } else {
         urls.push(`/uploads/${file.filename}`);

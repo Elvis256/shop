@@ -48,10 +48,10 @@ router.post("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respon
       return res.status(404).json({ error: "Order not found or not eligible for return" });
     }
 
-    // Enforce 7-day return window from delivery date
+    // Enforce 7-day return window from delivery date (fallback to order.createdAt to prevent admin updatedAt resets)
     const RETURN_WINDOW_DAYS = 7;
     if (order.status === "DELIVERED") {
-      const deliveredAt = order.timeline[0]?.createdAt || order.updatedAt;
+      const deliveredAt = order.timeline[0]?.createdAt || order.createdAt;
       const daysSinceDelivery = (Date.now() - deliveredAt.getTime()) / (1000 * 60 * 60 * 24);
       if (daysSinceDelivery > RETURN_WINDOW_DAYS) {
         return res.status(400).json({
@@ -60,29 +60,34 @@ router.post("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respon
       }
     }
 
-    // Validate return item quantities against actual order items
+    // Validate return item quantities against actual order items and past returns
     for (const returnItem of data.items) {
       const orderItem = order.items.find(oi => oi.id === returnItem.orderItemId);
       if (!orderItem) {
         return res.status(400).json({ error: `Order item ${returnItem.orderItemId} not found in this order` });
       }
-      if (returnItem.quantity > orderItem.quantity) {
+
+      // Check how many items have already been returned and approved/pending
+      const alreadyReturned = await prisma.returnItem.aggregate({
+        where: {
+          orderItemId: returnItem.orderItemId,
+          returnRequest: {
+            status: { notIn: ["REJECTED", "CLOSED"] },
+          },
+        },
+        _sum: {
+          quantity: true,
+        },
+      });
+
+      const returnedCount = alreadyReturned._sum.quantity || 0;
+      const remainingReturnable = orderItem.quantity - returnedCount;
+
+      if (returnItem.quantity > remainingReturnable) {
         return res.status(400).json({
-          error: `Cannot return ${returnItem.quantity} of "${orderItem.name}" — only ${orderItem.quantity} were ordered`,
+          error: `Cannot return ${returnItem.quantity} of "${orderItem.name}" — already returned/pending: ${returnedCount}, remaining returnable: ${remainingReturnable}`,
         });
       }
-    }
-
-    // Check if return already exists
-    const existingReturn = await prisma.returnRequest.findFirst({
-      where: {
-        orderId: data.orderId,
-        status: { notIn: ["REJECTED", "CLOSED"] },
-      },
-    });
-
-    if (existingReturn) {
-      return res.status(400).json({ error: "A return request already exists for this order" });
     }
 
     // Create return request
@@ -199,6 +204,14 @@ router.get("/admin/all", authenticate, requireAdmin, asyncHandler(async (req: Au
 router.put("/:id/status", authenticate, requireAdmin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { status, adminNotes, refundAmount, refundMethod } = req.body;
+
+    const exists = await prisma.returnRequest.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!exists) {
+      return res.status(404).json({ error: "Return request not found" });
+    }
+
     const updated = await prisma.returnRequest.update({
       where: { id: req.params.id },
       data: {

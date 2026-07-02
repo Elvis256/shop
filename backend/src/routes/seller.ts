@@ -851,7 +851,7 @@ router.post("/products", authenticate, requireSeller, asyncHandler(async (req: S
               create: images.map((img: { url: string; alt?: string }, idx: number) => ({
                 url: img.url,
                 alt: img.alt || sanitizedName,
-                order: idx,
+                position: idx,
               })),
             }
           : undefined,

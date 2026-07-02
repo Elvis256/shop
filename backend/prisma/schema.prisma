@@ -70,6 +70,7 @@ model User {
   partnerOf          User?                 @relation("UserPartner")
   sensoryProfile     String?               @db.Text
   receiptMasked      Boolean               @default(false)
+  notificationPrefs  Json?
 
   @@index([createdAt])
   @@index([role])
@@ -394,6 +395,7 @@ model CartItem {
   @@unique([cartId, productId, variantId])
   @@index([cartId])
   @@index([variantId])
+  @@index([productId])
 }
 
 model Order {
@@ -539,6 +541,8 @@ model StockReservation {
 
   @@index([expiresAt, released])
   @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
 }
 
 model Payment {

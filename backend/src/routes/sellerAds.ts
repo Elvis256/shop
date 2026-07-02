@@ -3,11 +3,21 @@ import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import { cacheDel } from "../lib/cache";
 
 const router = Router();
 
 interface SellerRequest extends AuthRequest {
   seller?: any;
+}
+
+async function invalidatePromotionsCache() {
+  try {
+    await cacheDel("active-promotions:all");
+    await cacheDel("active-promotions:vip");
+  } catch (err) {
+    logger.error("Failed to invalidate promotions cache", { error: err });
+  }
 }
 
 async function requireSeller(req: SellerRequest, res: Response, next: NextFunction) {
@@ -240,6 +250,8 @@ router.post("/promotions", asyncHandler(async (req: SellerRequest, res: Response
       return promotion;
     });
 
+    await invalidatePromotionsCache();
+
     return res.status(201).json({
       message: "Promotion created successfully",
       promotion: {
@@ -272,6 +284,8 @@ router.put("/promotions/:id/pause", asyncHandler(async (req: SellerRequest, res:
       data: { status: "PAUSED" },
     });
 
+    await invalidatePromotionsCache();
+
     return res.json({ message: "Promotion paused" });
   } catch (error) {
     logger.error("Pause promotion error", { error });
@@ -295,6 +309,8 @@ router.put("/promotions/:id/resume", asyncHandler(async (req: SellerRequest, res
       where: { id: promo.id },
       data: { status: "ACTIVE" },
     });
+
+    await invalidatePromotionsCache();
 
     return res.json({ message: "Promotion resumed" });
   } catch (error) {
@@ -344,6 +360,8 @@ router.delete("/promotions/:id", asyncHandler(async (req: SellerRequest, res: Re
         data: { status: "CANCELLED" },
       });
     }
+
+    await invalidatePromotionsCache();
 
     return res.json({ message: "Promotion cancelled", refunded: refundAmount });
   } catch (error) {

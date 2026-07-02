@@ -204,26 +204,44 @@ export default function LoyaltyPage() {
               </div>
             </div>
 
-            {/* Redeem Options */}
+            {/* Redeem Options (Dynamic Loyalty Coupon Stacker) */}
             <div className="card mb-8">
-              <h3 className="font-medium mb-4">Redeem Points</h3>
-              <p className="text-sm text-text-muted mb-4">100 points = USh 100 discount (min. 500 points)</p>
+              <h3 className="font-semibold text-text mb-2 flex items-center gap-2">
+                <Gift className="w-5 h-5 text-accent animate-pulse" /> Redeem Points for Coupons
+              </h3>
+              <p className="text-xs text-text-muted mb-6">100 points = USh 30 discount (min. 500 points)</p>
+              
+              {/* Dynamic visual progress meter */}
+              <div className="mb-6 bg-gray-100 dark:bg-gray-800 rounded-full h-4 overflow-hidden relative shadow-inner">
+                <div 
+                  className="bg-gradient-to-r from-accent to-pink-500 h-full rounded-full transition-all duration-1000 ease-out"
+                  style={{ width: `${Math.min(100, (account.points / 5000) * 100)}%` }}
+                />
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-700 dark:text-gray-300">
+                  {account.points.toLocaleString()} / 5,000 Points to Maximum Coupon
+                </span>
+              </div>
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[500, 1000, 2500, 5000].map((points) => (
-                  <button
-                    key={points}
-                    onClick={() => handleRedeem(points)}
-                    disabled={redeeming || account.points < points}
-                    className={`p-4 rounded-18 border text-center transition-all ${
-                      account.points >= points
-                        ? "border-accent hover:bg-accent hover:text-white cursor-pointer"
-                        : "border-gray-200 text-text-muted cursor-not-allowed opacity-50"
-                    }`}
-                  >
-                    <p className="font-bold">{points.toLocaleString()}</p>
-                    <p className="text-xs">= {formatPrice(points)}</p>
-                  </button>
-                ))}
+                {[500, 1000, 2500, 5000].map((points) => {
+                  const discountValue = Math.floor((points / 100) * 30);
+                  const isEligible = account.points >= points;
+                  return (
+                    <button
+                      key={points}
+                      onClick={() => handleRedeem(points)}
+                      disabled={redeeming || !isEligible}
+                      className={`p-4 rounded-18 border text-center transition-all duration-300 transform active:scale-95 ${
+                        isEligible
+                          ? "border-accent bg-accent/5 hover:bg-accent hover:text-white cursor-pointer hover:shadow-lg shadow-accent/20"
+                          : "border-border text-text-muted cursor-not-allowed opacity-50 bg-gray-50/50 dark:bg-gray-800/20"
+                      }`}
+                    >
+                      <p className="font-extrabold text-sm">{points.toLocaleString()} pts</p>
+                      <p className="text-[10px] font-medium mt-1">Value: {formatPrice(discountValue)}</p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

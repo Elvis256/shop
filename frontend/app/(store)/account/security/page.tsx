@@ -5,11 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { ArrowLeft, Shield, Smartphone, Key, CheckCircle, XCircle, AlertTriangle, Monitor, Trash2, Loader2, Clock } from "lucide-react";
+import { ArrowLeft, Shield, Smartphone, Key, CheckCircle, XCircle, AlertTriangle, Monitor, Trash2, Loader2, Clock, RefreshCw } from "lucide-react";
+import { apiFetch } from "@/lib/api";
+import { useToast } from "@/lib/hooks/useToast";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 export default function SecurityPage() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
+  const { showToast } = useToast();
   const [twoFAStatus, setTwoFAStatus] = useState<{ enabled: boolean; hasBackupCodes: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
   const [setupMode, setSetupMode] = useState(false);
@@ -21,6 +25,10 @@ export default function SecurityPage() {
   const [loginHistory, setLoginHistory] = useState<Array<{ id: string; ipAddress: string; device: string; success: boolean; createdAt: string }>>([]);
   const [sessions, setSessions] = useState<Array<{ id: string; ipAddress: string; device: string; createdAt: string; isCurrent: boolean }>>([]);
   const [terminatingId, setTerminatingId] = useState<string | null>(null);
+  const [disableDialogOpen, setDisableDialogOpen] = useState(false);
+  const [disabling2FA, setDisabling2FA] = useState(false);
+  const [terminateTarget, setTerminateTarget] = useState<string | null>(null);
+  const [regeneratingCodes, setRegeneratingCodes] = useState(false);
   const [stealthPin, setStealthPin] = useState("");
   const [hasStealthPin, setHasStealthPin] = useState(false);
   const [stealthTimeout, setStealthTimeout] = useState(300000);
@@ -41,7 +49,7 @@ export default function SecurityPage() {
     e.preventDefault();
     if (stealthPin) {
       if (!/^\d{4}$/.test(stealthPin)) {
-        alert("PIN must be exactly 4 digits");
+        showToast("PIN must be exactly 4 digits", "error");
         return;
       }
       localStorage.setItem("discreet_pin", stealthPin);
@@ -51,6 +59,7 @@ export default function SecurityPage() {
     localStorage.setItem("discreet_timeout", String(stealthTimeout));
     localStorage.setItem("discreet_self_destruct", stealthAutoWipe ? "1" : "0");
     setPinChangeSuccess(true);
+    showToast("Stealth security settings updated", "success");
     setTimeout(() => setPinChangeSuccess(false), 3000);
   };
 
@@ -58,7 +67,7 @@ export default function SecurityPage() {
     localStorage.removeItem("discreet_pin");
     setHasStealthPin(false);
     setStealthPin("");
-    alert("Stealth screen lock PIN removed");
+    showToast("Stealth screen lock PIN removed", "info");
   };
 
   useEffect(() => {
@@ -77,44 +86,35 @@ export default function SecurityPage() {
 
   const fetchLoginHistory = async () => {
     try {
-      const res = await fetch("/api/auth/login-history?limit=10", { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setLoginHistory(data.records || []);
-      }
+      const data = await apiFetch("/api/auth/login-history?limit=10");
+      setLoginHistory(data.records || []);
     } catch {}
   };
 
   const fetchSessions = async () => {
     try {
-      const res = await fetch("/api/auth/sessions", { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data || []);
-      }
+      const data = await apiFetch("/api/auth/sessions");
+      setSessions(data || []);
     } catch {}
   };
 
   const terminateSession = async (id: string) => {
     setTerminatingId(id);
     try {
-      const res = await fetch(`/api/auth/sessions/${id}`, { method: "DELETE", credentials: "include" });
-      if (res.ok) {
-        setSessions((prev) => prev.filter((s) => s.id !== id));
-      }
-    } catch {}
+      await apiFetch(`/api/auth/sessions/${id}`, { method: "DELETE" });
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      showToast("Session terminated", "success");
+    } catch {
+      showToast("Failed to terminate session", "error");
+    }
     setTerminatingId(null);
+    setTerminateTarget(null);
   };
 
   const fetch2FAStatus = async () => {
     try {
-      const res = await fetch(`/api/2fa/status`, {
-        credentials: "include",
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setTwoFAStatus(data);
-      }
+      const data = await apiFetch("/api/2fa/status");
+      setTwoFAStatus(data);
     } catch (error) {
       console.error("Failed to fetch 2FA status:", error);
     } finally {
@@ -125,20 +125,11 @@ export default function SecurityPage() {
   const startSetup = async () => {
     setError("");
     try {
-      const res = await fetch(`/api/2fa/setup`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSetupData(data);
-        setSetupMode(true);
-      } else {
-        const err = await res.json();
-        setError(err.error);
-      }
-    } catch (error) {
-      setError("Failed to start setup");
+      const data = await apiFetch("/api/2fa/setup", { method: "POST" });
+      setSetupData(data);
+      setSetupMode(true);
+    } catch (err: any) {
+      setError(err.message || "Failed to start setup");
     }
   };
 
@@ -147,49 +138,50 @@ export default function SecurityPage() {
       setError("Please enter a 6-digit code");
       return;
     }
-    
+
     setError("");
     try {
-      const res = await fetch(`/api/2fa/enable`, {
+      await apiFetch("/api/2fa/enable", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ token: verifyCode }),
       });
-      
-      if (res.ok) {
-        setSetupMode(false);
-        setShowBackupCodes(true);
-        fetch2FAStatus();
-      } else {
-        const err = await res.json();
-        setError(err.error);
-      }
-    } catch (error) {
-      setError("Failed to enable 2FA");
+      setSetupMode(false);
+      setShowBackupCodes(true);
+      fetch2FAStatus();
+    } catch (err: any) {
+      setError(err.message || "Failed to enable 2FA");
     }
   };
 
-  const disable2FA = async () => {
-    const code = prompt("Enter your 2FA code to disable:");
+  const disable2FA = async (code?: string) => {
     if (!code) return;
-    
+    setDisabling2FA(true);
     try {
-      const res = await fetch(`/api/2fa/disable`, {
+      await apiFetch("/api/2fa/disable", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ token: code }),
       });
-      
-      if (res.ok) {
-        fetch2FAStatus();
-      } else {
-        const err = await res.json();
-        alert(err.error);
-      }
-    } catch (error) {
-      alert("Failed to disable 2FA");
+      fetch2FAStatus();
+      showToast("Two-factor authentication disabled", "info");
+      setDisableDialogOpen(false);
+    } catch (err: any) {
+      showToast(err.message || "Failed to disable 2FA", "error");
+    } finally {
+      setDisabling2FA(false);
+    }
+  };
+
+  const regenerateBackupCodes = async () => {
+    setRegeneratingCodes(true);
+    try {
+      const data = await apiFetch("/api/2fa/backup-codes", { method: "POST" });
+      setSetupData((prev) => prev ? { ...prev, backupCodes: data.backupCodes } : prev);
+      setShowBackupCodes(true);
+      showToast("New backup codes generated", "success");
+    } catch (err: any) {
+      showToast(err.message || "Failed to regenerate codes", "error");
+    } finally {
+      setRegeneratingCodes(false);
     }
   };
 
@@ -212,7 +204,19 @@ export default function SecurityPage() {
         <h1 className="text-2xl font-semibold mb-8">Security Settings</h1>
 
         {loading ? (
-          <div className="text-center py-16">Loading...</div>
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="card animate-pulse">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 bg-gray-200 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-5 bg-gray-200 rounded w-1/3" />
+                    <div className="h-4 bg-gray-200 rounded w-2/3" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : showBackupCodes && setupData ? (
           // Backup codes display
           <div className="card">
@@ -357,9 +361,19 @@ export default function SecurityPage() {
                   </div>
                 </div>
                 {twoFAStatus?.enabled ? (
-                  <button onClick={disable2FA} className="btn btn-secondary text-sm">
-                    Disable
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={regenerateBackupCodes}
+                      disabled={regeneratingCodes}
+                      className="btn btn-secondary text-sm flex items-center gap-1"
+                    >
+                      {regeneratingCodes ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                      Backup Codes
+                    </button>
+                    <button onClick={() => setDisableDialogOpen(true)} className="btn btn-secondary text-sm text-red-600">
+                      Disable
+                    </button>
+                  </div>
                 ) : (
                   <button onClick={startSetup} className="btn btn-primary text-sm">
                     Enable
@@ -503,7 +517,7 @@ export default function SecurityPage() {
                       </div>
                       {!session.isCurrent && (
                         <button
-                          onClick={() => terminateSession(session.id)}
+                          onClick={() => setTerminateTarget(session.id)}
                           disabled={terminatingId === session.id}
                           className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0"
                           title="Terminate session"
@@ -570,6 +584,28 @@ export default function SecurityPage() {
             </div>
           </>
         )}
+        <ConfirmDialog
+          open={disableDialogOpen}
+          title="Disable Two-Factor Authentication"
+          message="Enter your 2FA code to disable two-factor authentication."
+          variant="danger"
+          confirmLabel="Disable 2FA"
+          loading={disabling2FA}
+          inputMode={{ label: "2FA Code", placeholder: "Enter 6-digit code" }}
+          onConfirm={(code) => disable2FA(code)}
+          onCancel={() => setDisableDialogOpen(false)}
+        />
+
+        <ConfirmDialog
+          open={!!terminateTarget}
+          title="Terminate Session"
+          message="Are you sure you want to terminate this session? The device will be logged out immediately."
+          variant="danger"
+          confirmLabel="Terminate"
+          loading={terminatingId === terminateTarget}
+          onConfirm={() => terminateTarget && terminateSession(terminateTarget)}
+          onCancel={() => setTerminateTarget(null)}
+        />
       </div>
     </Section>
   );

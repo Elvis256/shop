@@ -293,7 +293,7 @@ export async function handleLayawayPayment(planId: string, paymentId: string, st
               subtotal: Number(plan.targetAmount),
               totalAmount: Number(plan.targetAmount),
               currency: "UGX",
-              status: "CONFIRMED",
+              status: "PENDING",
               paymentStatus: "SUCCESSFUL",
               items: {
                 create: {
@@ -322,7 +322,7 @@ export async function handleLayawayPayment(planId: string, paymentId: string, st
           if (plan.user.phone) {
             sendWhatsApp({
               to: plan.user.phone,
-              text: `🎉 Congratulations! Your layaway plan for ${plan.product.name} is complete! Order ${orderNumber} has been created. We'll be in touch about delivery.`,
+              text: `🎉 Congratulations! Your layaway plan for ${plan.product.name} is complete! Order ${orderNumber} has been created. Please complete your shipping address details to start delivery: https://ugsex.com/account/orders/${order.id}`,
             }).catch(() => {});
           }
         } else {

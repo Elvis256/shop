@@ -12,10 +12,12 @@ interface Multiplier {
 }
 
 function useCountdown(targetDate: Date) {
-  const [timeLeft, setTimeLeft] = useState(() => getTimeLeft(targetDate));
+  const [timeLeft, setTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0, expired: false });
   const targetMs = targetDate.getTime();
 
   useEffect(() => {
+    setTimeLeft(getTimeLeft(new Date(targetMs)));
+    
     const timer = setInterval(() => {
       setTimeLeft(getTimeLeft(new Date(targetMs)));
     }, 1000);

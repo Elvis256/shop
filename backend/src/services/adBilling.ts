@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import { logger } from "../lib/logger";
+import { cacheDel } from "../lib/cache";
 
 /**
  * Ad billing job: runs hourly.
@@ -20,6 +21,8 @@ export async function processAdBilling() {
 
   if (expired.count > 0) {
     logger.info(`[AdBilling] Expired ${expired.count} promotions`);
+    await cacheDel("active-promotions:all").catch(() => {});
+    await cacheDel("active-promotions:vip").catch(() => {});
   }
 
   // 2. Update spent for active promotions

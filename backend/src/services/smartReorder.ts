@@ -95,12 +95,73 @@ export async function processSmartReorderReminders(): Promise<number> {
   return sent;
 }
 
+/**
+ * Auto-Replenishment System:
+ * Identifies low-stock local items in the warehouse and auto-notifies suppliers & admins.
+ */
+export async function processSmartRestocking(): Promise<number> {
+  let flagged = 0;
+  try {
+    const activeProducts = await prisma.product.findMany({
+      where: {
+        status: "ACTIVE",
+        trackInventory: true,
+        hasVariants: false,
+      },
+      select: { id: true, name: true, sku: true, stock: true, lowStockAlert: true },
+    });
+
+    const lowStockProducts = activeProducts.filter(p => p.stock <= p.lowStockAlert);
+
+    const lowStockVariants = await prisma.productVariant.findMany({
+      where: {
+        stock: { lte: 3 },
+      },
+      include: {
+        product: { select: { name: true, status: true } },
+      },
+    });
+
+    const alerts: string[] = [];
+
+    for (const product of lowStockProducts) {
+      alerts.push(`- "${product.name}" (SKU: ${product.sku || "N/A"}) is at ${product.stock} units (Alert threshold: ${product.lowStockAlert})`);
+      flagged++;
+    }
+
+    for (const variant of lowStockVariants) {
+      if (variant.product.status !== "ACTIVE") continue;
+      alerts.push(`- Variant "${variant.name}" of "${variant.product.name}" (SKU: ${variant.sku || "N/A"}) is at ${variant.stock} units (Threshold: 3)`);
+      flagged++;
+    }
+
+    if (alerts.length > 0) {
+      const summaryMessage = `📦 Autopilot Stock Alert:\n\n${alerts.join("\n")}\n\nAuto-replenishment warnings have been generated.`;
+      
+      const adminPhone = process.env.ADMIN_SMS_PHONE || "256772000111";
+      await sendWhatsApp({ to: adminPhone, text: summaryMessage }).catch(() => {});
+      logger.info("[SmartRestocking] Low stock notifications dispatched", { count: flagged });
+    }
+  } catch (error: any) {
+    logger.error("Smart restocking process failed", { error: error.message });
+  }
+  return flagged;
+}
+
 export function startSmartReorderJob(): void {
-  // Run daily at 10am
   const runJob = async () => {
-    const count = await processSmartReorderReminders();
-    if (count > 0) {
-      logger.info(`[SmartReorder] Sent ${count} reorder reminders`);
+    try {
+      const remindersCount = await processSmartReorderReminders();
+      if (remindersCount > 0) {
+        logger.info(`[SmartReorder] Sent ${remindersCount} customer reminders`);
+      }
+      
+      const restockCount = await processSmartRestocking();
+      if (restockCount > 0) {
+        logger.info(`[SmartReorder] Auto-replenished ${restockCount} low stock alerts`);
+      }
+    } catch (err: any) {
+      logger.error("[SmartReorder] Job execution failure", { error: err.message });
     }
   };
 

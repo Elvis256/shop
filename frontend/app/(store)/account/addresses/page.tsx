@@ -7,6 +7,8 @@ import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { api } from "@/lib/api";
 import { MapPin, Plus, Check, Trash2, ChevronLeft, Edit } from "lucide-react";
+import { useToast } from "@/lib/hooks/useToast";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 interface Address {
   id: string;
@@ -24,8 +26,10 @@ interface Address {
 export default function AddressesPage() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
+  const { showToast } = useToast();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -63,15 +67,17 @@ export default function AddressesPage() {
     try {
       if (editingId) {
         await api.updateAddress(editingId, formData);
+        showToast("Address updated", "success");
       } else {
         await api.createAddress(formData as any);
+        showToast("Address added", "success");
       }
       setShowForm(false);
       setEditingId(null);
       setFormData({ name: "", phone: "", street: "", city: "", county: "", postalCode: "", country: "Uganda", deliveryAlias: "" });
       loadAddresses();
     } catch (error) {
-      console.error("Failed to save address:", error);
+      showToast("Failed to save address", "error");
     }
   };
 
@@ -91,15 +97,24 @@ export default function AddressesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm("Delete this address?")) {
+    try {
       await api.deleteAddress(id);
+      showToast("Address deleted", "success");
       loadAddresses();
+    } catch {
+      showToast("Failed to delete address", "error");
     }
+    setDeleteTarget(null);
   };
 
   const handleSetDefault = async (id: string) => {
-    await api.setDefaultAddress(id);
-    loadAddresses();
+    try {
+      await api.setDefaultAddress(id);
+      showToast("Default address updated", "success");
+      loadAddresses();
+    } catch {
+      showToast("Failed to set default address", "error");
+    }
   };
 
   if (isLoading || !user) {
@@ -226,7 +241,19 @@ export default function AddressesPage() {
         )}
 
         {loading ? (
-          <div className="text-center py-16 text-text-muted">Loading...</div>
+          <div className="space-y-4">
+            {[1, 2].map((i) => (
+              <div key={i} className="card animate-pulse">
+                <div className="flex justify-between">
+                  <div className="space-y-2 flex-1">
+                    <div className="h-5 bg-gray-200 rounded w-1/3" />
+                    <div className="h-4 bg-gray-200 rounded w-2/3" />
+                    <div className="h-3 bg-gray-200 rounded w-1/2" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : addresses.length === 0 && !showForm ? (
           <div className="card text-center py-16">
             <MapPin className="w-16 h-16 mx-auto mb-4 text-text-muted" />
@@ -269,7 +296,7 @@ export default function AddressesPage() {
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDelete(address.id)}
+                      onClick={() => setDeleteTarget(address.id)}
                       className="btn-icon text-text-muted hover:text-red-500"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -289,6 +316,15 @@ export default function AddressesPage() {
             ))}
           </div>
         )}
+        <ConfirmDialog
+          open={!!deleteTarget}
+          title="Delete Address"
+          message="Are you sure you want to delete this address?"
+          variant="danger"
+          confirmLabel="Delete"
+          onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+          onCancel={() => setDeleteTarget(null)}
+        />
       </div>
     </Section>
   );

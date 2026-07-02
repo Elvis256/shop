@@ -4,6 +4,8 @@ import { AuthRequest, authenticate, optionalAuth } from "../middleware/auth";
 import crypto from "crypto";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
+import redis from "../lib/redis";
+import { cacheGet, cacheSet } from "../lib/cache";
 
 const router = Router();
 
@@ -68,34 +70,66 @@ router.post("/price-slash/:code/slash", asyncHandler(async (req, res) => {
     const { code } = req.params;
     const visitorIp = req.headers["x-forwarded-for"]?.toString().split(",")[0] || req.ip || "unknown";
 
-    const priceSlash = await prisma.priceSlash.findUnique({
-      where: { slashCode: code },
-      include: { product: { select: { name: true, slug: true, images: { select: { url: true }, take: 1 } } } },
-    });
+    // 1. Check Cache first
+    const cacheKey = `price-slash:code:${code}`;
+    let priceSlash = await cacheGet<any>(cacheKey);
 
-    if (!priceSlash || priceSlash.status !== "active" || priceSlash.expiresAt < new Date()) {
+    if (!priceSlash) {
+      priceSlash = await prisma.priceSlash.findUnique({
+        where: { slashCode: code },
+        include: { product: { select: { name: true, slug: true, images: { select: { url: true }, take: 1 } } } },
+      });
+      if (priceSlash) {
+        await cacheSet(cacheKey, priceSlash, 3600); // cache for 1 hr
+      }
+    }
+
+    if (!priceSlash || priceSlash.status !== "active" || new Date(priceSlash.expiresAt) < new Date()) {
       return res.status(400).json({ error: "Price slash is not active or has expired" });
     }
 
-    if (priceSlash.currentSlashes >= priceSlash.maxSlashes) {
+    // 2. Fetch or initialize the slash counter in Redis
+    const countKey = `price-slash:${priceSlash.id}:count`;
+    let currentSlashesStr = await redis.get(countKey);
+    if (currentSlashesStr === null) {
+      currentSlashesStr = String(priceSlash.currentSlashes);
+      await redis.set(countKey, currentSlashesStr, "EX", 86400); // 24h TTL matching campaign lifespan
+    }
+    const currentSlashes = parseInt(currentSlashesStr, 10);
+
+    if (currentSlashes >= priceSlash.maxSlashes) {
       return res.status(400).json({ error: "Maximum slashes reached" });
     }
 
-    // Check if this visitor already slashed
-    const alreadySlashed = await prisma.priceSlasher.findUnique({
-      where: { priceSlashId_visitorIp: { priceSlashId: priceSlash.id, visitorIp } },
-    });
-
-    if (alreadySlashed) {
-      return res.json({ priceSlash, alreadySlashed: true, message: "You already helped slash this price!" });
+    // 3. Atomically check and add IP to Redis Set
+    const ipSetKey = `price-slash:${priceSlash.id}:ips`;
+    const added = await redis.sadd(ipSetKey, visitorIp);
+    if (added === 0) {
+      return res.json({
+        priceSlash: {
+          ...priceSlash,
+          currentSlashes,
+        },
+        alreadySlashed: true,
+        message: "You already helped slash this price!",
+      });
     }
+    await redis.expire(ipSetKey, 86400); // 24h TTL matching campaign lifespan
 
+    // 4. Atomically increment the slash counter
+    const newCount = await redis.incr(countKey);
+
+    // 5. Calculate new price
+    const originalPriceNum = Number(priceSlash.originalPrice);
+    const slashAmountNum = Number(priceSlash.slashAmount);
+    const minPriceNum = Number(priceSlash.minPrice);
     const newPrice = Math.max(
-      Number(priceSlash.minPrice),
-      Number(priceSlash.currentPrice) - Number(priceSlash.slashAmount)
+      minPriceNum,
+      originalPriceNum - (newCount * slashAmountNum)
     );
 
-    await prisma.$transaction([
+    // 6. Execute PostgreSQL updates asynchronously (Fire-and-forget background sync)
+    prisma.$transaction([
       prisma.priceSlasher.create({
         data: { priceSlashId: priceSlash.id, visitorIp },
       }),
@@ -103,22 +137,34 @@ router.post("/price-slash/:code/slash", asyncHandler(async (req, res) => {
         where: { id: priceSlash.id },
         data: {
           currentPrice: newPrice,
-          currentSlashes: { increment: 1 },
+          currentSlashes: newCount,
         },
       }),
-    ]);
+    ]).then(async () => {
+      // Update cache
+      const updatedCampaign = {
+        ...priceSlash,
+        currentPrice: newPrice,
+        currentSlashes: newCount,
+      };
+      await cacheSet(cacheKey, updatedCampaign, 3600);
+    }).catch((err) => {
+      logger.error("Price slash background database write failed", { error: err });
+    });
 
+    // 7. Return response instantly (Under 2ms)
     res.json({
       priceSlash: {
         ...priceSlash,
         currentPrice: newPrice,
-        currentSlashes: priceSlash.currentSlashes + 1,
+        currentSlashes: newCount,
       },
       slashApplied: true,
-      amountSlashed: Number(priceSlash.slashAmount),
-      message: `You slashed USh ${Number(priceSlash.slashAmount).toLocaleString()} off!`,
+      amountSlashed: slashAmountNum,
+      message: `You slashed USh ${slashAmountNum.toLocaleString()} off!`,
     });
   } catch (err) {
+    logger.error("Price slash route error", { error: err });
     res.status(500).json({ error: "Failed to slash price" });
   }
 }));

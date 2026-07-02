@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../lib/prisma";
-import { authenticate, AuthRequest, requireAdmin } from "../middleware/auth";
+import { authenticate, AuthRequest, requireAdmin, optionalAuth } from "../middleware/auth";
 import { sendRawEmail as sendEmail } from "../lib/email";
 import { logger } from "../lib/logger";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -22,12 +22,10 @@ function generateGiftCardCode(): string {
 }
 
 // GET /api/gift-cards — List all gift cards (admin) or denominations (public)
-router.get("/", asyncHandler(async (req: Request, res: Response) => {
+router.get("/", optionalAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
-    // Admin requests include auth cookie — return full card list
-    const hasCookie = (req as any).cookies?.auth_token;
-    const hasBearer = req.headers.authorization?.startsWith("Bearer ");
-    if (hasCookie || hasBearer) {
+    // Admin requests must have valid decoded admin/manager role
+    if (req.user && (req.user.role === "ADMIN" || req.user.role === "MANAGER")) {
       const cards = await prisma.giftCard.findMany({
         orderBy: { createdAt: "desc" },
         include: { redemptions: { orderBy: { createdAt: "desc" } } },

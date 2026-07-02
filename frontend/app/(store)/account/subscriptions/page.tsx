@@ -21,7 +21,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
+import { apiFetch } from "@/lib/api";
 
 interface Subscription {
   id: string;
@@ -65,15 +65,10 @@ export default function SubscriptionsPage() {
 
   const fetchSubscriptions = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/subscriptions`, {
-        credentials: "include",
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSubscriptions(data.subscriptions || data || []);
-      }
+      const data = await apiFetch("/api/subscriptions");
+      setSubscriptions(data.subscriptions || data || []);
     } catch {
-      console.error("Failed to fetch subscriptions");
+      showToast("Failed to load subscriptions", "error");
     } finally {
       setLoading(false);
     }
@@ -85,21 +80,14 @@ export default function SubscriptionsPage() {
   ) => {
     setUpdating(id);
     try {
-      const res = await fetch(`${API_URL}/api/subscriptions/${id}`, {
+      await apiFetch(`/api/subscriptions/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(updates),
       });
-      if (res.ok) {
-        showToast("Subscription updated", "success");
-        fetchSubscriptions();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        showToast(data.error || "Failed to update subscription", "error");
-      }
-    } catch {
-      showToast("Failed to update subscription", "error");
+      showToast("Subscription updated", "success");
+      fetchSubscriptions();
+    } catch (err: any) {
+      showToast(err.message || "Failed to update subscription", "error");
     } finally {
       setUpdating(null);
     }
@@ -108,20 +96,12 @@ export default function SubscriptionsPage() {
   const cancelSubscription = async (id: string) => {
     setUpdating(id);
     try {
-      const res = await fetch(`${API_URL}/api/subscriptions/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (res.ok) {
-        showToast("Subscription cancelled", "success");
-        setCancelConfirm(null);
-        fetchSubscriptions();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        showToast(data.error || "Failed to cancel subscription", "error");
-      }
-    } catch {
-      showToast("Failed to cancel subscription", "error");
+      await apiFetch(`/api/subscriptions/${id}`, { method: "DELETE" });
+      showToast("Subscription cancelled", "success");
+      setCancelConfirm(null);
+      fetchSubscriptions();
+    } catch (err: any) {
+      showToast(err.message || "Failed to cancel subscription", "error");
     } finally {
       setUpdating(null);
     }
@@ -135,16 +115,9 @@ export default function SubscriptionsPage() {
   const skipNextDelivery = async (id: string) => {
     setUpdating(id);
     try {
-      const res = await fetch(`${API_URL}/api/subscriptions/${id}/skip`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (res.ok) {
-        showToast("Next delivery skipped", "success");
-        fetchSubscriptions();
-      } else {
-        showToast("Failed to skip delivery", "error");
-      }
+      await apiFetch(`/api/subscriptions/${id}/skip`, { method: "POST" });
+      showToast("Next delivery skipped", "success");
+      fetchSubscriptions();
     } catch {
       showToast("Failed to skip delivery", "error");
     } finally {
@@ -199,7 +172,20 @@ export default function SubscriptionsPage() {
         )}
 
         {loading ? (
-          <div className="text-center py-16">Loading...</div>
+          <div className="space-y-4">
+            {[1, 2].map((i) => (
+              <div key={i} className="card animate-pulse">
+                <div className="flex gap-4">
+                  <div className="w-20 h-20 bg-gray-200 rounded-xl" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-5 bg-gray-200 rounded w-2/3" />
+                    <div className="h-4 bg-gray-200 rounded w-1/4" />
+                    <div className="h-3 bg-gray-200 rounded w-1/2" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : subscriptions.length === 0 ? (
           <div className="card text-center py-16">
             <RefreshCw className="w-12 h-12 text-text-muted mx-auto mb-4" />

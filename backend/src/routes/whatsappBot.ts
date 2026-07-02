@@ -186,11 +186,36 @@ async function handleMessage(phone: string, text: string): Promise<void> {
 
   // ── Product listing ──
   if (session.step === "products" && session.data.categoryId) {
+    const page = session.data.page || 0;
+    const categoryId = session.data.categoryId;
+
+    if (text.toLowerCase() === "next" || text.toLowerCase() === "n") {
+      const category = await prisma.category.findUnique({ where: { id: categoryId } });
+      await showProducts(phone, categoryId, category?.name || "Products", lang, page + 1);
+      return;
+    }
+
+    if (text.toLowerCase() === "prev" || text.toLowerCase() === "p" || text.toLowerCase() === "back") {
+      if (page > 0) {
+        const category = await prisma.category.findUnique({ where: { id: categoryId } });
+        await showProducts(phone, categoryId, category?.name || "Products", lang, page - 1);
+        return;
+      }
+    }
+
+    if (text === "0") {
+      await showCategories(phone, lang);
+      return;
+    }
+
+    const pageSize = 8;
     const products = await prisma.product.findMany({
-      where: { categoryId: session.data.categoryId, status: "ACTIVE" },
-      include: { images: { take: 1 } },
-      take: 8,
+      where: { categoryId, status: "ACTIVE" },
+      take: pageSize,
+      skip: page * pageSize,
+      orderBy: { featured: "desc" },
     });
+
     const idx = parseInt(text) - 1;
     if (idx >= 0 && idx < products.length) {
       const product = products[idx];
@@ -401,14 +426,23 @@ async function showCategories(phone: string, lang: string): Promise<void> {
   });
 }
 
-async function showProducts(phone: string, categoryId: string, categoryName: string, lang: string): Promise<void> {
+async function showProducts(phone: string, categoryId: string, categoryName: string, lang: string, page: number = 0): Promise<void> {
+  const pageSize = 8;
   const products = await prisma.product.findMany({
     where: { categoryId, status: "ACTIVE" },
-    take: 8,
+    take: pageSize,
+    skip: page * pageSize,
     orderBy: { featured: "desc" },
   });
 
-  setSession(phone, { step: "products", data: { categoryId } });
+  const totalProducts = await prisma.product.count({
+    where: { categoryId, status: "ACTIVE" },
+  });
+
+  const hasNext = (page + 1) * pageSize < totalProducts;
+  const hasPrev = page > 0;
+
+  setSession(phone, { step: "products", data: { categoryId, page } });
 
   if (products.length === 0) {
     await sendWhatsApp({ to: phone, text: `No products in ${categoryName} right now.\n\nReply *browse* to pick another category.` });
@@ -419,9 +453,20 @@ async function showProducts(phone: string, categoryId: string, categoryName: str
     `${i + 1}️⃣ ${p.name} — UGX ${Number(p.price).toLocaleString()}`
   ).join("\n");
 
+  let navigationOptions = "";
+  if (hasNext && hasPrev) {
+    navigationOptions = "\n\nReply with a number, *next* for more, *prev* for previous, or *0* to go back.";
+  } else if (hasNext) {
+    navigationOptions = "\n\nReply with a number, *next* for more, or *0* to go back.";
+  } else if (hasPrev) {
+    navigationOptions = "\n\nReply with a number, *prev* for previous, or *0* to go back.";
+  } else {
+    navigationOptions = "\n\nReply with a number, or *0* to go back.";
+  }
+
   await sendWhatsApp({
     to: phone,
-    text: `*${categoryName}*\n\n${list}\n\nReply with a number for details, or *0* to go back.`,
+    text: `*${categoryName}* (Page ${page + 1})\n\n${list}${navigationOptions}`,
   });
 }
 
@@ -489,35 +534,80 @@ async function placeWhatsAppOrder(phone: string, lang: string): Promise<void> {
     const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
     const productMap = new Map(products.map(p => [p.id, p]));
 
-    const order = await prisma.order.create({
-      data: {
-        orderNumber,
-        subtotal: total,
-        totalAmount: total,
-        shippingCost: 0,
-        currency: "UGX",
-        status: session.data.paymentMethod === "cod" ? "CONFIRMED" : "PENDING",
-        discreet: true,
-        customerName: session.shipping.name || "WhatsApp Customer",
-        customerEmail: phone,
-        customerPhone: session.shipping.phone || phone,
-        shippingAddress: JSON.stringify({
-          name: session.shipping.name,
-          street: session.shipping.street,
-          city: session.shipping.city,
-          phone: session.shipping.phone,
-        }),
-        guestDataExpiresAt: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
-        items: {
-          create: session.cart.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            price: item.price,
-            name: item.name,
-            sellerId: productMap.get(item.productId)?.sellerId || null,
-          })),
+    const order = await prisma.$transaction(async (tx) => {
+      // 1. Verify price mappings and build items payload
+      const orderItems = session.cart.map(item => {
+        const p = productMap.get(item.productId);
+        if (!p) throw new Error(`Product not found: ${item.name}`);
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          price: Number(p.price),
+          name: p.name,
+          sellerId: p.sellerId || null,
+        };
+      });
+
+      // 2. Create the order record
+      const newOrder = await tx.order.create({
+        data: {
+          orderNumber,
+          subtotal: total,
+          totalAmount: total,
+          shippingCost: 0,
+          currency: "UGX",
+          status: session.data.paymentMethod === "cod" ? "CONFIRMED" : "PENDING",
+          discreet: true,
+          customerName: session.shipping.name || "WhatsApp Customer",
+          customerEmail: phone,
+          customerPhone: session.shipping.phone || phone,
+          shippingAddress: JSON.stringify({
+            name: session.shipping.name,
+            street: session.shipping.street,
+            city: session.shipping.city,
+            phone: session.shipping.phone,
+          }),
+          guestDataExpiresAt: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
+          items: {
+            create: orderItems,
+          },
         },
-      },
+      });
+
+      // 3. Handle stock management
+      if (session.data.paymentMethod === "cod") {
+        // Direct stock decrement for confirmed Cash on Delivery orders
+        for (const item of session.cart) {
+          const product = productMap.get(item.productId);
+          if (product && product.trackInventory) {
+            // Lock row to prevent TOCTOU race
+            const [dbProduct] = await tx.$queryRaw<any[]>`
+              SELECT stock, "allowBackorder" FROM "Product" WHERE id = ${item.productId} FOR UPDATE`;
+            if (dbProduct && dbProduct.stock < item.quantity && !dbProduct.allowBackorder) {
+              throw new Error(`Insufficient stock for ${item.name}. Available: ${dbProduct.stock}`);
+            }
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: { decrement: item.quantity } },
+            });
+          }
+        }
+      } else {
+        // Create stock reservations for pending Mobile Money orders (released on webhook confirmation)
+        const { reserveStock } = await import("../utils/stockReservation");
+        const reserveItems = session.cart.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          product: { name: item.name },
+          variantId: null,
+        }));
+        const stockResult = await reserveStock(tx, reserveItems, newOrder.id);
+        if (!stockResult.success) {
+          throw new Error(stockResult.error || "Failed to reserve stock");
+        }
+      }
+
+      return newOrder;
     });
 
     // Create payment record

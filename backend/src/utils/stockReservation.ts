@@ -26,87 +26,86 @@ export async function reserveStock(
   orderId: string,
   reservationTimeoutMs: number = DEFAULT_RESERVATION_TIMEOUT_MS
 ): Promise<{ success: boolean; error?: string }> {
-  const reservations = [];
+  const expiresAt = new Date(Date.now() + reservationTimeoutMs);
 
   for (const item of items) {
-    // Acquire row-level lock on the product to prevent TOCTOU race on stock check
+    // 1. Fetch product configuration without locking
     const [product] = await tx.$queryRaw<any[]>`
-      SELECT * FROM "Product" WHERE id = ${item.productId} FOR UPDATE`;
+      SELECT name, "trackInventory", "allowBackorder" FROM "Product" WHERE id = ${item.productId}`;
+    
     if (!product) {
       return { success: false, error: `Product "${item.product.name}" no longer exists.` };
     }
 
     // Skip inventory check if not tracking or allows backorder
     if (!product.trackInventory || product.allowBackorder) {
+      await tx.stockReservation.create({
+        data: {
+          orderId,
+          productId: item.productId,
+          variantId: item.variantId || null,
+          quantity: item.quantity,
+          expiresAt,
+        },
+      });
       continue;
     }
 
     if (item.variantId) {
-      // Variant-level stock reservation
+      // 2a. Fetch variant configuration without locking
       const [variant] = await tx.$queryRaw<any[]>`
-        SELECT * FROM "ProductVariant" WHERE id = ${item.variantId} FOR UPDATE`;
+        SELECT name FROM "ProductVariant" WHERE id = ${item.variantId}`;
       if (!variant) {
         return { success: false, error: `Selected variant for "${product.name}" is no longer available.` };
       }
 
-      const availableStock = variant.stock - (variant.reservedStock || 0);
-      if (availableStock < item.quantity) {
+      // 2b. Atomic check-and-update update query for variant reservedStock
+      const updatedRows = await tx.$executeRaw`
+        UPDATE "ProductVariant"
+        SET "reservedStock" = "reservedStock" + ${item.quantity}
+        WHERE id = ${item.variantId}
+          AND "stock" >= "reservedStock" + ${item.quantity}
+      `;
+
+      if (updatedRows === 0) {
         return {
           success: false,
-          error: `Insufficient stock for "${product.name}" (${variant.name}). Available: ${availableStock}, requested: ${item.quantity}`,
+          error: `Insufficient stock for "${product.name}" (${variant.name}).`,
         };
       }
 
-      reservations.push({
-        productId: item.productId,
-        variantId: item.variantId,
-        quantity: item.quantity,
-        isVariant: true,
-      });
-    } else {
-      // Product-level stock reservation
-      const availableStock = product.stock - (product.reservedStock || 0);
-      if (availableStock < item.quantity) {
-        return {
-          success: false,
-          error: `Insufficient stock for "${product.name}". Available: ${availableStock}, requested: ${item.quantity}`,
-        };
-      }
-
-      reservations.push({
-        productId: item.productId,
-        quantity: item.quantity,
-        isVariant: false,
-      });
-    }
-  }
-
-  // Create reservations and update reserved stock
-  const expiresAt = new Date(Date.now() + reservationTimeoutMs);
-
-  for (const reservation of reservations) {
-    await tx.stockReservation.create({
-      data: {
-        orderId,
-        productId: reservation.productId,
-        variantId: reservation.variantId || null,
-        quantity: reservation.quantity,
-        expiresAt,
-      },
-    });
-
-    if (reservation.isVariant) {
-      await tx.productVariant.update({
-        where: { id: reservation.variantId },
+      await tx.stockReservation.create({
         data: {
-          reservedStock: { increment: reservation.quantity },
+          orderId,
+          productId: item.productId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          expiresAt,
         },
       });
     } else {
-      await tx.product.update({
-        where: { id: reservation.productId },
+      // 3. Atomic check-and-update update query for product reservedStock
+      const updatedRows = await tx.$executeRaw`
+        UPDATE "Product"
+        SET "reservedStock" = "reservedStock" + ${item.quantity}
+        WHERE id = ${item.productId}
+          AND "stock" >= "reservedStock" + ${item.quantity}
+      `;
+
+      if (updatedRows === 0) {
+        return {
+          success: false,
+          error: `Insufficient stock for "${product.name}".`,
+        };
+      }
+
+      await tx.stockReservation.create({
         data: {
-          reservedStock: { increment: reservation.quantity },
+          orderId,
+          productId: item.productId,
+          variantId: null,
+          quantity: item.quantity,
+          expiresAt,
         },
       });
     }

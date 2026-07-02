@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { apiFetch } from "@/lib/api";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import {
   ArrowLeft,
   Users,
@@ -55,6 +56,7 @@ export default function PartnerPage() {
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unpairDialogOpen, setUnpairDialogOpen] = useState(false);
 
   const loadPartnerData = async () => {
     setLoading(true);
@@ -108,9 +110,6 @@ export default function PartnerPage() {
   };
 
   const handleUnpair = async () => {
-    if (!confirm("Are you sure you want to unpair from your partner? This will disconnect your shared cart and wishlist access.")) {
-      return;
-    }
     setSubmitting(true);
     try {
       await apiFetch("/api/wishlist/couple/unpair", { method: "POST" });
@@ -120,6 +119,7 @@ export default function PartnerPage() {
       showToast(err.message || "Failed to disconnect.", "error");
     } finally {
       setSubmitting(false);
+      setUnpairDialogOpen(false);
     }
   };
 
@@ -171,7 +171,7 @@ export default function PartnerPage() {
                   </div>
                 </div>
                 <button
-                  onClick={handleUnpair}
+                  onClick={() => setUnpairDialogOpen(true)}
                   disabled={submitting}
                   className="btn btn-secondary border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1.5 self-start sm:self-auto py-2 text-xs"
                 >
@@ -320,6 +320,16 @@ export default function PartnerPage() {
             </div>
           </div>
         )}
+        <ConfirmDialog
+          open={unpairDialogOpen}
+          title="Disconnect Partner"
+          message="Are you sure you want to unpair from your partner? This will disconnect your shared cart and wishlist access."
+          variant="danger"
+          confirmLabel="Disconnect"
+          loading={submitting}
+          onConfirm={handleUnpair}
+          onCancel={() => setUnpairDialogOpen(false)}
+        />
       </div>
     </Section>
   );

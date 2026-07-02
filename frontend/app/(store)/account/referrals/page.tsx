@@ -7,6 +7,8 @@ import Section from "@/components/Section";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { ArrowLeft, Users, Gift, Copy, Check, Share2 } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import { apiFetch } from "@/lib/api";
+import { useToast } from "@/lib/hooks/useToast";
 import ReferralLeaderboard from "@/components/ReferralLeaderboard";
 
 interface ReferralData {
@@ -26,6 +28,7 @@ export default function ReferralsPage() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
   const { formatPrice } = useCurrency();
+  const { showToast } = useToast();
   const [data, setData] = useState<ReferralData | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -44,21 +47,16 @@ export default function ReferralsPage() {
 
   const fetchReferrals = async () => {
     try {
-      const res = await fetch(`/api/referrals/code`, {
-        credentials: "include",
+      const codeData = await apiFetch("/api/referrals/code");
+      setData({
+        code: codeData.code,
+        referrals: codeData.referrals || [],
+        totalReferrals: codeData.stats?.totalReferrals ?? codeData.usageCount ?? 0,
+        successfulReferrals: codeData.stats?.qualifiedReferrals ?? codeData.successfulReferrals ?? 0,
+        totalEarned: codeData.stats?.totalEarnings ?? codeData.totalEarned ?? 0,
       });
-      if (res.ok) {
-        const codeData = await res.json();
-        setData({
-          code: codeData.code,
-          referrals: codeData.referrals || [],
-          totalReferrals: codeData.stats?.totalReferrals ?? codeData.usageCount ?? 0,
-          successfulReferrals: codeData.stats?.qualifiedReferrals ?? codeData.successfulReferrals ?? 0,
-          totalEarned: codeData.stats?.totalEarnings ?? codeData.totalEarned ?? 0,
-        });
-      }
     } catch (error) {
-      console.error("Failed to fetch referrals:", error);
+      showToast("Failed to load referral data", "error");
     } finally {
       setLoading(false);
     }
@@ -108,7 +106,12 @@ export default function ReferralsPage() {
         <h1 className="text-2xl font-semibold mb-8">Refer a Friend</h1>
 
         {loading ? (
-          <div className="text-center py-16">Loading...</div>
+          <div className="space-y-4">
+            <div className="animate-pulse bg-gradient-to-br from-gray-200 to-gray-100 rounded-24 h-56" />
+            <div className="grid grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => <div key={i} className="animate-pulse card h-24" />)}
+            </div>
+          </div>
         ) : (
           <>
             {/* Referral Card */}
@@ -117,7 +120,7 @@ export default function ReferralsPage() {
                 <div>
                   <h2 className="text-xl font-semibold mb-2">Share & Earn</h2>
                   <p className="text-sm opacity-90">
-                    Give friends 10% off their first order. Get USh 5,000 when they buy!
+                    Give friends 10% off their first order. Get 500 loyalty points when they buy!
                   </p>
                 </div>
                 <Gift className="w-10 h-10 opacity-80" />
@@ -159,8 +162,8 @@ export default function ReferralsPage() {
               </div>
               <div className="card text-center">
                 <Gift className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold">{formatPrice(data?.totalEarned || 0)}</p>
-                <p className="text-xs text-text-muted">Total Earned</p>
+                <p className="text-2xl font-bold">{data?.totalEarned || 0} pts</p>
+                <p className="text-xs text-text-muted">Points Earned</p>
               </div>
             </div>
 
@@ -186,7 +189,7 @@ export default function ReferralsPage() {
                   <span className="w-8 h-8 bg-accent/10 text-accent rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</span>
                   <div>
                     <p className="font-medium">You Earn Rewards</p>
-                    <p className="text-sm text-text-muted">Get USh 5,000 credit for each successful referral</p>
+                    <p className="text-sm text-text-muted">Get 500 loyalty points for each successful referral</p>
                   </div>
                 </div>
               </div>

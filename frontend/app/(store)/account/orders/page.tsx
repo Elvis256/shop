@@ -9,6 +9,8 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { api, apiFetch } from "@/lib/api";
 import { Package, Eye, ChevronLeft, RefreshCw, Loader2, AlertCircle, X, Search, MapPin, Calendar, XCircle } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import { useToast } from "@/lib/hooks/useToast";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 interface Order {
   id: string;
@@ -47,6 +49,8 @@ export default function OrdersPage() {
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   // Filters
   const [statusFilter, setStatusFilter] = useState("");
@@ -67,15 +71,16 @@ export default function OrdersPage() {
   };
 
   const handleCancel = async (orderId: string) => {
-    if (!confirm("Are you sure you want to cancel this order?")) return;
     setCancellingId(orderId);
     try {
       await apiFetch(`/api/orders/${orderId}/cancel`, { method: "POST" });
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: "CANCELLED" } : o));
+      showToast("Order cancelled successfully", "success");
     } catch (err: any) {
-      setReorderError(err.message || "Failed to cancel order");
+      showToast(err.message || "Failed to cancel order", "error");
     } finally {
       setCancellingId(null);
+      setCancelTarget(null);
     }
   };
 
@@ -283,7 +288,7 @@ export default function OrdersPage() {
                   <div className="mt-4 pt-4 border-t border-border flex justify-end gap-2">
                     {(order.status === "PENDING" || order.status === "CONFIRMED") && (
                       <button
-                        onClick={() => handleCancel(order.id)}
+                        onClick={() => setCancelTarget(order.id)}
                         disabled={cancellingId === order.id}
                         className="btn-secondary text-small gap-2 text-red-600 hover:bg-red-50"
                       >
@@ -327,6 +332,16 @@ export default function OrdersPage() {
             })}
           </div>
         )}
+        <ConfirmDialog
+          open={!!cancelTarget}
+          title="Cancel Order"
+          message="Are you sure you want to cancel this order? This action cannot be undone."
+          variant="danger"
+          confirmLabel="Yes, Cancel Order"
+          loading={cancellingId === cancelTarget}
+          onConfirm={() => cancelTarget && handleCancel(cancelTarget)}
+          onCancel={() => setCancelTarget(null)}
+        />
       </div>
     </Section>
   );

@@ -9,6 +9,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: 4000,
+        NODE_OPTIONS: "--dns-result-order=ipv4first",
       },
       max_memory_restart: "512M",
       listen_timeout: 10000,
@@ -51,7 +52,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: 5000,
-        BACKEND_URL: "http://localhost:4000",
+        BACKEND_URL: "http://127.0.0.1:4000",
+        NODE_OPTIONS: "--max-old-space-size=4096 --dns-result-order=ipv4first",
       },
       max_memory_restart: "1G",
       watch: false,

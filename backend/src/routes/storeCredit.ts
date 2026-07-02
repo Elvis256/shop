@@ -7,25 +7,34 @@ import { asyncHandler } from "../middleware/errorHandler";
 
 const router = Router();
 
-// GET /api/store-credit — Get current user's balance + transaction history
+// GET /api/store-credit — Get current user's balance + transaction history (paginated)
 router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const skip = (page - 1) * limit;
+
     const credit = await prisma.storeCredit.findUnique({
       where: { userId: req.user!.id },
-      include: {
-        transactions: {
-          orderBy: { createdAt: "desc" },
-        },
-      },
     });
 
     if (!credit) {
-      return res.json({ balance: 0, transactions: [] });
+      return res.json({ balance: 0, transactions: [], pagination: { page, limit, total: 0 } });
     }
+
+    const [transactions, total] = await Promise.all([
+      prisma.storeCreditTx.findMany({
+        where: { storeCreditId: credit.id },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.storeCreditTx.count({ where: { storeCreditId: credit.id } }),
+    ]);
 
     return res.json({
       balance: credit.balance,
-      transactions: credit.transactions.map((tx) => ({
+      transactions: transactions.map((tx) => ({
         id: tx.id,
         amount: tx.amount,
         type: tx.type,
@@ -33,6 +42,7 @@ router.get("/", authenticate, asyncHandler(async (req: AuthRequest, res: Respons
         orderId: tx.orderId,
         createdAt: tx.createdAt,
       })),
+      pagination: { page, limit, total },
     });
   } catch (error) {
     logger.error("Get store credit error", { error });

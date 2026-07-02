@@ -216,6 +216,42 @@ export async function confirmPaidOrder(
     });
   }
 
+  // Trigger SafeBoda delivery rider booking automatically on autopilot (decoupled background task)
+  setTimeout(async () => {
+    try {
+      // Direct prisma client import to fetch committed state
+      const { default: prisma } = await import("../lib/prisma");
+
+      // Check if auto-dispatch is enabled
+      const autoDispatchSetting = await prisma.setting.findUnique({
+        where: { key: "shipping_auto_dispatch" },
+      });
+      const isAutoDispatch = autoDispatchSetting?.value === "true";
+
+      if (!isAutoDispatch) {
+        logger.info("Auto-rider dispatch skipped (shipping_auto_dispatch is false or not set)", { orderId });
+        return;
+      }
+
+      const { bookDeliveryRider } = await import("./logistics");
+      const latestOrder = await prisma.order.findUnique({
+        where: { id: orderId },
+      });
+      if (latestOrder && latestOrder.status === "CONFIRMED") {
+        await bookDeliveryRider({
+          orderId,
+          recipientName: latestOrder.customerName || "Customer",
+          recipientPhone: latestOrder.customerPhone || "",
+          pickupAddress: "Main Kampala Warehouse, Plot 12 Kampala Rd",
+          deliveryAddress: latestOrder.shippingAddress || "Kampala Center",
+          instructions: "Deliver discreetly.",
+        });
+      }
+    } catch (err: any) {
+      logger.error("Auto-rider dispatch background call failed", { orderId, error: err.message });
+    }
+  }, 200);
+
   return order;
 }
 

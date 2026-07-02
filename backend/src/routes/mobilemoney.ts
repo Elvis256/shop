@@ -1,4 +1,4 @@
-import { Router, Request } from "express";
+import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authenticate, optionalAuth, requireAdmin, AuthRequest } from "../middleware/auth";
 import { logger } from "../lib/logger";
@@ -154,21 +154,30 @@ router.post("/initiate", optionalAuth, asyncHandler(async (req: AuthRequest, res
 }));
 
 // Check payment status
-router.get("/status/:transactionId", authenticate, asyncHandler(async (req, res) => {
+router.get("/status/:transactionId", authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { transactionId } = req.params;
+    const user = req.user!;
 
     const transaction = await prisma.mobileMoneyTransaction.findUnique({
       where: { id: transactionId },
       include: {
         order: {
-          select: { orderNumber: true, status: true, paymentStatus: true },
+          select: { orderNumber: true, status: true, paymentStatus: true, userId: true, customerEmail: true },
         },
       },
     });
 
     if (!transaction) {
       return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    // Verify caller ownership or administrative credentials
+    const isOwner = transaction.order?.userId === user.id || transaction.order?.customerEmail === user.email;
+    const isAdmin = user.role === "ADMIN" || user.role === "MANAGER";
+    if (!isOwner && !isAdmin) {
+      logger.warn("mobilemoney_status_unauthorized", { userId: user.id, transactionId });
+      return res.status(403).json({ error: "You are not authorized to view this transaction status" });
     }
 
     res.json({
@@ -179,7 +188,11 @@ router.get("/status/:transactionId", authenticate, asyncHandler(async (req, res)
       amount: transaction.amount,
       currency: transaction.currency,
       provider: transaction.provider,
-      order: transaction.order,
+      order: {
+        orderNumber: transaction.order?.orderNumber,
+        status: transaction.order?.status,
+        paymentStatus: transaction.order?.paymentStatus,
+      },
       initiatedAt: transaction.initiatedAt,
       completedAt: transaction.completedAt,
     });
@@ -205,7 +218,11 @@ router.post("/callback/:provider", asyncHandler(async (req, res) => {
       }
       const crypto = await import("crypto");
       const expected = crypto.createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex");
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+      const sigBuf = Buffer.from(signature);
+      const expBuf = Buffer.from(expected);
+      
+      // Guard against timingSafeEqual length-mismatch crashes
+      if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
         logger.warn("[MTN Callback] Invalid signature — request rejected");
         return res.status(401).json({ error: "Invalid signature" });
       }
@@ -318,7 +335,8 @@ router.post("/callback/:provider", asyncHandler(async (req, res) => {
 
 // Simulate payment completion (DEV/STAGING ONLY — blocked in production)
 router.post("/simulate-complete/:transactionId", authenticate, requireAdmin, asyncHandler(async (req, res) => {
-  if (process.env.NODE_ENV === "production") {
+  const isProd = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "prod";
+  if (isProd) {
     return res.status(403).json({ error: "Simulation endpoint disabled in production" });
   }
 

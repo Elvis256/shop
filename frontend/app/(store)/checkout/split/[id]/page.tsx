@@ -32,19 +32,40 @@ export default function SplitPartnerPaymentPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [paying, setPaying] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [showPhonePrompt, setShowPhonePrompt] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+
+  const loadOrderDetails = async (phoneNum: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const query = phoneNum ? `?phone=${encodeURIComponent(phoneNum.trim())}` : "";
+      const r = await fetch(`${API_URL}/api/checkout/split/${id}${query}`);
+      const data = await r.json();
+      
+      if (!r.ok) {
+        if (r.status === 403) {
+          setShowPhonePrompt(true);
+          throw new Error("Access denied. Please verify your phone number to access this split payment.");
+        }
+        throw new Error(data.error || "Could not find split order.");
+      }
+      
+      setOrder(data.order);
+      setPhone(phoneNum);
+      setShowPhonePrompt(false);
+    } catch (err: any) {
+      setError(err.message || "Failed to load split payment details.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetch(`${API_URL}/api/checkout/split/${id}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Could not find split order.");
-        return r.json();
-      })
-      .then((d) => {
-        if (d.error) setError(d.error);
-        else setOrder(d.order);
-      })
-      .catch((err) => setError(err.message || "Failed to load split payment details."))
-      .finally(() => setLoading(false));
+    const params = new URLSearchParams(window.location.search);
+    const urlPhone = params.get("phone") || "";
+    loadOrderDetails(urlPhone);
   }, [id]);
 
   const handlePay = async () => {
@@ -54,7 +75,10 @@ export default function SplitPartnerPaymentPage() {
       const res = await fetch(`${API_URL}/api/checkout/split/${id}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod: "card" }),
+        body: JSON.stringify({ 
+          paymentMethod: "card",
+          partnerPhone: phone,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to initiate partner payment");
@@ -84,7 +108,47 @@ export default function SplitPartnerPaymentPage() {
     </div>
   );
 
-  if (error) return (
+  if (showPhonePrompt && !order) {
+    return (
+      <div className="flex items-center justify-center min-h-screen px-4 bg-gradient-to-b from-primary-50 to-white dark:from-gray-950 dark:to-gray-900">
+        <div className="max-w-sm w-full bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 text-center">
+          <Lock className="w-12 h-12 text-accent mx-auto mb-4" />
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Secure Split Payment</h1>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-6">
+            For security, please enter the phone number where you received the invitation (e.g. +256771234567) to view the details and complete payment.
+          </p>
+          
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            loadOrderDetails(phoneInput);
+          }} className="space-y-4">
+            <input
+              type="text"
+              required
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+              placeholder="e.g. +256771234567"
+              className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 text-sm text-center"
+            />
+            {error && <p className="text-[11px] text-red-500 font-semibold">{error}</p>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-primary hover:bg-primary/95 text-white rounded-lg py-3 font-semibold text-xs transition-colors flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Verifying...
+                </>
+              ) : "Access Payment Details"}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !showPhonePrompt) return (
     <div className="flex items-center justify-center min-h-screen px-4">
       <div className="text-center max-w-sm">
         <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />

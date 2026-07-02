@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useToast } from "@/lib/hooks/useToast";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { apiFetch } from "@/lib/api";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 interface LayawayPayment {
   id: string;
@@ -49,8 +50,8 @@ export default function LayawayDashboard() {
   const [payingPlan, setPayingPlan] = useState<string | null>(null);
   const [cancellingPlan, setCancellingPlan] = useState<string | null>(null);
   const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
-  const [mobilePhone, setMobilePhone] = useState("");
-  const [mobileNetwork, setMobileNetwork] = useState("MTN");
+  const [phoneInputs, setPhoneInputs] = useState<Record<string, { phone: string; network: string }>>({});
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -60,8 +61,14 @@ export default function LayawayDashboard() {
       .finally(() => setLoading(false));
   }, [user]);
 
+  const getPhoneInput = (planId: string) => phoneInputs[planId] || { phone: "", network: "MTN" };
+  const setPhoneInput = (planId: string, update: Partial<{ phone: string; network: string }>) => {
+    setPhoneInputs((prev) => ({ ...prev, [planId]: { ...getPhoneInput(planId), ...update } }));
+  };
+
   const handlePay = async (planId: string) => {
-    if (!mobilePhone) {
+    const { phone, network } = getPhoneInput(planId);
+    if (!phone) {
       showToast("Enter your mobile money number", "error");
       return;
     }
@@ -69,7 +76,7 @@ export default function LayawayDashboard() {
     try {
       const result: any = await apiFetch(`/api/layaway/${planId}/pay`, {
         method: "POST",
-        body: JSON.stringify({ paymentMethod: "mobile_money", mobileNetwork, mobilePhone }),
+        body: JSON.stringify({ paymentMethod: "mobile_money", mobileNetwork: network, mobilePhone: phone }),
       });
       if (result.paymentLink) {
         window.location.href = result.paymentLink;
@@ -82,7 +89,6 @@ export default function LayawayDashboard() {
   };
 
   const handleCancel = async (planId: string) => {
-    if (!confirm("Are you sure? Your paid amount will be added to store credit.")) return;
     setCancellingPlan(planId);
     try {
       const result: any = await apiFetch(`/api/layaway/${planId}/cancel`, { method: "POST" });
@@ -92,6 +98,7 @@ export default function LayawayDashboard() {
       showToast(err.message || "Cancel failed", "error");
     } finally {
       setCancellingPlan(null);
+      setCancelTarget(null);
     }
   };
 
@@ -148,7 +155,7 @@ export default function LayawayDashboard() {
           <PiggyBank className="w-12 h-12 text-gray-300 mx-auto mb-4" />
           <h2 className="text-lg font-semibold text-gray-900 mb-2">No layaway plans yet</h2>
           <p className="text-gray-500 mb-6">Start saving for products you love!</p>
-          <Link href="/layaway" className="btn-primary">Browse Products</Link>
+          <Link href="/category" className="btn-primary">Browse Products</Link>
         </div>
       ) : (
         <div className="space-y-4">
@@ -208,8 +215,8 @@ export default function LayawayDashboard() {
                     <div className="mt-4 flex flex-wrap gap-3">
                       <div className="flex-1 min-w-[200px] flex gap-2">
                         <select
-                          value={mobileNetwork}
-                          onChange={(e) => setMobileNetwork(e.target.value)}
+                          value={getPhoneInput(plan.id).network}
+                          onChange={(e) => setPhoneInput(plan.id, { network: e.target.value })}
                           className="px-3 py-2 border rounded-lg text-sm"
                         >
                           <option value="MTN">MTN</option>
@@ -218,8 +225,8 @@ export default function LayawayDashboard() {
                         <input
                           type="tel"
                           placeholder="Phone number"
-                          value={mobilePhone}
-                          onChange={(e) => setMobilePhone(e.target.value)}
+                          value={getPhoneInput(plan.id).phone}
+                          onChange={(e) => setPhoneInput(plan.id, { phone: e.target.value })}
                           className="flex-1 px-3 py-2 border rounded-lg text-sm"
                         />
                       </div>
@@ -235,7 +242,7 @@ export default function LayawayDashboard() {
                         )}
                       </button>
                       <button
-                        onClick={() => handleCancel(plan.id)}
+                        onClick={() => setCancelTarget(plan.id)}
                         disabled={cancellingPlan === plan.id}
                         className="px-4 py-2 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50"
                       >
@@ -285,6 +292,17 @@ export default function LayawayDashboard() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!cancelTarget}
+        title="Cancel Layaway Plan"
+        message="Are you sure? Your paid amount will be added to store credit."
+        variant="danger"
+        confirmLabel="Yes, Cancel Plan"
+        loading={cancellingPlan === cancelTarget}
+        onConfirm={() => cancelTarget && handleCancel(cancelTarget)}
+        onCancel={() => setCancelTarget(null)}
+      />
     </div>
   );
 }

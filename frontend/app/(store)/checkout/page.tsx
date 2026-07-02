@@ -41,6 +41,11 @@ interface ShippingData {
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const { items, total: cartTotal, clearCart, updateItemBadge, cartId } = useCart();
   const { showToast } = useToast();
   const { user } = useAuth();
@@ -681,6 +686,14 @@ export default function CheckoutPage() {
   };
 
   // Mobile money pending screen
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent"></div>
+      </div>
+    );
+  }
+
   if (paymentPending) {
     return (
       <Section>
@@ -715,17 +728,22 @@ export default function CheckoutPage() {
         {steps.map((s, i) => (
           <div key={s.num} className="flex items-center">
             <div
-              className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
+              className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all duration-500 shadow-md ${
                 step >= s.num
-                  ? "bg-accent text-white"
-                  : "bg-gray-100 text-text-muted"
+                  ? "bg-accent text-white scale-110 shadow-accent/20"
+                  : "bg-gray-100 dark:bg-gray-800 text-text-muted border border-border scale-100"
               }`}
             >
-              {step > s.num ? <Check className="w-5 h-5" /> : s.num}
+              {step > s.num ? <Check className="w-5 h-5 animate-scale-in" /> : s.num}
             </div>
-            <span className="ml-2 font-medium hidden sm:inline">{s.label}</span>
+            <span className={`ml-2 font-semibold hidden sm:inline transition-colors duration-300 ${step === s.num ? "text-accent" : "text-text-muted"}`}>{s.label}</span>
             {i < steps.length - 1 && (
-              <div className="w-12 h-0.5 bg-gray-200 mx-4" />
+              <div className="w-12 h-0.5 bg-gray-200 dark:bg-gray-700 mx-4 relative overflow-hidden rounded-full">
+                <div 
+                  className="absolute inset-y-0 left-0 bg-accent transition-all duration-500 ease-out" 
+                  style={{ width: step > s.num ? "100%" : "0%" }}
+                />
+              </div>
             )}
           </div>
         ))}
@@ -1375,6 +1393,50 @@ export default function CheckoutPage() {
                     </div>
                     <span className="text-[10px] text-accent font-semibold mt-2">Premium Privacy</span>
                   </button>
+                </div>
+
+                {/* Live CSS Packaging Visualizer Mockup */}
+                <div className="mt-4 p-4 border border-border dark:border-gray-700 bg-surface dark:bg-gray-800 rounded-lg flex items-center gap-4 transition-all duration-300">
+                  <div className="relative w-20 h-20 flex-shrink-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700/50 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 overflow-hidden transition-all duration-500">
+                    {packagingType === "STANDARD" && (
+                      <div className="w-14 h-14 bg-amber-800/90 rounded border-2 border-amber-950 shadow-md flex items-center justify-center flex-col animate-scale-in">
+                        <div className="w-12 h-1 bg-amber-950/40 mb-1 rounded-full"></div>
+                        <div className="w-12 h-1 bg-amber-950/40 mb-2 rounded-full"></div>
+                        <div className="text-[7px] text-white/90 font-mono font-bold tracking-widest bg-amber-950 px-1 py-0.5 rounded">DISCREET</div>
+                      </div>
+                    )}
+                    {packagingType === "GIFT" && (
+                      <div className="w-14 h-14 bg-rose-600 rounded border-2 border-rose-700 shadow-md flex items-center justify-center relative animate-scale-in">
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-2.5 h-full bg-yellow-400"></div>
+                          <div className="h-2.5 w-full bg-yellow-400"></div>
+                        </div>
+                        <div className="w-4 h-4 bg-yellow-400 rounded-full border border-yellow-500 z-10 flex items-center justify-center shadow">
+                          <span className="w-1.5 h-1.5 bg-yellow-600 rounded-full"></span>
+                        </div>
+                      </div>
+                    )}
+                    {packagingType === "ULTRA_STEALTH" && (
+                      <div className="w-14 h-14 bg-gray-900 rounded-xl border-2 border-gray-950 shadow-md flex items-center justify-center flex-col relative overflow-hidden animate-scale-in">
+                        <div className="absolute top-0 right-0 w-3 h-12 bg-emerald-500 rotate-45 transform translate-x-1.5 translate-y-[-10px] flex items-center justify-center">
+                          <span className="text-[4px] text-white font-bold rotate-[-45deg] tracking-tighter">PASS</span>
+                        </div>
+                        <div className="w-8 h-8 border border-white/10 rounded-lg bg-gray-800 flex items-center justify-center shadow-inner">
+                          <Shield className="w-4 h-4 text-accent animate-pulse" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <h5 className="text-xs font-bold text-text flex items-center gap-1.5">
+                      <Package className="w-3.5 h-3.5 text-accent" /> Live Package Preview
+                    </h5>
+                    <p className="text-[10px] text-text-muted mt-1 leading-relaxed transition-all duration-300">
+                      {packagingType === "STANDARD" && "Shipped in a plain brown shipping box or solid courier flyer. The sender label is anonymized as 'Logistics Dept'. The content declaration is set to 'Household Item'."}
+                      {packagingType === "GIFT" && "Wrapped in premium glossy wrapping paper, with a golden ribbon bow. Looks exactly like a standard birthday or anniversary gift. Includes custom gift card messaging."}
+                      {packagingType === "ULTRA_STEALTH" && "Double-sealed, scent-proof bubble bag inside a heavy regional courier sleeve. Non-rattling pack, completely opaque, and signed off with an anti-tamper security label."}
+                    </p>
+                  </div>
                 </div>
               </div>
 

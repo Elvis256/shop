@@ -112,6 +112,12 @@ const UpdateProfileSchema = z.object({
   smsOptIn: z.boolean().optional(),
   receiptMasked: z.boolean().optional(),
   orderHistoryDays: z.number().int().positive().nullable().optional(),
+  notificationPrefs: z.object({
+    orderUpdates: z.boolean(),
+    promotions: z.boolean(),
+    newArrivals: z.boolean(),
+    loyaltyUpdates: z.boolean(),
+  }).optional(),
 });
 
 const ChangePasswordSchema = z.object({
@@ -562,6 +568,7 @@ router.get("/me", authenticate, asyncHandler(async (req: AuthRequest, res: Respo
         smsOptIn: true,
         receiptMasked: true,
         orderHistoryDays: true,
+        notificationPrefs: true,
         createdAt: true,
         _count: { select: { orders: true, wishlist: true } },
       },
@@ -767,7 +774,7 @@ router.put("/me", authenticate, asyncHandler(async (req: AuthRequest, res: Respo
     const user = await prisma.user.update({
       where: { id: req.user!.id },
       data: body,
-      select: { id: true, email: true, name: true, phone: true, role: true, receiptMasked: true },
+      select: { id: true, email: true, name: true, phone: true, role: true, receiptMasked: true, notificationPrefs: true },
     });
 
     return res.json({ message: "Profile updated", user });

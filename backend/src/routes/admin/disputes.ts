@@ -218,6 +218,23 @@ router.put("/:id", asyncHandler(async (req: AuthRequest, res: Response) => {
           } catch (refundErr) {
             logger.error("Auto-refund failed, needs manual processing", { error: refundErr });
           }
+        } else if (payment && (payment.method as string) === "MOBILE_MONEY") {
+          // Process Mobile Money direct refund payout
+          try {
+            const { initiateMobileMoneyPayout } = await import("../../services/mmpayouts");
+            const refundPhone = dispute.order.customerPhone;
+            if (refundPhone) {
+              await initiateMobileMoneyPayout({
+                phoneNumber: refundPhone,
+                amount: parseFloat(refundAmount),
+                currency: "UGX",
+                narrative: `Dispute refund: ${dispute.disputeNumber}`,
+                referenceId: dispute.orderId,
+              });
+            }
+          } catch (momoErr: any) {
+            logger.error("Auto-MobileMoney refund failed, needs manual processing", { error: momoErr.message });
+          }
         }
 
         // Update order

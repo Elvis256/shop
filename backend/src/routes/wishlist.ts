@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { logger } from "../lib/logger";
@@ -10,6 +11,51 @@ const router = Router();
 
 // All wishlist routes require authentication
 router.use(authenticate);
+
+const isProduction = process.env.NODE_ENV === "production";
+const WISHLIST_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "strict" as const : "lax" as const,
+  maxAge: 15 * 60 * 1000,
+  path: "/",
+};
+
+const checkOwnerPin = async (req: AuthRequest, res: Response, next: any) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { wishlistPin: true },
+    });
+
+    if (!user?.wishlistPin) {
+      return next();
+    }
+
+    let token = req.cookies?.wishlist_token;
+    if (!token) {
+      const authHeader = req.headers["x-wishlist-token"];
+      if (typeof authHeader === "string") {
+        token = authHeader;
+      }
+    }
+
+    if (!token) {
+      return res.status(403).json({ error: "Wishlist is locked. PIN verification required.", code: "PIN_REQUIRED" });
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || "") as any;
+      if (decoded && decoded.userId === req.user!.id && decoded.type === "owner_verified") {
+        return next();
+      }
+    } catch (err) {}
+
+    return res.status(403).json({ error: "Wishlist is locked. PIN verification required.", code: "PIN_REQUIRED" });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to verify PIN status" });
+  }
+};
 
 // GET /api/wishlist/pin-status - Check if user has a PIN set
 router.get("/pin-status", asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -56,7 +102,16 @@ router.post("/set-pin", asyncHandler(async (req: AuthRequest, res: Response) => 
       data: { wishlistPin: hashedPin },
     });
 
-    return res.json({ message: "Wishlist PIN set successfully" });
+    // Automatically authorize the current session
+    const token = jwt.sign(
+      { userId: req.user!.id, type: "owner_verified" },
+      process.env.JWT_SECRET || "",
+      { expiresIn: "15m" }
+    );
+
+    res.cookie("wishlist_token", token, WISHLIST_COOKIE_OPTIONS);
+
+    return res.json({ message: "Wishlist PIN set successfully", token });
   } catch (error) {
     logger.error("Set PIN error", { error });
     return res.status(500).json({ error: "Failed to set PIN" });
@@ -84,7 +139,16 @@ router.post("/verify-pin", asyncHandler(async (req: AuthRequest, res: Response) 
       return res.status(401).json({ valid: false, error: "Invalid PIN" });
     }
 
-    return res.json({ valid: true, message: "PIN verified" });
+    // Generate owner verification token
+    const token = jwt.sign(
+      { userId: req.user!.id, type: "owner_verified" },
+      process.env.JWT_SECRET || "",
+      { expiresIn: "15m" }
+    );
+
+    res.cookie("wishlist_token", token, WISHLIST_COOKIE_OPTIONS);
+
+    return res.json({ valid: true, message: "PIN verified", token });
   } catch (error) {
     logger.error("Verify PIN error", { error });
     return res.status(500).json({ error: "Failed to verify PIN" });
@@ -117,6 +181,8 @@ router.delete("/remove-pin", asyncHandler(async (req: AuthRequest, res: Response
       data: { wishlistPin: null },
     });
 
+    res.clearCookie("wishlist_token", WISHLIST_COOKIE_OPTIONS);
+
     return res.json({ message: "PIN removed successfully" });
   } catch (error) {
     logger.error("Remove PIN error", { error });
@@ -125,7 +191,7 @@ router.delete("/remove-pin", asyncHandler(async (req: AuthRequest, res: Response
 }));
 
 // GET /api/wishlist/collections — Get list of user's collection names
-router.get("/collections", asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get("/collections", checkOwnerPin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const items = await prisma.wishlistItem.findMany({
       where: { userId: req.user!.id },
@@ -144,7 +210,7 @@ router.get("/collections", asyncHandler(async (req: AuthRequest, res: Response) 
 }));
 
 // GET /api/wishlist
-router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get("/", checkOwnerPin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const collection = req.query.collection as string | undefined;
     const where: any = { userId: req.user!.id };
@@ -192,7 +258,7 @@ router.get("/", asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // POST /api/wishlist
-router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post("/", checkOwnerPin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = z.object({ productId: z.string() }).parse(req.body);
     const collectionName = (req.body.collectionName as string) || "Wishlist";
@@ -230,7 +296,7 @@ router.post("/", asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /api/wishlist/:productId
-router.delete("/:productId", asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete("/:productId", checkOwnerPin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = req.params;
 
@@ -250,7 +316,7 @@ router.delete("/:productId", asyncHandler(async (req: AuthRequest, res: Response
 }));
 
 // POST /api/wishlist/:productId/move-to-cart
-router.post("/:productId/move-to-cart", asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post("/:productId/move-to-cart", checkOwnerPin, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { productId } = req.params;
 
@@ -293,6 +359,56 @@ router.post("/:productId/move-to-cart", asyncHandler(async (req: AuthRequest, re
   }
 }));
 
+// POST /api/wishlist/couple/verify-pin - Verify partner's wishlist PIN
+router.post("/couple/verify-pin", asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const { pin } = z.object({
+      pin: z.string().min(4).max(6),
+    }).parse(req.body);
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { partnerId: true },
+    });
+
+    if (!user?.partnerId) {
+      return res.status(400).json({ error: "You do not have a connected partner" });
+    }
+
+    const partner = await prisma.user.findUnique({
+      where: { id: user.partnerId },
+      select: { id: true, wishlistPin: true },
+    });
+
+    if (!partner) {
+      return res.status(404).json({ error: "Partner not found" });
+    }
+
+    if (!partner.wishlistPin) {
+      return res.json({ valid: true, message: "Partner has no PIN set" });
+    }
+
+    const isValid = await bcrypt.compare(pin, partner.wishlistPin);
+    if (!isValid) {
+      return res.status(401).json({ valid: false, error: "Invalid PIN" });
+    }
+
+    // Generate partner verification token
+    const token = jwt.sign(
+      { userId: req.user!.id, partnerId: partner.id, type: "partner_verified" },
+      process.env.JWT_SECRET || "",
+      { expiresIn: "15m" }
+    );
+
+    res.cookie("partner_wishlist_token", token, WISHLIST_COOKIE_OPTIONS);
+
+    return res.json({ valid: true, message: "Partner PIN verified successfully", token });
+  } catch (error) {
+    logger.error("Verify partner PIN error", { error });
+    return res.status(500).json({ error: "Failed to verify partner PIN" });
+  }
+}));
+
 // GET /api/wishlist/couple - Get partner's wishlist items
 router.get("/couple", asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
@@ -307,7 +423,7 @@ router.get("/couple", asyncHandler(async (req: AuthRequest, res: Response) => {
 
     const partner = await prisma.user.findUnique({
       where: { id: user.partnerId },
-      select: { id: true, email: true, name: true },
+      select: { id: true, email: true, name: true, wishlistPin: true },
     });
 
     if (!partner) {
@@ -317,6 +433,41 @@ router.get("/couple", asyncHandler(async (req: AuthRequest, res: Response) => {
         data: { partnerId: null },
       });
       return res.json({ paired: false, items: [], partner: null });
+    }
+
+    // Check partner PIN protection
+    if (partner.wishlistPin) {
+      let partnerToken = req.cookies?.partner_wishlist_token;
+      if (!partnerToken) {
+        const authHeader = req.headers["x-partner-wishlist-token"];
+        if (typeof authHeader === "string") {
+          partnerToken = authHeader;
+        }
+      }
+
+      let verified = false;
+      if (partnerToken) {
+        try {
+          const decoded = jwt.verify(partnerToken, process.env.JWT_SECRET || "") as any;
+          if (
+            decoded &&
+            decoded.userId === req.user!.id &&
+            decoded.partnerId === partner.id &&
+            decoded.type === "partner_verified"
+          ) {
+            verified = true;
+          }
+        } catch (err) {}
+      }
+
+      if (!verified) {
+        return res.status(403).json({
+          error: "Partner's wishlist is locked. PIN verification required.",
+          code: "PARTNER_PIN_REQUIRED",
+          paired: true,
+          partner: { email: partner.email, name: partner.name },
+        });
+      }
     }
 
     const items = await prisma.wishlistItem.findMany({

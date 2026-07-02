@@ -12,7 +12,7 @@ function getDatabaseUrl(): string | undefined {
   if (!url) return url;
   if (url.includes("connection_limit") || url.includes("pool_timeout")) return url;
   const sep = url.includes("?") ? "&" : "?";
-  const poolSize = process.env.DB_POOL_SIZE || "50";
+  const poolSize = process.env.DB_POOL_SIZE || "15";
   const pgbouncerParam = url.includes(":6432") ? "&pgbouncer=true" : "";
   return `${url}${sep}connection_limit=${poolSize}&pool_timeout=10&statement_timeout=30000${pgbouncerParam}`;
 }

@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { MessageCircle, Send, ArrowLeft, Store } from "lucide-react";
+import { useToast } from "@/lib/hooks/useToast";
 
 interface Conversation {
   id: string;
@@ -42,6 +43,7 @@ function CustomerMessagesPage() {
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const { showToast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const loadConversations = useCallback(async () => {
@@ -118,7 +120,9 @@ function CustomerMessagesPage() {
       setNewMessage("");
       const data = await apiFetch(`/api/chat/conversations/${activeConvId}/messages`);
       setMessages(data.messages);
-    } catch {}
+    } catch {
+      showToast("Failed to send message", "error");
+    }
     setSending(false);
   };
 
@@ -222,7 +226,14 @@ function CustomerMessagesPage() {
                       >
                         <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
                         <p className={`text-[10px] mt-1 ${msg.senderType === "BUYER" ? "text-white/70" : "text-gray-400"}`}>
-                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {(() => {
+                            const d = new Date(msg.createdAt);
+                            const today = new Date();
+                            const isToday = d.toDateString() === today.toDateString();
+                            return isToday
+                              ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                              : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                          })()}
                         </p>
                       </div>
                     </div>

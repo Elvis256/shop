@@ -544,7 +544,7 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
               {hasFlashSale && product.flashSaleEndsAt && (
                 <div className="flex items-center gap-2 mt-2">
                   <span className="inline-flex items-center gap-1 text-sm font-medium text-red-700 bg-red-50 px-2.5 py-0.5 rounded-md">
-                    ⚡ Flash Sale — ends {new Date(product.flashSaleEndsAt).toLocaleDateString()}
+                    ⚡ Flash Sale — ends {new Date(product.flashSaleEndsAt).toLocaleDateString("en-US", { timeZone: "UTC" })}
                   </span>
                 </div>
               )}
@@ -639,7 +639,7 @@ export default function ProductPageClient({ initialProduct }: { initialProduct?:
                 <span>
                   Pre-order item
                   {product.preOrderDate && (
-                    <> — Expected by <strong>{new Date(product.preOrderDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></>
+                    <> — Expected by <strong>{new Date(product.preOrderDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" })}</strong></>
                   )}
                 </span>
               </div>

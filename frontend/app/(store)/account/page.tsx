@@ -33,8 +33,8 @@ import {
   Bell,
   AlertCircle,
 } from "lucide-react";
-
-const API_URL = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
+import { apiFetch } from "@/lib/api";
+import { useToast } from "@/lib/hooks/useToast";
 
 interface DashboardOrder {
   id: string;
@@ -100,17 +100,13 @@ const tierColors: Record<string, string> = {
   PLATINUM: "from-indigo-500 to-indigo-300",
 };
 
-function getCsrfToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/csrf_token=([^;]+)/);
-  return match ? match[1] : null;
-}
-
 export default function AccountPage() {
   const router = useRouter();
   const { user, isLoading, logout, isAdmin, isSeller } = useAuth();
+  const { showToast } = useToast();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [copied, setCopied] = useState(false);
   const [receiptMasked, setReceiptMasked] = useState(false);
   const [savingMasked, setSavingMasked] = useState(false);
@@ -122,21 +118,24 @@ export default function AccountPage() {
     }
   }, [user, isLoading, router]);
 
-  useEffect(() => {
+  const loadDashboard = () => {
     if (!user) return;
-    fetch(`${API_URL}/api/auth/dashboard`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setDashboard(data))
-      .catch(() => {})
+    setLoadError(false);
+    setLoading(true);
+    apiFetch("/api/auth/dashboard")
+      .then((data: any) => setDashboard(data))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
 
-    fetch(`${API_URL}/api/auth/me`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
+    apiFetch("/api/auth/me")
+      .then((data: any) => {
         if (data) setReceiptMasked(data.receiptMasked || false);
       })
       .catch(() => {});
+  };
 
+  useEffect(() => {
+    loadDashboard();
     const shield = localStorage.getItem("stealth_blur_shield") !== "false";
     setLocalShield(shield);
   }, [user]);
@@ -144,22 +143,17 @@ export default function AccountPage() {
   const handleToggleReceiptMasked = async (checked: boolean) => {
     setSavingMasked(true);
     try {
-      const csrf = getCsrfToken();
-      const res = await fetch(`${API_URL}/api/auth/me`, {
+      await apiFetch("/api/auth/me", {
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
         body: JSON.stringify({ receiptMasked: checked }),
       });
-      if (res.ok) {
-        setReceiptMasked(checked);
-        // Refresh dashboard data so recent orders mask dynamically
-        fetch(`${API_URL}/api/auth/dashboard`, { credentials: "include" })
-          .then((r) => r.json())
-          .then((data) => setDashboard(data))
-          .catch(() => {});
-      }
-    } catch {}
+      setReceiptMasked(checked);
+      apiFetch("/api/auth/dashboard")
+        .then((data: any) => setDashboard(data))
+        .catch(() => {});
+    } catch {
+      showToast("Failed to update receipt masking", "error");
+    }
     setSavingMasked(false);
   };
 
@@ -328,6 +322,17 @@ export default function AccountPage() {
             {dashboard.profileCompletion.completionPercent >= 80 && (
               <p className="text-[10px] text-text-muted mt-2">Complete all items to earn 50 loyalty points!</p>
             )}
+          </div>
+        )}
+
+        {loadError && (
+          <div className="card mb-6 text-center py-8">
+            <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+            <h3 className="font-semibold mb-2">Failed to load dashboard</h3>
+            <p className="text-text-muted text-sm mb-4">Something went wrong. Please try again.</p>
+            <button onClick={loadDashboard} className="btn-primary gap-2">
+              <RefreshCw className="w-4 h-4" /> Retry
+            </button>
           </div>
         )}
 
